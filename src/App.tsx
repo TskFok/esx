@@ -1,51 +1,75 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { useEffect } from "react";
+import { Loader2 } from "lucide-react";
+import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { Toaster } from "sonner";
+import { ConnectionsPage } from "./pages/connections-page";
+import { ConsolePage } from "./pages/console-page";
+import { ErrorLogsPage } from "./pages/error-logs-page";
+import { useAppState } from "./providers/app-state";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+function RootRedirect() {
+  const { ready, currentConnection, connections } = useAppState();
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+  if (!ready) {
+    return null;
   }
 
-  return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+  if (!connections.length) {
+    return <Navigate to="/connections" replace />;
+  }
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
-  );
+  return <Navigate to={currentConnection ? "/console" : "/connections"} replace />;
 }
 
-export default App;
+function GlobalGuards() {
+  useEffect(() => {
+    const preventContextMenu = (event: Event) => event.preventDefault();
+    const preventMetaLinkOpen = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      if (event.metaKey && target.closest("a")) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener("contextmenu", preventContextMenu);
+    window.addEventListener("click", preventMetaLinkOpen, true);
+
+    return () => {
+      window.removeEventListener("contextmenu", preventContextMenu);
+      window.removeEventListener("click", preventMetaLinkOpen, true);
+    };
+  }, []);
+
+  return null;
+}
+
+export default function App() {
+  const { ready } = useAppState();
+
+  return (
+    <HashRouter>
+      <GlobalGuards />
+      {ready ? (
+        <Routes>
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/connections" element={<ConnectionsPage />} />
+          <Route path="/console" element={<ConsolePage />} />
+          <Route path="/logs" element={<ErrorLogsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      ) : (
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="glass-panel flex items-center gap-3 px-6 py-5 text-sm font-semibold text-slate-700">
+            <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+            正在加载本地连接与请求...
+          </div>
+        </div>
+      )}
+      <Toaster richColors position="top-right" />
+    </HashRouter>
+  );
+}
