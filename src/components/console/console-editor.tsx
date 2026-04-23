@@ -19,6 +19,28 @@ const EMPTY_AUTOCOMPLETE_CONTEXT: ConsoleAutocompleteContext = {
 const modelAutocompleteContext = new WeakMap<monacoEditor.editor.ITextModel, ConsoleAutocompleteContext>();
 let completionProviderRegistered = false;
 
+let cachedOverflowWidgetsDomNode: HTMLElement | null = null;
+
+function getOverflowWidgetsDomNode(): HTMLElement | undefined {
+  if (typeof document === "undefined") {
+    return undefined;
+  }
+
+  if (cachedOverflowWidgetsDomNode && cachedOverflowWidgetsDomNode.isConnected) {
+    return cachedOverflowWidgetsDomNode;
+  }
+
+  const host = document.createElement("div");
+  host.className = "monaco-editor es-console-overflow-widgets";
+  host.style.position = "absolute";
+  host.style.top = "0";
+  host.style.left = "0";
+  host.style.zIndex = "9999";
+  document.body.appendChild(host);
+  cachedOverflowWidgetsDomNode = host;
+  return host;
+}
+
 const MARKER_OWNER = "es-console-validator";
 
 function runConsoleValidation(model: monacoEditor.editor.ITextModel) {
@@ -199,6 +221,8 @@ export function ConsoleEditor({
         strings: true,
       },
       suggestOnTriggerCharacters: true,
+      fixedOverflowWidgets: true,
+      overflowWidgetsDomNode: getOverflowWidgetsDomNode(),
       guides: {
         bracketPairs: true,
         indentation: true,
