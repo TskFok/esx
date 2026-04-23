@@ -13,7 +13,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ConsoleEditor } from "../components/console/console-editor";
@@ -21,6 +21,7 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
+import { buildConsoleAutocompleteContext, extractIndexNamesFromPath } from "../lib/console-autocomplete";
 import { buildRequestProjectTree } from "../lib/request-tree";
 import { buildConnectionLogContextFromProfile, buildRequestLogContext } from "../lib/error-logs";
 import { extractUnknownErrorDiagnostics, extractUnknownErrorMessage, getResponseErrorMessage } from "../lib/errors";
@@ -87,12 +88,15 @@ export function ConsolePage() {
     requestProjects,
     requestModules,
     requestsForCurrentConnection,
+    searchMetadataByConnection,
     updateDraft,
     selectSavedRequest,
     saveRequestFromDraft,
     renameRequest,
     deleteRequest,
     duplicateRequest,
+    refreshSearchMetadata,
+    ensureIndexFields,
     upsertRequestProject,
     upsertRequestModule,
     deleteRequestProject,
@@ -257,6 +261,115 @@ export function ConsolePage() {
 
   const selectedConnection = activeConnection;
   const activeDraftState = draft;
+  const metadataAutoRefreshRef = useRef<Record<string, string>>({});
+  const connectionSearchMetadata = searchMetadataByConnection[selectedConnection.id] ?? null;
+  const autocompleteContext = useMemo(
+    () => buildConsoleAutocompleteContext(requestsForCurrentConnection, activeDraftState.content, connectionSearchMetadata),
+    [requestsForCurrentConnection, activeDraftState.content, connectionSearchMetadata],
+  );
+  const metadataRefreshMutation = useMutation({
+    mutationFn: async (payload: { force: boolean }) => refreshSearchMetadata(selectedConnection, payload),
+    onError(error, payload) {
+      if (!payload.force) {
+        return;
+      }
+
+      toast.error(error instanceof Error ? error.message : "索引元数据刷新失败");
+    },
+  });
+
+  useEffect(() => {
+    if (metadataRefreshMutation.isPending) {
+      return;
+    }
+
+    if (connectionSearchMetadata && new Date(connectionSearchMetadata.expiresAt).getTime() > Date.now()) {
+      return;
+    }
+
+    const refreshKey = `${selectedConnection.id}:${selectedConnection.updatedAt}:${connectionSearchMetadata?.expiresAt ?? "missing"}`;
+    if (metadataAutoRefreshRef.current[selectedConnection.id] === refreshKey) {
+      return;
+    }
+
+    metadataAutoRefreshRef.current[selectedConnection.id] = refreshKey;
+    void metadataRefreshMutation.mutateAsync({ force: false }).catch(() => undefined);
+  }, [connectionSearchMetadata?.expiresAt, metadataRefreshMutation, selectedConnection.id, selectedConnection.updatedAt]);
+
+  const indexFieldsAttemptedRef = useRef<Record<string, Set<string>>>({});
+  useEffect(() => {
+    if (!connectionSearchMetadata) {
+      return;
+    }
+    indexFieldsAttemptedRef.current[selectedConnection.id] = new Set<string>();
+  }, [connectionSearchMetadata?.fetchedAt, selectedConnection.id]);
+
+  const currentPathIndexNamesKey = useMemo(() => {
+    const firstLine = activeDraftState.content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+    if (!firstLine) {
+      return "";
+    }
+    const [, ...pathParts] = firstLine.split(/\s+/);
+    return extractIndexNamesFromPath(pathParts.join(" ").trim()).join(",");
+  }, [activeDraftState.content]);
+  const currentPathIndexNames = useMemo(
+    () => (currentPathIndexNamesKey ? currentPathIndexNamesKey.split(",") : []),
+    [currentPathIndexNamesKey],
+  );
+
+  useEffect(() => {
+    if (currentPathIndexNames.length === 0 || !connectionSearchMetadata) {
+      return;
+    }
+    const connectionId = selectedConnection.id;
+    const attempted = (indexFieldsAttemptedRef.current[connectionId] ??= new Set<string>());
+    const fieldsByIndex = connectionSearchMetadata.fieldsByIndex ?? {};
+    const aliasToIndices = connectionSearchMetadata.aliasToIndices ?? {};
+
+    currentPathIndexNames.forEach((name) => {
+      if (attempted.has(name)) {
+        return;
+      }
+      const directCached = (fieldsByIndex[name]?.length ?? 0) > 0;
+      if (directCached) {
+        return;
+      }
+      const aliasTargets = aliasToIndices[name] ?? [];
+      const aliasCached =
+        aliasTargets.length > 0 && aliasTargets.every((indexName) => (fieldsByIndex[indexName]?.length ?? 0) > 0);
+      if (aliasCached) {
+        return;
+      }
+
+      attempted.add(name);
+      void ensureIndexFields(selectedConnection, name).catch(() => {
+        attempted.delete(name);
+      });
+    });
+  }, [
+    currentPathIndexNames,
+    ensureIndexFields,
+    connectionSearchMetadata,
+    selectedConnection,
+  ]);
+
+  function handleRefreshSearchMetadata() {
+    indexFieldsAttemptedRef.current[selectedConnection.id] = new Set<string>();
+    void metadataRefreshMutation.mutateAsync({ force: true }).then(() => {
+      toast.success("索引元数据已刷新。");
+    }).catch(() => undefined);
+  }
+
+  const hasMetadataAutoAttempted = Boolean(metadataAutoRefreshRef.current[selectedConnection.id]);
+  const metadataStatus = connectionSearchMetadata
+    ? new Date(connectionSearchMetadata.expiresAt).getTime() > Date.now()
+      ? `索引元数据已同步：${formatShanghaiDateTime(connectionSearchMetadata.fetchedAt)}`
+      : `索引元数据已过期：${formatShanghaiDateTime(connectionSearchMetadata.fetchedAt)}`
+    : metadataRefreshMutation.isPending
+      ? "正在拉取索引 / alias 元数据..."
+      : hasMetadataAutoAttempted
+        ? "索引元数据自动拉取失败，可手动重试。"
+        : "首次进入时会自动拉取索引 / alias 元数据。";
 
   function handleFormatJson() {
     if (!activeDraftState.content.trim()) {
@@ -787,11 +900,30 @@ export function ConsolePage() {
             <div className="mt-4 grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
               <Card className="flex min-h-[360px] min-w-0 flex-col overflow-hidden border border-slate-200 bg-white">
                 <div className="border-b border-slate-100 px-5 py-4">
-                  <p className="text-sm font-bold text-slate-900">请求内容</p>
-                  <p className="mt-1 text-xs text-slate-500">Command + Enter 运行并保存</p>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">请求内容</p>
+                      <p className="mt-1 text-xs text-slate-500">Command + Enter 运行并保存</p>
+                      <p className="mt-1 text-xs text-slate-500">{metadataStatus}</p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRefreshSearchMetadata}
+                      disabled={metadataRefreshMutation.isPending}
+                    >
+                      {metadataRefreshMutation.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Boxes className="mr-2 h-4 w-4" />
+                      )}
+                      刷新索引
+                    </Button>
+                  </div>
                 </div>
                 <div className="min-h-0 flex-1 p-4">
                   <ConsoleEditor
+                    autocompleteContext={autocompleteContext}
                     value={activeDraftState.content}
                     onChange={(value) =>
                       updateDraft(selectedConnection.id, (currentDraftState) => ({

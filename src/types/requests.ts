@@ -51,3 +51,14 @@ export type ConsoleDraft = {
   activeSavedRequestId: string | null;
   response: ResponseSnapshot | null;
 };
+
+export type ConnectionSearchMetadata = {
+  connectionId: string;
+  indices: string[];
+  aliases: string[];
+  fields: string[];
+  fieldsByIndex: Record<string, string[]>;
+  aliasToIndices: Record<string, string[]>;
+  fetchedAt: string;
+  expiresAt: string;
+};

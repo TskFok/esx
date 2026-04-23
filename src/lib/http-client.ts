@@ -11,6 +11,7 @@ import { executeSshHttpRequest, type TauriHttpResponse } from "./tauri";
 import type { ConnectionProfile, SshTunnelConfig } from "../types/connections";
 import type { ParsedConsoleRequest } from "./console-parser";
 import type { ResponseSnapshot } from "../types/requests";
+import { flattenMappingFields, flattenMappingFieldsByIndex } from "./console-autocomplete";
 
 type ConnectionProbe = {
   path: string;
@@ -79,20 +80,24 @@ function buildSnapshot(
 }
 
 function parseJsonRecord(bodyText: string) {
+  const value = parseJsonValue(bodyText);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  return null;
+}
+
+function parseJsonValue(bodyText: string) {
   if (!bodyText.trim()) {
     return null;
   }
 
   try {
-    const value = JSON.parse(bodyText) as unknown;
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-      return value as Record<string, unknown>;
-    }
+    return JSON.parse(bodyText) as unknown;
   } catch {
     return null;
   }
-
-  return null;
 }
 
 function isElasticsearchRootResponse(bodyText: string) {
@@ -231,6 +236,204 @@ function buildConnectionDiagnostics(attempts: ProbeAttempt[]) {
   });
 }
 
+type SearchMetadataResult = {
+  indices: string[];
+  aliases: string[];
+  fields: string[];
+  fieldsByIndex: Record<string, string[]>;
+  aliasToIndices: Record<string, string[]>;
+};
+
+type SearchMetadataProbe = {
+  path: string;
+  label: string;
+};
+
+type SearchMetadataAttempt = {
+  probe: SearchMetadataProbe;
+  snapshot: ResponseSnapshot;
+};
+
+function deduplicateSorted(items: string[]) {
+  return [...new Set(items.map((item) => item.trim()).filter(Boolean))].sort((left, right) =>
+    left.localeCompare(right, "zh-CN"),
+  );
+}
+
+function parseResolveIndexMetadata(bodyText: string) {
+  const value = parseJsonValue(bodyText);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const indices = Array.isArray(record.indices)
+    ? record.indices
+        .map((item) =>
+          item && typeof item === "object" && !Array.isArray(item) && typeof (item as Record<string, unknown>).name === "string"
+            ? (item as Record<string, unknown>).name as string
+            : null,
+        )
+        .filter((item): item is string => Boolean(item))
+    : [];
+  const aliases = Array.isArray(record.aliases)
+    ? record.aliases
+        .map((item) =>
+          item && typeof item === "object" && !Array.isArray(item) && typeof (item as Record<string, unknown>).name === "string"
+            ? (item as Record<string, unknown>).name as string
+            : null,
+        )
+        .filter((item): item is string => Boolean(item))
+    : [];
+
+  const aliasToIndices: Record<string, string[]> = {};
+  if (Array.isArray(record.aliases)) {
+    record.aliases.forEach((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return;
+      }
+      const aliasRecord = item as Record<string, unknown>;
+      const aliasName = typeof aliasRecord.name === "string" ? aliasRecord.name : null;
+      if (!aliasName) {
+        return;
+      }
+      const targetIndices = Array.isArray(aliasRecord.indices)
+        ? (aliasRecord.indices as unknown[]).filter(
+            (entry): entry is string => typeof entry === "string" && entry.length > 0,
+          )
+        : [];
+      if (targetIndices.length === 0) {
+        return;
+      }
+      aliasToIndices[aliasName] = deduplicateSorted(targetIndices);
+    });
+  }
+
+  return {
+    indices: deduplicateSorted(indices),
+    aliases: deduplicateSorted(aliases),
+    fields: [],
+    fieldsByIndex: {},
+    aliasToIndices,
+  } satisfies SearchMetadataResult;
+}
+
+function parseAliasesDocument(bodyText: string) {
+  const value = parseJsonValue(bodyText);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const indices: string[] = [];
+  const aliases: string[] = [];
+  const aliasToIndicesSet: Record<string, Set<string>> = {};
+
+  Object.entries(record).forEach(([indexName, entry]) => {
+    if (!indexName.startsWith("_")) {
+      indices.push(indexName);
+    }
+
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      return;
+    }
+
+    const aliasRecord = (entry as Record<string, unknown>).aliases;
+    if (!aliasRecord || typeof aliasRecord !== "object" || Array.isArray(aliasRecord)) {
+      return;
+    }
+
+    Object.keys(aliasRecord as Record<string, unknown>).forEach((aliasName) => {
+      aliases.push(aliasName);
+      if (!indexName.startsWith("_")) {
+        (aliasToIndicesSet[aliasName] ??= new Set()).add(indexName);
+      }
+    });
+  });
+
+  const aliasToIndices: Record<string, string[]> = {};
+  Object.entries(aliasToIndicesSet).forEach(([aliasName, set]) => {
+    aliasToIndices[aliasName] = deduplicateSorted([...set]);
+  });
+
+  return {
+    indices: deduplicateSorted(indices),
+    aliases: deduplicateSorted(aliases),
+    fields: [],
+    fieldsByIndex: {},
+    aliasToIndices,
+  } satisfies SearchMetadataResult;
+}
+
+function parseMappingFields(bodyText: string) {
+  const value = parseJsonValue(bodyText);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { fields: [] as string[], fieldsByIndex: {} as Record<string, string[]> };
+  }
+  return {
+    fields: flattenMappingFields(value),
+    fieldsByIndex: flattenMappingFieldsByIndex(value),
+  };
+}
+
+function parseCatColumn(bodyText: string, columnName: string) {
+  const value = parseJsonValue(bodyText);
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  return deduplicateSorted(
+    value
+      .map((item) =>
+        item && typeof item === "object" && !Array.isArray(item) && typeof (item as Record<string, unknown>)[columnName] === "string"
+          ? ((item as Record<string, unknown>)[columnName] as string)
+          : null,
+      )
+      .filter((item): item is string => Boolean(item)),
+  );
+}
+
+function buildSearchMetadataError(attempts: SearchMetadataAttempt[]) {
+  const firstForbidden = attempts.find(({ snapshot }) => snapshot.status === 403);
+  if (firstForbidden) {
+    return "当前账号没有读取索引元数据或 alias 元数据的权限。";
+  }
+
+  const firstUnauthorized = attempts.find(({ snapshot }) => snapshot.status === 401);
+  if (firstUnauthorized) {
+    return "读取索引元数据失败，当前连接认证已失效。";
+  }
+
+  const firstNetworkFailure = attempts.find(({ snapshot }) => snapshot.status === 0);
+  if (firstNetworkFailure) {
+    return extractServerMessage(firstNetworkFailure.snapshot) ?? "读取索引元数据失败，请检查网络、地址和证书配置。";
+  }
+
+  const firstDetailedMessage = attempts
+    .map(({ snapshot }) => extractServerMessage(snapshot))
+    .find((message) => Boolean(message));
+
+  if (firstDetailedMessage) {
+    return `读取索引元数据失败：${firstDetailedMessage}`;
+  }
+
+  return "无法读取当前连接的索引元数据。";
+}
+
+function buildSearchMetadataDiagnostics(attempts: SearchMetadataAttempt[]) {
+  return attempts.flatMap(({ probe, snapshot }) => {
+    const lines = [`探测 ${probe.label} ${probe.path} -> ${snapshot.status || "FAILED"} ${snapshot.statusText}`];
+    const summary = getResponseErrorMessage(snapshot, "");
+    if (summary && !isGenericFailureMessage(summary)) {
+      lines.push(`错误摘要：${summary}`);
+    }
+    if (snapshot.diagnostics.length > 0) {
+      lines.push(...snapshot.diagnostics);
+    }
+    return lines;
+  });
+}
+
 export async function executeConsoleRequest(
   connection: ConnectionProfile,
   credentials: RequestCredentials,
@@ -300,6 +503,199 @@ export async function executeConsoleRequest(
       executedAt,
     );
   }
+}
+
+async function runSearchMetadataProbe(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  probe: SearchMetadataProbe,
+  sshTunnelOverride?: SshTunnelConfig | null,
+) {
+  const snapshot = await executeConsoleRequest(
+    connection,
+    credentials,
+    {
+      method: "GET",
+      path: probe.path,
+      bodyText: "",
+      bodyJson: null,
+    },
+    sshTunnelOverride,
+  );
+
+  return { probe, snapshot } satisfies SearchMetadataAttempt;
+}
+
+export async function fetchConnectionSearchMetadata(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  sshTunnelOverride?: SshTunnelConfig | null,
+) {
+  const indices = new Set<string>();
+  const aliases = new Set<string>();
+  const fields = new Set<string>();
+  const fieldsByIndex: Record<string, string[]> = {};
+  const aliasToIndices: Record<string, string[]> = {};
+  const mergeAliasTargets = (entries: Record<string, string[]> | undefined) => {
+    if (!entries) {
+      return;
+    }
+    Object.entries(entries).forEach(([aliasName, targets]) => {
+      const merged = new Set<string>(aliasToIndices[aliasName] ?? []);
+      targets.forEach((item) => merged.add(item));
+      aliasToIndices[aliasName] = deduplicateSorted([...merged]);
+    });
+  };
+  const attempts: SearchMetadataAttempt[] = [];
+  let successfulProbeCount = 0;
+
+  const resolveAttempt = await runSearchMetadataProbe(
+    connection,
+    credentials,
+    {
+      path: "/_resolve/index/*?expand_wildcards=all&ignore_unavailable=true",
+      label: "解析索引",
+    },
+    sshTunnelOverride,
+  );
+  attempts.push(resolveAttempt);
+  if (resolveAttempt.snapshot.ok) {
+    successfulProbeCount += 1;
+    const resolved = parseResolveIndexMetadata(resolveAttempt.snapshot.bodyText);
+    resolved?.indices.forEach((item) => indices.add(item));
+    resolved?.aliases.forEach((item) => aliases.add(item));
+    mergeAliasTargets(resolved?.aliasToIndices);
+  }
+
+  if (indices.size === 0 || aliases.size === 0) {
+    const aliasesAttempt = await runSearchMetadataProbe(
+      connection,
+      credentials,
+      {
+        path: "/_aliases",
+        label: "别名文档",
+      },
+      sshTunnelOverride,
+    );
+    attempts.push(aliasesAttempt);
+    if (aliasesAttempt.snapshot.ok) {
+      successfulProbeCount += 1;
+      const resolved = parseAliasesDocument(aliasesAttempt.snapshot.bodyText);
+      resolved?.indices.forEach((item) => indices.add(item));
+      resolved?.aliases.forEach((item) => aliases.add(item));
+      mergeAliasTargets(resolved?.aliasToIndices);
+    }
+  }
+
+  if (indices.size === 0) {
+    const indicesAttempt = await runSearchMetadataProbe(
+      connection,
+      credentials,
+      {
+        path: "/_cat/indices?format=json&h=index&expand_wildcards=all",
+        label: "索引列表",
+      },
+      sshTunnelOverride,
+    );
+    attempts.push(indicesAttempt);
+    if (indicesAttempt.snapshot.ok) {
+      successfulProbeCount += 1;
+      parseCatColumn(indicesAttempt.snapshot.bodyText, "index")?.forEach((item) => indices.add(item));
+    }
+  }
+
+  if (aliases.size === 0) {
+    const catAliasesAttempt = await runSearchMetadataProbe(
+      connection,
+      credentials,
+      {
+        path: "/_cat/aliases?format=json&h=alias",
+        label: "别名列表",
+      },
+      sshTunnelOverride,
+    );
+    attempts.push(catAliasesAttempt);
+    if (catAliasesAttempt.snapshot.ok) {
+      successfulProbeCount += 1;
+      parseCatColumn(catAliasesAttempt.snapshot.bodyText, "alias")?.forEach((item) => aliases.add(item));
+    }
+  }
+
+  const mappingAttempt = await runSearchMetadataProbe(
+    connection,
+    credentials,
+    {
+      path: "/_mapping?expand_wildcards=open",
+      label: "字段映射",
+    },
+    sshTunnelOverride,
+  );
+  attempts.push(mappingAttempt);
+  if (mappingAttempt.snapshot.ok) {
+    successfulProbeCount += 1;
+    const parsedMapping = parseMappingFields(mappingAttempt.snapshot.bodyText);
+    parsedMapping.fields.forEach((item) => fields.add(item));
+    Object.entries(parsedMapping.fieldsByIndex).forEach(([indexName, list]) => {
+      if (list.length === 0) {
+        return;
+      }
+      const merged = new Set<string>(fieldsByIndex[indexName] ?? []);
+      list.forEach((item) => merged.add(item));
+      fieldsByIndex[indexName] = [...merged].sort((left, right) => left.localeCompare(right, "zh-CN"));
+    });
+  }
+
+  if (successfulProbeCount === 0) {
+    throw new DetailedError(
+      buildSearchMetadataError(attempts),
+      buildSearchMetadataDiagnostics(attempts),
+    );
+  }
+
+  return {
+    indices: deduplicateSorted([...indices]),
+    aliases: deduplicateSorted([...aliases]),
+    fields: deduplicateSorted([...fields]),
+    fieldsByIndex,
+    aliasToIndices,
+  } satisfies SearchMetadataResult;
+}
+
+export type IndexMappingFieldsResult = {
+  requestedName: string;
+  fieldsByIndex: Record<string, string[]>;
+};
+
+export async function fetchIndexMappingFields(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  indexOrAlias: string,
+  sshTunnelOverride?: SshTunnelConfig | null,
+): Promise<IndexMappingFieldsResult> {
+  const trimmedName = indexOrAlias.trim();
+  if (!trimmedName || trimmedName.startsWith("_") || trimmedName.includes("*")) {
+    return { requestedName: trimmedName, fieldsByIndex: {} };
+  }
+
+  const encodedName = encodeURIComponent(trimmedName);
+  const probe: SearchMetadataProbe = {
+    path: `/${encodedName}/_mapping?ignore_unavailable=true&expand_wildcards=open`,
+    label: `索引映射(${trimmedName})`,
+  };
+  const attempt = await runSearchMetadataProbe(connection, credentials, probe, sshTunnelOverride);
+
+  if (!attempt.snapshot.ok) {
+    throw new DetailedError(
+      `拉取索引 ${trimmedName} 的 mapping 失败`,
+      buildSearchMetadataDiagnostics([attempt]),
+    );
+  }
+
+  const parsed = parseMappingFields(attempt.snapshot.bodyText);
+  return {
+    requestedName: trimmedName,
+    fieldsByIndex: parsed.fieldsByIndex,
+  };
 }
 
 export async function testConnection(

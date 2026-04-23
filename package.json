@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "tauri": "node ./scripts/tauri-wrapper.mjs",
     "build:dmg": "node ./scripts/tauri-wrapper.mjs build",
-    "clean": "rm -rf build dist node_modules/.vite src-tauri/target"
+    "clean": "rm -rf build dist node_modules/.vite src-tauri/target",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -33,9 +35,11 @@
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.4.21",
+    "jsdom": "^29.0.2",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.1.5"
   }
 }

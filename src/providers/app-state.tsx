@@ -3,11 +3,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
 import { toast } from "sonner";
 import { buildConsoleContent, parseConsoleRequest } from "../lib/console-parser";
+import { fetchConnectionSearchMetadata, fetchIndexMappingFields } from "../lib/http-client";
 import {
   createDefaultDraft,
   createEmptyStorage,
@@ -36,6 +38,7 @@ import type {
   SshProfileFormValues,
 } from "../types/connections";
 import type {
+  ConnectionSearchMetadata,
   ConsoleDraft,
   RequestModule,
   RequestProject,
@@ -62,6 +65,7 @@ type AppStateContextValue = {
   sshProfiles: SshProfile[];
   requestProjects: RequestProject[];
   requestModules: RequestModule[];
+  searchMetadataByConnection: Record<string, ConnectionSearchMetadata>;
   currentConnection: ConnectionProfile | null;
   currentDraft: ConsoleDraft | null;
   requestsForCurrentConnection: SavedRequest[];
@@ -87,6 +91,15 @@ type AppStateContextValue = {
   renameRequest: (requestId: string, name: string) => void;
   deleteRequest: (requestId: string) => void;
   duplicateRequest: (requestId: string, name: string) => SavedRequest;
+  refreshSearchMetadata: (
+    connection: ConnectionProfile,
+    options?: { force?: boolean },
+  ) => Promise<ConnectionSearchMetadata>;
+  ensureIndexFields: (
+    connection: ConnectionProfile,
+    indexOrAlias: string,
+    options?: { force?: boolean },
+  ) => Promise<string[] | null>;
   recordExecution: (
     connectionId: string,
     content: string,
@@ -118,6 +131,7 @@ type AppStateContextValue = {
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
 const MAX_ERROR_LOGS = 200;
+const SEARCH_METADATA_TTL_MS = 5 * 60 * 1000;
 
 function now() {
   return new Date().toISOString();
@@ -158,6 +172,54 @@ function normalizeStoredConnection(connection: ConnectionProfile) {
     sshProfileId: connection.sshProfileId ?? (connection.sshTunnel ? connection.id : null),
     sshTunnel: connection.sshTunnel ?? null,
   } satisfies ConnectionProfile;
+}
+
+function normalizeStringRecordOfLists(
+  value: Record<string, unknown> | undefined | null,
+): Record<string, string[]> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const result: Record<string, string[]> = {};
+  Object.entries(value).forEach(([key, list]) => {
+    const trimmedKey = key.trim();
+    if (!trimmedKey || !Array.isArray(list)) {
+      return;
+    }
+    const normalized = [
+      ...new Set(list.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)),
+    ].sort((left, right) => left.localeCompare(right, "zh-CN"));
+    if (normalized.length > 0) {
+      result[trimmedKey] = normalized;
+    }
+  });
+  return result;
+}
+
+function normalizeStoredSearchMetadata(
+  cache: ConnectionSearchMetadata,
+  connectionIds: Set<string>,
+) {
+  if (!connectionIds.has(cache.connectionId)) {
+    return null;
+  }
+
+  return {
+    connectionId: cache.connectionId,
+    indices: [...new Set((cache.indices ?? []).map((item) => item.trim()).filter(Boolean))].sort((left, right) =>
+      left.localeCompare(right, "zh-CN"),
+    ),
+    aliases: [...new Set((cache.aliases ?? []).map((item) => item.trim()).filter(Boolean))].sort((left, right) =>
+      left.localeCompare(right, "zh-CN"),
+    ),
+    fields: [...new Set((cache.fields ?? []).map((item) => item.trim()).filter(Boolean))].sort((left, right) =>
+      left.localeCompare(right, "zh-CN"),
+    ),
+    fieldsByIndex: normalizeStringRecordOfLists(cache.fieldsByIndex),
+    aliasToIndices: normalizeStringRecordOfLists(cache.aliasToIndices),
+    fetchedAt: cache.fetchedAt,
+    expiresAt: cache.expiresAt,
+  } satisfies ConnectionSearchMetadata;
 }
 
 function normalizeStoredSshProfile(profile: SshProfile) {
@@ -301,6 +363,9 @@ function removeConnectionsFromState(current: AppStateShape, connectionIds: Set<s
     ...current,
     connections: nextConnections,
     requests: current.requests.filter((item) => !connectionIds.has(item.connectionId)),
+    searchMetadata: Object.fromEntries(
+      Object.entries(current.searchMetadata ?? {}).filter(([connectionId]) => !connectionIds.has(connectionId)),
+    ),
     drafts: nextDrafts,
     currentConnectionId:
       current.currentConnectionId && connectionIds.has(current.currentConnectionId)
@@ -327,6 +392,11 @@ function normalizeState(state: AppStateShape): AppStateShape {
     .sort((left, right) => right.lastUsedAt.localeCompare(left.lastUsedAt));
 
   const connectionIds = new Set(normalizedConnections.map((connection) => connection.id));
+  const normalizedSearchMetadata = Object.fromEntries(
+    Object.entries(state.searchMetadata ?? {})
+      .map(([connectionId, cache]) => [connectionId, normalizeStoredSearchMetadata(cache, connectionIds)] as const)
+      .filter((entry): entry is readonly [string, ConnectionSearchMetadata] => Boolean(entry[1])),
+  );
 
   let normalizedRequestProjects = [...(state.requestProjects ?? [])]
     .map(normalizeStoredRequestProject)
@@ -419,6 +489,7 @@ function normalizeState(state: AppStateShape): AppStateShape {
     requestProjects: [...normalizedRequestProjects].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
     requestModules: [...normalizedRequestModules].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
     requests: nextRequests,
+    searchMetadata: normalizedSearchMetadata,
     drafts: nextDrafts,
     currentConnectionId:
       state.currentConnectionId && normalizedConnections.some((item) => item.id === state.currentConnectionId)
@@ -431,9 +502,41 @@ function normalizeState(state: AppStateShape): AppStateShape {
   };
 }
 
+function buildSearchMetadataCache(
+  connectionId: string,
+  metadata: {
+    indices: string[];
+    aliases: string[];
+    fields: string[];
+    fieldsByIndex?: Record<string, string[]>;
+    aliasToIndices?: Record<string, string[]>;
+  },
+  timestamp = now(),
+) {
+  return {
+    connectionId,
+    indices: metadata.indices,
+    aliases: metadata.aliases,
+    fields: metadata.fields,
+    fieldsByIndex: metadata.fieldsByIndex ?? {},
+    aliasToIndices: metadata.aliasToIndices ?? {},
+    fetchedAt: timestamp,
+    expiresAt: new Date(new Date(timestamp).getTime() + SEARCH_METADATA_TTL_MS).toISOString(),
+  } satisfies ConnectionSearchMetadata;
+}
+
+function isSearchMetadataExpired(cache: ConnectionSearchMetadata | null | undefined) {
+  if (!cache) {
+    return true;
+  }
+
+  return new Date(cache.expiresAt).getTime() <= Date.now();
+}
+
 export function AppStateProvider({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<AppStateShape>(createEmptyStorage());
+  const indexFieldFetchInFlight = useRef(new Map<string, Promise<string[] | null>>());
 
   useEffect(() => {
     let cancelled = false;
@@ -502,6 +605,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       sshProfiles: state.sshProfiles,
       requestProjects: state.requestProjects,
       requestModules: state.requestModules,
+      searchMetadataByConnection: state.searchMetadata,
       currentConnection,
       currentDraft,
       requestsForCurrentConnection,
@@ -744,6 +848,163 @@ export function AppStateProvider({ children }: PropsWithChildren) {
 
         return duplicate;
       },
+      async refreshSearchMetadata(connection, options) {
+        const currentCache = state.searchMetadata[connection.id] ?? null;
+        if (!options?.force && currentCache && !isSearchMetadataExpired(currentCache)) {
+          return currentCache;
+        }
+
+        const sshProfile =
+          connection.sshProfileId
+            ? state.sshProfiles.find((profile) => profile.id === connection.sshProfileId) ?? null
+            : null;
+        const [password, sshSecret] = await Promise.all([
+          getConnectionPassword(connection.id, connection.username),
+          sshProfile ? getConnectionSshSecret(sshProfile.id) : Promise.resolve(null),
+        ]);
+
+        if (!password) {
+          throw new Error("当前连接未找到已保存密码，请回到连接页重新保存。");
+        }
+
+        const metadata = await fetchConnectionSearchMetadata(
+          connection,
+          { password, sshSecret },
+          sshProfile?.tunnel ?? null,
+        );
+        const cache = buildSearchMetadataCache(connection.id, metadata);
+
+        setState((current) => {
+          if (!current.connections.some((item) => item.id === connection.id)) {
+            return current;
+          }
+
+          return {
+            ...current,
+            searchMetadata: {
+              ...current.searchMetadata,
+              [connection.id]: cache,
+            },
+          };
+        });
+
+        return cache;
+      },
+      async ensureIndexFields(connection, indexOrAlias, options) {
+        const trimmedName = indexOrAlias.trim();
+        if (!trimmedName || trimmedName.startsWith("_") || trimmedName.includes("*")) {
+          return null;
+        }
+
+        const currentCache = state.searchMetadata[connection.id] ?? null;
+        const aliasTargets = currentCache?.aliasToIndices?.[trimmedName] ?? [];
+        const resolvedTargets = aliasTargets.length > 0 ? aliasTargets : [trimmedName];
+        const hasAllCached = resolvedTargets.every(
+          (name) => (currentCache?.fieldsByIndex?.[name]?.length ?? 0) > 0,
+        );
+        if (!options?.force && hasAllCached) {
+          const merged = new Set<string>();
+          resolvedTargets.forEach((name) => {
+            currentCache?.fieldsByIndex?.[name]?.forEach((item) => merged.add(item));
+          });
+          return [...merged].sort((left, right) => left.localeCompare(right, "zh-CN"));
+        }
+
+        const cacheKey = `${connection.id}::${trimmedName}`;
+        const inFlightMap = indexFieldFetchInFlight.current;
+        if (!options?.force) {
+          const existing = inFlightMap.get(cacheKey);
+          if (existing) {
+            return existing;
+          }
+        }
+
+        const sshProfile =
+          connection.sshProfileId
+            ? state.sshProfiles.find((profile) => profile.id === connection.sshProfileId) ?? null
+            : null;
+
+        const run = (async (): Promise<string[] | null> => {
+          const [password, sshSecret] = await Promise.all([
+            getConnectionPassword(connection.id, connection.username),
+            sshProfile ? getConnectionSshSecret(sshProfile.id) : Promise.resolve(null),
+          ]);
+
+          if (!password) {
+            throw new Error("当前连接未找到已保存密码，请回到连接页重新保存。");
+          }
+
+          const result = await fetchIndexMappingFields(
+            connection,
+            { password, sshSecret },
+            trimmedName,
+            sshProfile?.tunnel ?? null,
+          );
+
+          const fetchedIndexNames = Object.keys(result.fieldsByIndex);
+          if (fetchedIndexNames.length === 0) {
+            return [];
+          }
+
+          const merged = new Set<string>();
+          fetchedIndexNames.forEach((indexName) => {
+            result.fieldsByIndex[indexName].forEach((item) => merged.add(item));
+          });
+
+          setState((current) => {
+            const existingCache = current.searchMetadata[connection.id];
+            if (!existingCache) {
+              return current;
+            }
+
+            const nextFieldsByIndex = { ...existingCache.fieldsByIndex };
+            fetchedIndexNames.forEach((indexName) => {
+              const combined = new Set<string>(nextFieldsByIndex[indexName] ?? []);
+              result.fieldsByIndex[indexName].forEach((item) => combined.add(item));
+              nextFieldsByIndex[indexName] = [...combined].sort((left, right) =>
+                left.localeCompare(right, "zh-CN"),
+              );
+            });
+
+            const nextFields = new Set<string>(existingCache.fields);
+            merged.forEach((item) => nextFields.add(item));
+
+            const nextIndices = new Set<string>(existingCache.indices);
+            fetchedIndexNames.forEach((indexName) => nextIndices.add(indexName));
+
+            const nextAliasToIndices = { ...existingCache.aliasToIndices };
+            if (fetchedIndexNames.length > 0 && !fetchedIndexNames.includes(trimmedName)) {
+              const combinedAliasTargets = new Set<string>(nextAliasToIndices[trimmedName] ?? []);
+              fetchedIndexNames.forEach((indexName) => combinedAliasTargets.add(indexName));
+              nextAliasToIndices[trimmedName] = [...combinedAliasTargets].sort((left, right) =>
+                left.localeCompare(right, "zh-CN"),
+              );
+            }
+
+            return {
+              ...current,
+              searchMetadata: {
+                ...current.searchMetadata,
+                [connection.id]: {
+                  ...existingCache,
+                  fields: [...nextFields].sort((left, right) => left.localeCompare(right, "zh-CN")),
+                  fieldsByIndex: nextFieldsByIndex,
+                  aliasToIndices: nextAliasToIndices,
+                  indices: [...nextIndices].sort((left, right) => left.localeCompare(right, "zh-CN")),
+                },
+              },
+            };
+          });
+
+          return [...merged].sort((left, right) => left.localeCompare(right, "zh-CN"));
+        })();
+
+        const tracked = run.finally(() => {
+          inFlightMap.delete(cacheKey);
+        });
+        inFlightMap.set(cacheKey, tracked);
+        return tracked;
+      },
       recordExecution(connectionId, content, response) {
         const parsed = parseConsoleRequest(content);
         setState((current) => {
@@ -966,10 +1227,16 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         setState((current) => {
           const nextProfiles = current.sshProfiles.filter((item) => item.id !== profileId);
           nextProfiles.unshift(profile);
+          const affectedConnectionIds = new Set(
+            current.connections.filter((connection) => connection.sshProfileId === profileId).map((connection) => connection.id),
+          );
 
           return {
             ...current,
             sshProfiles: nextProfiles,
+            searchMetadata: Object.fromEntries(
+              Object.entries(current.searchMetadata).filter(([connectionId]) => !affectedConnectionIds.has(connectionId)),
+            ),
           };
         });
 
@@ -1010,10 +1277,13 @@ export function AppStateProvider({ children }: PropsWithChildren) {
             ...current.drafts,
             [connectionId]: current.drafts[connectionId] ?? createDefaultDraft(connectionId),
           };
+          const nextSearchMetadata = { ...current.searchMetadata };
+          delete nextSearchMetadata[connectionId];
 
           return normalizeState({
             ...current,
             connections: nextConnections,
+            searchMetadata: nextSearchMetadata,
             drafts: nextDrafts,
             currentConnectionId: connectionId,
           });
@@ -1085,6 +1355,12 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           normalizeState({
             ...current,
             sshProfiles: current.sshProfiles.filter((item) => item.id !== profileId),
+            searchMetadata: Object.fromEntries(
+              Object.entries(current.searchMetadata).filter(
+                ([connectionId]) =>
+                  current.connections.find((connection) => connection.id === connectionId)?.sshProfileId !== profileId,
+              ),
+            ),
             connections: current.connections.map((connection) =>
               connection.sshProfileId === profileId
                 ? {

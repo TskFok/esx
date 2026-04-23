@@ -6,7 +6,13 @@ import type {
   SshProfile,
 } from "../types/connections";
 import type { ErrorLogEntry, ErrorLogSettings } from "../types/logs";
-import type { ConsoleDraft, RequestModule, RequestProject, SavedRequest } from "../types/requests";
+import type {
+  ConnectionSearchMetadata,
+  ConsoleDraft,
+  RequestModule,
+  RequestProject,
+  SavedRequest,
+} from "../types/requests";
 
 type AppStorageState = {
   projects: ProjectProfile[];
@@ -16,6 +22,7 @@ type AppStorageState = {
   requestProjects: RequestProject[];
   requestModules: RequestModule[];
   requests: SavedRequest[];
+  searchMetadata: Record<string, ConnectionSearchMetadata>;
   drafts: Record<string, ConsoleDraft>;
   currentConnectionId: string | null;
   settings: ErrorLogSettings;
@@ -48,6 +55,7 @@ export function createEmptyStorage(): AppStorageState {
     requestProjects: [],
     requestModules: [],
     requests: [],
+    searchMetadata: {},
     drafts: {},
     currentConnectionId: null,
     settings: {
