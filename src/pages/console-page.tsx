@@ -577,20 +577,6 @@ export function ConsolePage() {
     setPendingDelete(null);
   }
 
-  useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if (event.isComposing || event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) {
-        return;
-      }
-
-      event.preventDefault();
-      handleRunAndSave();
-    };
-
-    window.addEventListener("keydown", handleShortcut, true);
-    return () => window.removeEventListener("keydown", handleShortcut, true);
-  }, [selectedConnection, activeRequest?.id, activeRequest?.name, activeDraftState.activeSavedRequestId, activeDraftState.content, activeDraftState.name, activeDraftState.targetModuleId, runMutation.isPending]);
-
   const responseSummary = response
     ? `${response.status || "FAILED"} ${response.statusText} · ${response.durationMs} ms · ${formatShanghaiDateTime(response.executedAt)}`
     : runMutation.isPending
@@ -893,6 +879,14 @@ export function ConsolePage() {
                     name: event.target.value,
                   }))
                 }
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  handleRunAndSave();
+                }}
                 placeholder="请求名称（为空时默认使用 METHOD /path，Command + Enter 运行并保存）"
               />
             </div>
@@ -924,6 +918,7 @@ export function ConsolePage() {
                 <div className="min-h-0 flex-1 p-4">
                   <ConsoleEditor
                     autocompleteContext={autocompleteContext}
+                    onRunShortcut={handleRunAndSave}
                     value={activeDraftState.content}
                     onChange={(value) =>
                       updateDraft(selectedConnection.id, (currentDraftState) => ({

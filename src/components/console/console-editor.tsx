@@ -186,6 +186,7 @@ type ConsoleEditorProps = {
   readOnly?: boolean;
   height?: string;
   autocompleteContext?: ConsoleAutocompleteContext;
+  onRunShortcut?: () => void;
 };
 
 export function ConsoleEditor({
@@ -194,8 +195,10 @@ export function ConsoleEditor({
   readOnly = false,
   height = "100%",
   autocompleteContext,
+  onRunShortcut,
 }: ConsoleEditorProps) {
   const modelRef = useRef<monacoEditor.editor.ITextModel | null>(null);
+  const runShortcutRef = useRef(onRunShortcut);
   const options = useMemo(
     () => ({
       automaticLayout: true,
@@ -235,6 +238,10 @@ export function ConsoleEditor({
   );
 
   useEffect(() => {
+    runShortcutRef.current = onRunShortcut;
+  }, [onRunShortcut]);
+
+  useEffect(() => {
     const model = modelRef.current;
     if (!model) {
       return;
@@ -268,6 +275,10 @@ export function ConsoleEditor({
         }
 
         if (!readOnly) {
+          editor.addCommand(monacoEditor.KeyMod.CtrlCmd | monacoEditor.KeyCode.Enter, () => {
+            runShortcutRef.current?.();
+          });
+
           editor.addAction({
             id: "es-console.delete-line",
             label: "删除当前行",
