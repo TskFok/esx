@@ -108,6 +108,7 @@ export function ConsolePage() {
   } = useAppState();
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
+  const [responseExpanded, setResponseExpanded] = useState(true);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [moduleDialogOpen, setModuleDialogOpen] = useState(false);
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
@@ -930,17 +931,41 @@ export function ConsolePage() {
                 </div>
               </Card>
 
-              <Card className="flex min-h-[360px] min-w-0 flex-col overflow-hidden border border-slate-200 bg-white">
-                <div className="border-b border-slate-100 px-5 py-4">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-bold text-slate-900">返回内容</p>
-                    {runMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> : null}
+              <Card
+                className={`flex min-w-0 flex-col overflow-hidden border border-slate-200 bg-white ${
+                  responseExpanded ? "min-h-[360px]" : "self-start"
+                }`}
+              >
+                <div className={`${responseExpanded ? "border-b" : ""} border-slate-100 px-5 py-4`}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-slate-900">返回内容</p>
+                        {runMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> : null}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">{responseSummary}</p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-controls="console-response-body"
+                      aria-expanded={responseExpanded}
+                      onClick={() => setResponseExpanded((current) => !current)}
+                    >
+                      {responseExpanded ? (
+                        <ChevronDown className="mr-2 h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="mr-2 h-4 w-4" />
+                      )}
+                      {responseExpanded ? "收起" : "展开"}
+                    </Button>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">{responseSummary}</p>
                 </div>
-                <div className="min-h-0 flex-1 p-4">
-                  <ConsoleEditor readOnly value={responseValue} onChange={() => {}} />
-                </div>
+                {responseExpanded ? (
+                  <div id="console-response-body" className="min-h-0 flex-1 p-4">
+                    <ConsoleEditor readOnly value={responseValue} onChange={() => {}} />
+                  </div>
+                ) : null}
               </Card>
             </div>
           </Card>
