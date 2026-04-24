@@ -21,8 +21,10 @@ export type ResponseSnapshot = {
   durationMs: number;
   sizeBytes: number;
   executedAt: string;
-  bodyText: string;
-  bodyPretty: string;
+  bodyPreview: string;
+  prettyPreview?: string;
+  truncated: boolean;
+  previewBytes: number;
   isJson: boolean;
   errorMessage?: string;
   diagnostics: string[];

@@ -13,6 +13,7 @@ import type {
   RequestProject,
   SavedRequest,
 } from "../types/requests";
+import { RESPONSE_PREVIEW_BYTES } from "./response-snapshot";
 
 type AppStorageState = {
   projects: ProjectProfile[];
@@ -60,6 +61,7 @@ export function createEmptyStorage(): AppStorageState {
     currentConnectionId: null,
     settings: {
       enabled: false,
+      responsePreviewBytes: RESPONSE_PREVIEW_BYTES,
     },
     errorLogs: [],
   };

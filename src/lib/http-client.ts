@@ -6,7 +6,8 @@ import {
   getResponseErrorMessage,
   isGenericFailureMessage,
 } from "./errors";
-import { ensureTrailingSlashless, serializeJson, toBase64 } from "./utils";
+import { buildResponseSnapshot } from "./response-snapshot";
+import { ensureTrailingSlashless, toBase64 } from "./utils";
 import { executeSshHttpRequest, type TauriHttpResponse } from "./tauri";
 import type { ConnectionProfile, SshTunnelConfig } from "../types/connections";
 import type { ParsedConsoleRequest } from "./console-parser";
@@ -22,6 +23,7 @@ type ConnectionProbe = {
 type ProbeAttempt = {
   probe: ConnectionProbe;
   snapshot: ResponseSnapshot;
+  bodyText: string;
 };
 
 type RequestCredentials = {
@@ -50,33 +52,18 @@ function buildSnapshot(
   result: TauriHttpResponse,
   durationMs: number,
   executedAt: string,
+  responsePreviewBytes?: number,
 ): ResponseSnapshot {
-  const sizeBytes = new TextEncoder().encode(result.bodyText).length;
-  let isJson = false;
-  let bodyPretty = result.bodyText;
-
-  if (result.bodyText.trim()) {
-    try {
-      bodyPretty = serializeJson(JSON.parse(result.bodyText));
-      isJson = true;
-    } catch {
-      bodyPretty = result.bodyText;
-    }
-  }
-
-  return {
+  return buildResponseSnapshot({
     ok: result.ok,
     status: result.status,
     statusText: result.statusText,
     durationMs,
-    sizeBytes,
     executedAt,
     bodyText: result.bodyText,
-    bodyPretty,
-    isJson,
     errorMessage: result.errorMessage,
     diagnostics: result.diagnostics ?? [],
-  };
+  }, responsePreviewBytes);
 }
 
 function parseJsonRecord(bodyText: string) {
@@ -137,13 +124,13 @@ function looksLikeHtml(bodyText: string) {
   return /<!doctype html|<html[\s>]/i.test(bodyText);
 }
 
-function extractServerMessage(snapshot: ResponseSnapshot) {
+function extractServerMessage(snapshot: ResponseSnapshot, bodyText = snapshot.bodyPreview) {
   const responseMessage = getResponseErrorMessage(snapshot, "");
   if (responseMessage && !isGenericFailureMessage(responseMessage)) {
     return responseMessage;
   }
 
-  const json = parseJsonRecord(snapshot.bodyText);
+  const json = parseJsonRecord(bodyText);
   if (json) {
     if (typeof json.message === "string") {
       return json.message;
@@ -164,7 +151,7 @@ function extractServerMessage(snapshot: ResponseSnapshot) {
     }
   }
 
-  const inline = snapshot.bodyText.replace(/\s+/g, " ").trim();
+  const inline = bodyText.replace(/\s+/g, " ").trim();
   if (inline && !isGenericFailureMessage(inline)) {
     return inline;
   }
@@ -184,7 +171,7 @@ function buildConnectionError(baseUrl: string, attempts: ProbeAttempt[]) {
     return "认证已通过，但当前账号没有访问 Elasticsearch 接口的权限。";
   }
 
-  if (attempts.some(({ snapshot }) => looksLikeHtml(snapshot.bodyText))) {
+  if (attempts.some(({ bodyText }) => looksLikeHtml(bodyText))) {
     return "当前地址返回的是网页页面，不是 Elasticsearch HTTP 接口。请填写 Elasticsearch 地址，例如 https://host:9200，而不是 Kibana 页面地址。";
   }
 
@@ -205,11 +192,11 @@ function buildConnectionError(baseUrl: string, attempts: ProbeAttempt[]) {
 
   const firstNetworkFailure = attempts.find(({ snapshot }) => snapshot.status === 0);
   if (firstNetworkFailure) {
-    return extractServerMessage(firstNetworkFailure.snapshot) ?? "无法连接到目标地址，请检查网络、地址和证书配置。";
+    return extractServerMessage(firstNetworkFailure.snapshot, firstNetworkFailure.bodyText) ?? "无法连接到目标地址，请检查网络、地址和证书配置。";
   }
 
   const firstDetailedMessage = attempts
-    .map(({ snapshot }) => extractServerMessage(snapshot))
+    .map(({ snapshot, bodyText }) => extractServerMessage(snapshot, bodyText))
     .find((message) => Boolean(message));
 
   if (firstDetailedMessage) {
@@ -220,7 +207,7 @@ function buildConnectionError(baseUrl: string, attempts: ProbeAttempt[]) {
 }
 
 function buildConnectionDiagnostics(attempts: ProbeAttempt[]) {
-  return attempts.flatMap(({ probe, snapshot }) => {
+  return attempts.flatMap(({ probe, snapshot, bodyText }) => {
     const lines = [`探测 ${probe.label} ${probe.path} -> ${snapshot.status || "FAILED"} ${snapshot.statusText}`];
     const summary = getResponseErrorMessage(snapshot, "");
     if (summary && !isGenericFailureMessage(summary)) {
@@ -229,8 +216,8 @@ function buildConnectionDiagnostics(attempts: ProbeAttempt[]) {
     if (snapshot.diagnostics.length > 0) {
       lines.push(...snapshot.diagnostics);
     }
-    if (snapshot.bodyText.trim() && snapshot.bodyText.trim() !== summary) {
-      lines.push(`响应正文：${snapshot.bodyText.trim()}`);
+    if (bodyText.trim() && bodyText.trim() !== summary) {
+      lines.push(`响应正文：${bodyText.trim()}`);
     }
     return lines;
   });
@@ -252,6 +239,7 @@ type SearchMetadataProbe = {
 type SearchMetadataAttempt = {
   probe: SearchMetadataProbe;
   snapshot: ResponseSnapshot;
+  bodyText: string;
 };
 
 function deduplicateSorted(items: string[]) {
@@ -406,11 +394,11 @@ function buildSearchMetadataError(attempts: SearchMetadataAttempt[]) {
 
   const firstNetworkFailure = attempts.find(({ snapshot }) => snapshot.status === 0);
   if (firstNetworkFailure) {
-    return extractServerMessage(firstNetworkFailure.snapshot) ?? "读取索引元数据失败，请检查网络、地址和证书配置。";
+    return extractServerMessage(firstNetworkFailure.snapshot, firstNetworkFailure.bodyText) ?? "读取索引元数据失败，请检查网络、地址和证书配置。";
   }
 
   const firstDetailedMessage = attempts
-    .map(({ snapshot }) => extractServerMessage(snapshot))
+    .map(({ snapshot, bodyText }) => extractServerMessage(snapshot, bodyText))
     .find((message) => Boolean(message));
 
   if (firstDetailedMessage) {
@@ -434,7 +422,7 @@ function buildSearchMetadataDiagnostics(attempts: SearchMetadataAttempt[]) {
   });
 }
 
-export async function executeConsoleRequest(
+async function executeConsoleRequestRaw(
   connection: ConnectionProfile,
   credentials: RequestCredentials,
   parsed: ParsedConsoleRequest,
@@ -457,7 +445,11 @@ export async function executeConsoleRequest(
         sshSecret: credentials.sshSecret ?? null,
       });
 
-      return buildSnapshot(response, Math.round(performance.now() - startedAt), executedAt);
+      return {
+        response,
+        durationMs: Math.round(performance.now() - startedAt),
+        executedAt,
+      };
     }
 
     const response = await tauriFetch(resolveRequestUrl(connection.baseUrl, parsed.path), {
@@ -478,20 +470,20 @@ export async function executeConsoleRequest(
     });
 
     const bodyText = await response.text();
-    return buildSnapshot(
-      {
+    return {
+      response: {
         ok: response.ok,
         status: response.status,
         statusText: response.statusText,
         bodyText,
       },
-      Math.round(performance.now() - startedAt),
+      durationMs: Math.round(performance.now() - startedAt),
       executedAt,
-    );
+    };
   } catch (error) {
     const message = extractUnknownErrorMessage(error, "请求失败");
-    return buildSnapshot(
-      {
+    return {
+      response: {
         ok: false,
         status: 0,
         statusText: "REQUEST_FAILED",
@@ -499,10 +491,21 @@ export async function executeConsoleRequest(
         errorMessage: message,
         diagnostics: extractUnknownErrorDiagnostics(error),
       },
-      Math.round(performance.now() - startedAt),
+      durationMs: Math.round(performance.now() - startedAt),
       executedAt,
-    );
+    };
   }
+}
+
+export async function executeConsoleRequest(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  parsed: ParsedConsoleRequest,
+  sshTunnelOverride?: SshTunnelConfig | null,
+  options?: { responsePreviewBytes?: number },
+) {
+  const result = await executeConsoleRequestRaw(connection, credentials, parsed, sshTunnelOverride);
+  return buildSnapshot(result.response, result.durationMs, result.executedAt, options?.responsePreviewBytes);
 }
 
 async function runSearchMetadataProbe(
@@ -511,7 +514,7 @@ async function runSearchMetadataProbe(
   probe: SearchMetadataProbe,
   sshTunnelOverride?: SshTunnelConfig | null,
 ) {
-  const snapshot = await executeConsoleRequest(
+  const result = await executeConsoleRequestRaw(
     connection,
     credentials,
     {
@@ -522,8 +525,9 @@ async function runSearchMetadataProbe(
     },
     sshTunnelOverride,
   );
+  const snapshot = buildSnapshot(result.response, result.durationMs, result.executedAt);
 
-  return { probe, snapshot } satisfies SearchMetadataAttempt;
+  return { probe, snapshot, bodyText: result.response.bodyText } satisfies SearchMetadataAttempt;
 }
 
 export async function fetchConnectionSearchMetadata(
@@ -561,7 +565,7 @@ export async function fetchConnectionSearchMetadata(
   attempts.push(resolveAttempt);
   if (resolveAttempt.snapshot.ok) {
     successfulProbeCount += 1;
-    const resolved = parseResolveIndexMetadata(resolveAttempt.snapshot.bodyText);
+    const resolved = parseResolveIndexMetadata(resolveAttempt.bodyText);
     resolved?.indices.forEach((item) => indices.add(item));
     resolved?.aliases.forEach((item) => aliases.add(item));
     mergeAliasTargets(resolved?.aliasToIndices);
@@ -580,7 +584,7 @@ export async function fetchConnectionSearchMetadata(
     attempts.push(aliasesAttempt);
     if (aliasesAttempt.snapshot.ok) {
       successfulProbeCount += 1;
-      const resolved = parseAliasesDocument(aliasesAttempt.snapshot.bodyText);
+      const resolved = parseAliasesDocument(aliasesAttempt.bodyText);
       resolved?.indices.forEach((item) => indices.add(item));
       resolved?.aliases.forEach((item) => aliases.add(item));
       mergeAliasTargets(resolved?.aliasToIndices);
@@ -600,7 +604,7 @@ export async function fetchConnectionSearchMetadata(
     attempts.push(indicesAttempt);
     if (indicesAttempt.snapshot.ok) {
       successfulProbeCount += 1;
-      parseCatColumn(indicesAttempt.snapshot.bodyText, "index")?.forEach((item) => indices.add(item));
+      parseCatColumn(indicesAttempt.bodyText, "index")?.forEach((item) => indices.add(item));
     }
   }
 
@@ -617,7 +621,7 @@ export async function fetchConnectionSearchMetadata(
     attempts.push(catAliasesAttempt);
     if (catAliasesAttempt.snapshot.ok) {
       successfulProbeCount += 1;
-      parseCatColumn(catAliasesAttempt.snapshot.bodyText, "alias")?.forEach((item) => aliases.add(item));
+      parseCatColumn(catAliasesAttempt.bodyText, "alias")?.forEach((item) => aliases.add(item));
     }
   }
 
@@ -633,7 +637,7 @@ export async function fetchConnectionSearchMetadata(
   attempts.push(mappingAttempt);
   if (mappingAttempt.snapshot.ok) {
     successfulProbeCount += 1;
-    const parsedMapping = parseMappingFields(mappingAttempt.snapshot.bodyText);
+    const parsedMapping = parseMappingFields(mappingAttempt.bodyText);
     parsedMapping.fields.forEach((item) => fields.add(item));
     Object.entries(parsedMapping.fieldsByIndex).forEach(([indexName, list]) => {
       if (list.length === 0) {
@@ -691,7 +695,7 @@ export async function fetchIndexMappingFields(
     );
   }
 
-  const parsed = parseMappingFields(attempt.snapshot.bodyText);
+  const parsed = parseMappingFields(attempt.bodyText);
   return {
     requestedName: trimmedName,
     fieldsByIndex: parsed.fieldsByIndex,
@@ -730,7 +734,7 @@ export async function testConnection(
     const attempt = await runConnectionProbe(connection, { password, sshSecret }, probe);
     attempts.push(attempt);
 
-    if (attempt.snapshot.ok && probe.matches(attempt.snapshot.bodyText)) {
+    if (attempt.snapshot.ok && probe.matches(attempt.bodyText)) {
       return attempt.snapshot;
     }
   }
@@ -751,12 +755,16 @@ async function runConnectionProbe(
   credentials: RequestCredentials,
   probe: ConnectionProbe,
 ) {
-  const snapshot = await executeConsoleRequest(connection, credentials, {
+  const result = await executeConsoleRequestRaw(connection, credentials, {
     method: "GET",
     path: probe.path,
     bodyText: "",
     bodyJson: null,
   });
 
-  return { probe, snapshot } satisfies ProbeAttempt;
+  return {
+    probe,
+    snapshot: buildSnapshot(result.response, result.durationMs, result.executedAt),
+    bodyText: result.response.bodyText,
+  } satisfies ProbeAttempt;
 }

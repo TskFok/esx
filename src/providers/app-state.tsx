@@ -16,6 +16,11 @@ import {
   readAppStorage,
   writeAppStorage,
 } from "../lib/storage";
+import {
+  createTextPreview,
+  normalizeResponsePreviewBytes,
+  normalizeResponseSnapshot,
+} from "../lib/response-snapshot";
 import { buildSshTunnelConfig, getSshSecretFromForm } from "../lib/connections";
 import type { ErrorLogConnectionContext, ErrorLogEntry, ErrorLogRequestContext } from "../types/logs";
 import {
@@ -70,9 +75,11 @@ type AppStateContextValue = {
   currentDraft: ConsoleDraft | null;
   requestsForCurrentConnection: SavedRequest[];
   errorLoggingEnabled: boolean;
+  responsePreviewBytes: number;
   errorLogs: ErrorLogEntry[];
   setCurrentConnection: (connectionId: string) => void;
   setErrorLoggingEnabled: (enabled: boolean) => void;
+  setResponsePreviewBytes: (bytes: number) => void;
   clearErrorLogs: () => void;
   recordErrorLog: (payload: {
     scope: ErrorLogEntry["scope"];
@@ -172,6 +179,14 @@ function normalizeStoredConnection(connection: ConnectionProfile) {
     sshProfileId: connection.sshProfileId ?? (connection.sshTunnel ? connection.id : null),
     sshTunnel: connection.sshTunnel ?? null,
   } satisfies ConnectionProfile;
+}
+
+function normalizeStoredErrorLog(log: ErrorLogEntry, responsePreviewBytes: number) {
+  return {
+    ...log,
+    diagnostics: (log.diagnostics ?? []).map((item) => createTextPreview(item, responsePreviewBytes).text),
+    rawResponse: log.rawResponse ? createTextPreview(log.rawResponse, responsePreviewBytes).text : undefined,
+  } satisfies ErrorLogEntry;
 }
 
 function normalizeStringRecordOfLists(
@@ -375,6 +390,7 @@ function removeConnectionsFromState(current: AppStateShape, connectionIds: Set<s
 }
 
 function normalizeState(state: AppStateShape): AppStateShape {
+  const responsePreviewBytes = normalizeResponsePreviewBytes(state.settings?.responsePreviewBytes);
   const timestamp =
     state.connections[0]?.createdAt ??
     state.modules?.[0]?.createdAt ??
@@ -442,12 +458,20 @@ function normalizeState(state: AppStateShape): AppStateShape {
   const nextRequests = (state.requests ?? [])
     .filter((request) => connectionIds.has(request.connectionId))
     .map((request) => {
+      const lastResponse = normalizeResponseSnapshot(request.lastResponse, responsePreviewBytes);
+      const normalizedRequest = {
+        ...request,
+        lastResponse,
+        lastStatus: lastResponse?.status ?? request.lastStatus ?? null,
+        lastDurationMs: lastResponse?.durationMs ?? request.lastDurationMs ?? null,
+      } satisfies SavedRequest;
+
       if (request.moduleId && requestModuleIds.has(request.moduleId)) {
-        return request;
+        return normalizedRequest;
       }
 
       return {
-        ...request,
+        ...normalizedRequest,
         moduleId: ensureDefaultRequestModule(request.connectionId),
       } satisfies SavedRequest;
     });
@@ -477,6 +501,7 @@ function normalizeState(state: AppStateShape): AppStateShape {
           ...currentDraftState,
           targetModuleId,
           activeSavedRequestId: activeRequest?.id ?? null,
+          response: activeRequest?.lastResponse ?? normalizeResponseSnapshot(currentDraftState.response, responsePreviewBytes),
         }
       : createDefaultDraft(connection.id, targetModuleId);
   });
@@ -497,8 +522,11 @@ function normalizeState(state: AppStateShape): AppStateShape {
         : normalizedConnections[0]?.id ?? null,
     settings: {
       enabled: state.settings?.enabled ?? false,
+      responsePreviewBytes,
     },
-    errorLogs: [...(state.errorLogs ?? [])].sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+    errorLogs: [...(state.errorLogs ?? [])]
+      .map((log) => normalizeStoredErrorLog(log, responsePreviewBytes))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
   };
 }
 
@@ -595,6 +623,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         : [],
     [currentConnection, state.requests],
   );
+  const responsePreviewBytes = normalizeResponsePreviewBytes(state.settings.responsePreviewBytes);
 
   const value = useMemo<AppStateContextValue>(
     () => ({
@@ -610,6 +639,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       currentDraft,
       requestsForCurrentConnection,
       errorLoggingEnabled: state.settings.enabled,
+      responsePreviewBytes,
       errorLogs: state.errorLogs,
       setCurrentConnection(connectionId) {
         setState((current) =>
@@ -631,6 +661,17 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           },
         }));
       },
+      setResponsePreviewBytes(bytes) {
+        setState((current) =>
+          normalizeState({
+            ...current,
+            settings: {
+              ...current.settings,
+              responsePreviewBytes: normalizeResponsePreviewBytes(bytes),
+            },
+          }),
+        );
+      },
       clearErrorLogs() {
         setState((current) => ({
           ...current,
@@ -649,9 +690,9 @@ export function AppStateProvider({ children }: PropsWithChildren) {
             scope: payload.scope,
             title: payload.title,
             summary: payload.summary,
-            diagnostics: payload.diagnostics ?? [],
+            diagnostics: (payload.diagnostics ?? []).map((item) => createTextPreview(item, current.settings.responsePreviewBytes).text),
             status: payload.status ?? null,
-            rawResponse: payload.rawResponse,
+            rawResponse: payload.rawResponse ? createTextPreview(payload.rawResponse, current.settings.responsePreviewBytes).text : undefined,
             connection: payload.connection,
             request: payload.request,
           } satisfies ErrorLogEntry;

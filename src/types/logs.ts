@@ -34,4 +34,5 @@ export type ErrorLogEntry = {
 
 export type ErrorLogSettings = {
   enabled: boolean;
+  responsePreviewBytes: number;
 };

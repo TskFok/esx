@@ -131,7 +131,7 @@ export function getResponseErrorMessage(snapshot: ResponseSnapshot, fallback = "
   const candidates = [
     snapshot.errorMessage?.trim(),
     ...[...snapshot.diagnostics].reverse().map((item) => item.trim()),
-    snapshot.bodyText.trim(),
+    snapshot.bodyPreview.trim(),
     snapshot.statusText.trim(),
   ].filter((item): item is string => Boolean(item));
 

@@ -13,10 +13,11 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ConsoleEditor } from "../components/console/console-editor";
+import { ResponseViewer } from "../components/console/response-viewer";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Dialog } from "../components/ui/dialog";
@@ -27,7 +28,10 @@ import { buildConnectionLogContextFromProfile, buildRequestLogContext } from "..
 import { extractUnknownErrorDiagnostics, extractUnknownErrorMessage, getResponseErrorMessage } from "../lib/errors";
 import { executeConsoleRequest } from "../lib/http-client";
 import { formatConsoleRequest, parseConsoleRequest } from "../lib/console-parser";
+import { MIN_RESPONSE_PREVIEW_BYTES } from "../lib/response-snapshot";
+import { getSearchSizeWarning } from "../lib/search-size-warning";
 import { formatShanghaiDateTime } from "../lib/time";
+import { formatBytes } from "../lib/utils";
 import { useAppState } from "../providers/app-state";
 import type { ConnectionProfile } from "../types/connections";
 import type { RequestModule, RequestProject, SavedRequest } from "../types/requests";
@@ -39,6 +43,8 @@ type RunPayload = {
   moduleId: string;
   requestName: string;
 };
+
+const DRAFT_SAVE_DEBOUNCE_MS = 600;
 
 function resolveDraftRequestName(preferredName: string, fallbackName: string | null | undefined, content: string) {
   const manualName = preferredName.trim() || fallbackName?.trim();
@@ -89,7 +95,9 @@ export function ConsolePage() {
     requestModules,
     requestsForCurrentConnection,
     searchMetadataByConnection,
+    responsePreviewBytes,
     updateDraft,
+    setResponsePreviewBytes,
     selectSavedRequest,
     saveRequestFromDraft,
     renameRequest,
@@ -125,6 +133,7 @@ export function ConsolePage() {
   const [projectName, setProjectName] = useState("");
   const [moduleName, setModuleName] = useState("");
   const [requestName, setRequestName] = useState("");
+  const [responsePreviewInputKb, setResponsePreviewInputKb] = useState("");
 
   const runMutation = useMutation({
     mutationFn: async (payload: RunPayload) => {
@@ -136,7 +145,9 @@ export function ConsolePage() {
       }
 
       const request = parseConsoleRequest(payload.content);
-      return executeConsoleRequest(payload.connection, { password, sshSecret }, request, sshProfile?.tunnel ?? null);
+      return executeConsoleRequest(payload.connection, { password, sshSecret }, request, sshProfile?.tunnel ?? null, {
+        responsePreviewBytes,
+      });
     },
     onSuccess(response, payload) {
       let saveErrorMessage: string | null = null;
@@ -162,7 +173,7 @@ export function ConsolePage() {
           summary: message,
           diagnostics: response.diagnostics,
           status: response.status,
-          rawResponse: response.bodyText,
+          rawResponse: response.bodyPreview,
           connection: buildConnectionLogContextFromProfile(payload.connection, getSshProfileForConnection(payload.connection)),
           request: buildRequestLogContext(payload.content),
         });
@@ -232,6 +243,10 @@ export function ConsolePage() {
   const firstModuleId = requestTree.flatMap((project) => project.modules).find((module) => Boolean(module))?.id ?? null;
 
   useEffect(() => {
+    setResponsePreviewInputKb(String(Math.round(responsePreviewBytes / 1024)));
+  }, [responsePreviewBytes]);
+
+  useEffect(() => {
     setExpandedProjects((current) => {
       const next = Object.fromEntries(requestTree.map((project) => [project.id, current[project.id] ?? true]));
       return JSON.stringify(next) === JSON.stringify(current) ? current : next;
@@ -262,11 +277,89 @@ export function ConsolePage() {
 
   const selectedConnection = activeConnection;
   const activeDraftState = draft;
+  const draftKey = `${selectedConnection.id}:${activeDraftState.activeSavedRequestId ?? "__draft__"}`;
+  const [editorContent, setEditorContent] = useState(activeDraftState.content);
+  const editorContentRef = useRef(activeDraftState.content);
+  const latestDraftContentRef = useRef(activeDraftState.content);
+  const lastFlushedContentRef = useRef(activeDraftState.content);
+  const lastDraftKeyRef = useRef(draftKey);
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const metadataAutoRefreshRef = useRef<Record<string, string>>({});
   const connectionSearchMetadata = searchMetadataByConnection[selectedConnection.id] ?? null;
+
+  const clearDraftSaveTimer = useCallback(() => {
+    if (!draftSaveTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = null;
+  }, []);
+
+  const flushEditorContent = useCallback(() => {
+    clearDraftSaveTimer();
+    const nextContent = editorContentRef.current;
+    if (nextContent === latestDraftContentRef.current) {
+      return;
+    }
+
+    lastFlushedContentRef.current = nextContent;
+    latestDraftContentRef.current = nextContent;
+    updateDraft(selectedConnection.id, (currentDraftState) => ({
+      ...currentDraftState,
+      content: nextContent,
+    }));
+  }, [clearDraftSaveTimer, selectedConnection.id, updateDraft]);
+
+  const updateEditorContent = useCallback(
+    (value: string) => {
+      editorContentRef.current = value;
+      setEditorContent(value);
+      clearDraftSaveTimer();
+      draftSaveTimerRef.current = setTimeout(() => {
+        flushEditorContent();
+      }, DRAFT_SAVE_DEBOUNCE_MS);
+    },
+    [clearDraftSaveTimer, flushEditorContent],
+  );
+  const flushEditorContentRef = useRef(flushEditorContent);
+
+  useEffect(() => {
+    flushEditorContentRef.current = flushEditorContent;
+  }, [flushEditorContent]);
+
+  useEffect(() => {
+    latestDraftContentRef.current = activeDraftState.content;
+  }, [activeDraftState.content]);
+
+  useEffect(() => {
+    if (lastDraftKeyRef.current !== draftKey) {
+      clearDraftSaveTimer();
+      lastDraftKeyRef.current = draftKey;
+      lastFlushedContentRef.current = activeDraftState.content;
+      latestDraftContentRef.current = activeDraftState.content;
+      editorContentRef.current = activeDraftState.content;
+      setEditorContent(activeDraftState.content);
+      return;
+    }
+
+    if (
+      activeDraftState.content !== lastFlushedContentRef.current &&
+      activeDraftState.content !== editorContentRef.current
+    ) {
+      clearDraftSaveTimer();
+      lastFlushedContentRef.current = activeDraftState.content;
+      latestDraftContentRef.current = activeDraftState.content;
+      editorContentRef.current = activeDraftState.content;
+      setEditorContent(activeDraftState.content);
+    }
+  }, [activeDraftState.content, clearDraftSaveTimer, draftKey]);
+
+  useEffect(() => () => flushEditorContentRef.current(), []);
+
   const autocompleteContext = useMemo(
-    () => buildConsoleAutocompleteContext(requestsForCurrentConnection, activeDraftState.content, connectionSearchMetadata),
-    [requestsForCurrentConnection, activeDraftState.content, connectionSearchMetadata],
+    () => buildConsoleAutocompleteContext(requestsForCurrentConnection, editorContent, connectionSearchMetadata),
+    [requestsForCurrentConnection, editorContent, connectionSearchMetadata],
   );
   const metadataRefreshMutation = useMutation({
     mutationFn: async (payload: { force: boolean }) => refreshSearchMetadata(selectedConnection, payload),
@@ -306,13 +399,13 @@ export function ConsolePage() {
   }, [connectionSearchMetadata?.fetchedAt, selectedConnection.id]);
 
   const currentPathIndexNamesKey = useMemo(() => {
-    const firstLine = activeDraftState.content.split(/\r?\n/, 1)[0]?.trim() ?? "";
+    const firstLine = editorContent.split(/\r?\n/, 1)[0]?.trim() ?? "";
     if (!firstLine) {
       return "";
     }
     const [, ...pathParts] = firstLine.split(/\s+/);
     return extractIndexNamesFromPath(pathParts.join(" ").trim()).join(",");
-  }, [activeDraftState.content]);
+  }, [editorContent]);
   const currentPathIndexNames = useMemo(
     () => (currentPathIndexNamesKey ? currentPathIndexNamesKey.split(",") : []),
     [currentPathIndexNamesKey],
@@ -373,16 +466,19 @@ export function ConsolePage() {
         : "首次进入时会自动拉取索引 / alias 元数据。";
 
   function handleFormatJson() {
-    if (!activeDraftState.content.trim()) {
+    const content = editorContentRef.current;
+    if (!content.trim()) {
       return;
     }
 
     try {
-      const formatted = formatConsoleRequest(activeDraftState.content);
-      updateDraft(selectedConnection.id, (currentDraftState) => ({
-        ...currentDraftState,
-        content: formatted,
-      }));
+      const formatted = formatConsoleRequest(content);
+      editorContentRef.current = formatted;
+      setEditorContent(formatted);
+      lastFlushedContentRef.current = formatted;
+      latestDraftContentRef.current = formatted;
+      clearDraftSaveTimer();
+      updateDraft(selectedConnection.id, (currentDraftState) => ({ ...currentDraftState, content: formatted }));
       toast.success("请求已格式化。");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "格式化失败");
@@ -400,12 +496,19 @@ export function ConsolePage() {
       return;
     }
 
+    const content = editorContentRef.current;
+    flushEditorContent();
+    const searchSizeWarning = getSearchSizeWarning(content);
+    if (searchSizeWarning) {
+      toast.warning(searchSizeWarning.message);
+    }
+
     runMutation.mutate({
       connection: selectedConnection,
-      content: activeDraftState.content,
+      content,
       moduleId,
       overwriteRequestId: activeDraftState.activeSavedRequestId,
-      requestName: resolveDraftRequestName(activeDraftState.name, activeRequest?.name, activeDraftState.content),
+      requestName: resolveDraftRequestName(activeDraftState.name, activeRequest?.name, content),
     });
   }
 
@@ -448,6 +551,7 @@ export function ConsolePage() {
       return;
     }
 
+    flushEditorContent();
     const request = saveRequestFromDraft({
       connectionId: selectedConnection.id,
       moduleId,
@@ -462,8 +566,14 @@ export function ConsolePage() {
     toast.success("已在当前模块下新建请求。");
   }
 
+  function handleSelectSavedRequest(requestId: string) {
+    flushEditorContent();
+    selectSavedRequest(requestId);
+  }
+
   function handleDuplicateRequest(requestId: string, requestNameValue: string) {
     try {
+      flushEditorContent();
       const duplicated = duplicateRequest(
         requestId,
         buildDuplicateRequestName(
@@ -578,19 +688,28 @@ export function ConsolePage() {
     setPendingDelete(null);
   }
 
+  const minResponsePreviewKb = Math.round(MIN_RESPONSE_PREVIEW_BYTES / 1024);
+
+  function commitResponsePreviewInput() {
+    const nextKilobytes = Number(responsePreviewInputKb);
+    if (!Number.isFinite(nextKilobytes)) {
+      setResponsePreviewInputKb(String(Math.round(responsePreviewBytes / 1024)));
+      return;
+    }
+
+    const nextBytes = Math.round(nextKilobytes * 1024);
+    setResponsePreviewBytes(nextBytes);
+  }
+
   const responseSummary = response
-    ? `${response.status || "FAILED"} ${response.statusText} · ${response.durationMs} ms · ${formatShanghaiDateTime(response.executedAt)}`
+    ? `${response.status || "FAILED"} ${response.statusText} · ${response.durationMs} ms · ${formatShanghaiDateTime(response.executedAt)} · 预览上限 ${formatBytes(responsePreviewBytes)}`
     : runMutation.isPending
       ? "请求执行中..."
       : "按 Command + Enter 运行并保存后，这里会显示返回内容。";
 
-  const responseValue = response
-    ? response.isJson
-      ? response.bodyPretty
-      : response.bodyText
-    : runMutation.isPending
-      ? '{\n  "message": "请求执行中..."\n}'
-      : '{\n  "message": "按 Command + Enter 运行并保存后，这里会显示返回内容。"\n}';
+  const responseFallbackValue = runMutation.isPending
+    ? '{\n  "message": "请求执行中..."\n}'
+    : '{\n  "message": "按 Command + Enter 运行并保存后，这里会显示返回内容。"\n}';
 
   return (
     <div className="h-dvh overflow-hidden p-4 sm:p-6" onContextMenu={(event) => event.preventDefault()}>
@@ -794,11 +913,11 @@ export function ConsolePage() {
                                             ? "border-white/30 bg-white text-slate-950"
                                             : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
                                         }`}
-                                        onClick={() => selectSavedRequest(request.id)}
+                                        onClick={() => handleSelectSavedRequest(request.id)}
                                         onKeyDown={(event) => {
                                           if (event.key === "Enter" || event.key === " ") {
                                             event.preventDefault();
-                                            selectSavedRequest(request.id);
+                                            handleSelectSavedRequest(request.id);
                                           }
                                         }}
                                       >
@@ -920,13 +1039,8 @@ export function ConsolePage() {
                   <ConsoleEditor
                     autocompleteContext={autocompleteContext}
                     onRunShortcut={handleRunAndSave}
-                    value={activeDraftState.content}
-                    onChange={(value) =>
-                      updateDraft(selectedConnection.id, (currentDraftState) => ({
-                        ...currentDraftState,
-                        content: value,
-                      }))
-                    }
+                    value={editorContent}
+                    onChange={updateEditorContent}
                   />
                 </div>
               </Card>
@@ -945,25 +1059,49 @@ export function ConsolePage() {
                       </div>
                       <p className="mt-1 text-xs text-slate-500">{responseSummary}</p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-controls="console-response-body"
-                      aria-expanded={responseExpanded}
-                      onClick={() => setResponseExpanded((current) => !current)}
-                    >
-                      {responseExpanded ? (
-                        <ChevronDown className="mr-2 h-4 w-4" />
-                      ) : (
-                        <ChevronRight className="mr-2 h-4 w-4" />
-                      )}
-                      {responseExpanded ? "收起" : "展开"}
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        预览 KB
+                        <Input
+                          className="h-9 w-24 rounded-xl px-3 py-2 text-xs"
+                          inputMode="numeric"
+                          min={minResponsePreviewKb}
+                          step={64}
+                          type="number"
+                          value={responsePreviewInputKb}
+                          onBlur={commitResponsePreviewInput}
+                          onChange={(event) => setResponsePreviewInputKb(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.nativeEvent.isComposing || event.key !== "Enter") {
+                              return;
+                            }
+
+                            event.preventDefault();
+                            commitResponsePreviewInput();
+                            event.currentTarget.blur();
+                          }}
+                        />
+                      </label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-controls="console-response-body"
+                        aria-expanded={responseExpanded}
+                        onClick={() => setResponseExpanded((current) => !current)}
+                      >
+                        {responseExpanded ? (
+                          <ChevronDown className="mr-2 h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="mr-2 h-4 w-4" />
+                        )}
+                        {responseExpanded ? "收起" : "展开"}
+                      </Button>
+                    </div>
                   </div>
                 </div>
                 {responseExpanded ? (
                   <div id="console-response-body" className="min-h-0 flex-1 p-4">
-                    <ConsoleEditor readOnly value={responseValue} onChange={() => {}} />
+                    <ResponseViewer response={response} fallbackValue={responseFallbackValue} />
                   </div>
                 ) : null}
               </Card>
