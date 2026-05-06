@@ -1,6 +1,6 @@
 import type { SshAuthMethod } from "./connections";
 
-export type ErrorLogScope = "connection-save" | "connection-test" | "request-execution";
+export type ErrorLogScope = "connection-save" | "connection-test" | "request-execution" | "status-read";
 
 export type ErrorLogConnectionContext = {
   name?: string;

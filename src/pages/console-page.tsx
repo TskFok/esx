@@ -11,6 +11,7 @@ import {
   Folder,
   Loader2,
   Pencil,
+  Server,
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -722,6 +723,10 @@ export function ConsolePage() {
             </div>
             <Button variant="secondary" size="sm" onClick={() => navigate("/connections")}>
               连接页
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/status")}>
+              <Server className="mr-2 h-4 w-4" />
+              状态
             </Button>
             <Button variant="ghost" size="sm" onClick={() => navigate("/logs")}>
               错误日志

@@ -10,6 +10,7 @@ const scopeLabelMap = {
   "connection-save": "连接保存",
   "connection-test": "连接测试",
   "request-execution": "请求执行",
+  "status-read": "状态读取",
 } as const;
 
 export function ErrorLogsPage() {

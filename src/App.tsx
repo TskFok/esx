@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 import { ConnectionsPage } from "./pages/connections-page";
 import { ConsolePage } from "./pages/console-page";
 import { ErrorLogsPage } from "./pages/error-logs-page";
+import { StatusPage } from "./pages/status-page";
 import { useAppState } from "./providers/app-state";
 
 function RootRedirect() {
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/" element={<RootRedirect />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/console" element={<ConsolePage />} />
+          <Route path="/status" element={<StatusPage />} />
           <Route path="/logs" element={<ErrorLogsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

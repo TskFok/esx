@@ -7,6 +7,7 @@ import {
   isGenericFailureMessage,
 } from "./errors";
 import { buildResponseSnapshot } from "./response-snapshot";
+import { buildServerStatus } from "./status";
 import { ensureTrailingSlashless, toBase64 } from "./utils";
 import { executeSshHttpRequest, type TauriHttpResponse } from "./tauri";
 import type { ConnectionProfile, SshTunnelConfig } from "../types/connections";
@@ -242,6 +243,17 @@ type SearchMetadataAttempt = {
   bodyText: string;
 };
 
+type ServerStatusProbe = {
+  path: string;
+  label: string;
+};
+
+type ServerStatusAttempt = {
+  probe: ServerStatusProbe;
+  snapshot: ResponseSnapshot;
+  bodyText: string;
+};
+
 function deduplicateSorted(items: string[]) {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))].sort((left, right) =>
     left.localeCompare(right, "zh-CN"),
@@ -422,6 +434,47 @@ function buildSearchMetadataDiagnostics(attempts: SearchMetadataAttempt[]) {
   });
 }
 
+function buildServerStatusError(attempts: ServerStatusAttempt[]) {
+  const firstForbidden = attempts.find(({ snapshot }) => snapshot.status === 403);
+  if (firstForbidden) {
+    return "当前账号没有读取集群状态或索引状态的权限。";
+  }
+
+  const firstUnauthorized = attempts.find(({ snapshot }) => snapshot.status === 401);
+  if (firstUnauthorized) {
+    return "读取服务器状态失败，当前连接认证已失效。";
+  }
+
+  const firstNetworkFailure = attempts.find(({ snapshot }) => snapshot.status === 0);
+  if (firstNetworkFailure) {
+    return extractServerMessage(firstNetworkFailure.snapshot, firstNetworkFailure.bodyText) ?? "读取服务器状态失败，请检查网络、地址和证书配置。";
+  }
+
+  const firstDetailedMessage = attempts
+    .map(({ snapshot, bodyText }) => extractServerMessage(snapshot, bodyText))
+    .find((message) => Boolean(message));
+
+  if (firstDetailedMessage) {
+    return `读取服务器状态失败：${firstDetailedMessage}`;
+  }
+
+  return "无法读取当前连接的服务器状态。";
+}
+
+function buildServerStatusDiagnostics(attempts: ServerStatusAttempt[]) {
+  return attempts.flatMap(({ probe, snapshot }) => {
+    const lines = [`探测 ${probe.label} ${probe.path} -> ${snapshot.status || "FAILED"} ${snapshot.statusText}`];
+    const summary = getResponseErrorMessage(snapshot, "");
+    if (summary && !isGenericFailureMessage(summary)) {
+      lines.push(`错误摘要：${summary}`);
+    }
+    if (snapshot.diagnostics.length > 0) {
+      lines.push(...snapshot.diagnostics);
+    }
+    return lines;
+  });
+}
+
 async function executeConsoleRequestRaw(
   connection: ConnectionProfile,
   credentials: RequestCredentials,
@@ -508,6 +561,62 @@ export async function executeConsoleRequest(
   return buildSnapshot(result.response, result.durationMs, result.executedAt, options?.responsePreviewBytes);
 }
 
+export async function fetchServerStatus(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  sshTunnelOverride?: SshTunnelConfig | null,
+) {
+  const clusterAttempt = await runServerStatusProbe(
+    connection,
+    credentials,
+    {
+      path: "/_cluster/health",
+      label: "集群健康",
+    },
+    sshTunnelOverride,
+  );
+  if (!clusterAttempt.snapshot.ok) {
+    throw new DetailedError(
+      buildServerStatusError([clusterAttempt]),
+      buildServerStatusDiagnostics([clusterAttempt]),
+    );
+  }
+
+  const indicesAttempt = await runServerStatusProbe(
+    connection,
+    credentials,
+    {
+      path: "/_cat/indices?format=json&bytes=b&expand_wildcards=all&h=health,status,index,pri,rep,docs.count,docs.deleted,store.size,pri.store.size",
+      label: "索引状态",
+    },
+    sshTunnelOverride,
+  );
+  if (!indicesAttempt.snapshot.ok) {
+    throw new DetailedError(
+      buildServerStatusError([clusterAttempt, indicesAttempt]),
+      buildServerStatusDiagnostics([clusterAttempt, indicesAttempt]),
+    );
+  }
+
+  const shardsAttempt = await runServerStatusProbe(
+    connection,
+    credentials,
+    {
+      path: "/_cat/shards?format=json&bytes=b&h=index,shard,prirep,state,unassigned.reason",
+      label: "分片状态",
+    },
+    sshTunnelOverride,
+  );
+
+  return buildServerStatus({
+    clusterHealthText: clusterAttempt.bodyText,
+    indicesText: indicesAttempt.bodyText,
+    shardsText: shardsAttempt.snapshot.ok ? shardsAttempt.bodyText : null,
+    shardDiagnostics: shardsAttempt.snapshot.ok ? [] : buildServerStatusDiagnostics([shardsAttempt]),
+    fetchedAt: new Date().toISOString(),
+  });
+}
+
 async function runSearchMetadataProbe(
   connection: ConnectionProfile,
   credentials: RequestCredentials,
@@ -528,6 +637,28 @@ async function runSearchMetadataProbe(
   const snapshot = buildSnapshot(result.response, result.durationMs, result.executedAt);
 
   return { probe, snapshot, bodyText: result.response.bodyText } satisfies SearchMetadataAttempt;
+}
+
+async function runServerStatusProbe(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  probe: ServerStatusProbe,
+  sshTunnelOverride?: SshTunnelConfig | null,
+) {
+  const result = await executeConsoleRequestRaw(
+    connection,
+    credentials,
+    {
+      method: "GET",
+      path: probe.path,
+      bodyText: "",
+      bodyJson: null,
+    },
+    sshTunnelOverride,
+  );
+  const snapshot = buildSnapshot(result.response, result.durationMs, result.executedAt);
+
+  return { probe, snapshot, bodyText: result.response.bodyText } satisfies ServerStatusAttempt;
 }
 
 export async function fetchConnectionSearchMetadata(
