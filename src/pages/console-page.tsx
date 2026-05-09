@@ -714,193 +714,225 @@ export function ConsolePage() {
 
   return (
     <div className="h-dvh overflow-hidden p-4 sm:p-6" onContextMenu={(event) => event.preventDefault()}>
-      <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-[30px] bg-slate-950 px-5 py-6 text-slate-50 shadow-2xl shadow-slate-900/25">
-          <div className="mb-8 flex items-center justify-between gap-3">
+      <div className="grid h-full min-h-0 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-slate-950 px-3 py-3 text-slate-50 shadow-xl shadow-slate-900/25">
+          <div className="mb-3 flex flex-col gap-2">
             <div>
-              <p className="text-xs uppercase tracking-[0.32em] text-slate-400">ESX Console</p>
-              <h1 className="mt-2 text-2xl font-extrabold">连接与请求</h1>
+              <p className="text-[10px] uppercase tracking-[0.28em] text-slate-400">ESX Console</p>
+              <h1 className="mt-0.5 text-lg font-bold leading-tight">连接与请求</h1>
             </div>
-            <Button variant="secondary" size="sm" onClick={() => navigate("/connections")}>
-              连接页
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/status")}>
-              <Server className="mr-2 h-4 w-4" />
-              状态
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/logs")}>
-              错误日志
-            </Button>
+            <div className="flex flex-wrap gap-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-8 rounded-lg px-2.5 text-xs"
+                onClick={() => navigate("/connections")}
+              >
+                连接页
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+                onClick={() => navigate("/status")}
+              >
+                <Server className="mr-1 h-3.5 w-3.5" />
+                状态
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+                onClick={() => navigate("/logs")}
+              >
+                错误日志
+              </Button>
+            </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            <div className="rounded-[26px] border border-white/10 bg-white/5 p-4">
-              <p className="text-sm font-semibold text-emerald-300">当前连接</p>
-              <p className="mt-3 text-lg font-bold text-white">{selectedConnection.name}</p>
+          <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-2.5">
+              <p className="text-xs font-semibold text-emerald-300">当前连接</p>
+              <p className="mt-1 text-sm font-bold leading-snug text-white">{selectedConnection.name}</p>
             </div>
 
-            <div className="mt-6 flex items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-slate-300">当前连接下的项目树</p>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-slate-300">当前连接下的项目树</p>
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={handleExpandAll}>
-                <ChevronsDown className="mr-2 h-4 w-4" />
+            <div className="mt-2 flex flex-wrap gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg px-2 text-xs"
+                onClick={handleExpandAll}
+              >
+                <ChevronsDown className="mr-1 h-3.5 w-3.5" />
                 展开
               </Button>
-              <Button variant="outline" size="sm" onClick={handleCollapseAll}>
-                <ChevronsUp className="mr-2 h-4 w-4" />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg px-2 text-xs"
+                onClick={handleCollapseAll}
+              >
+                <ChevronsUp className="mr-1 h-3.5 w-3.5" />
                 折叠
               </Button>
-              <Button variant="ghost" size="sm" onClick={openCreateProjectDialog}>
-                <CirclePlus className="mr-2 h-4 w-4" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+                onClick={openCreateProjectDialog}
+              >
+                <CirclePlus className="mr-1 h-3.5 w-3.5" />
                 项目
               </Button>
             </div>
 
-            <div className="mt-3 rounded-[22px] border border-white/10 bg-white/5 p-4 text-sm leading-7 text-slate-300">
+            <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2 text-xs leading-5 text-slate-300">
               {selectedProject && selectedModule
                 ? `当前目标：${selectedProject.name} / ${selectedModule.name}`
                 : "请先在当前连接下新建项目和模块，然后点击模块名称。"}
             </div>
 
-            <div className="mt-4">
+            <div className="mt-2">
               {requestTree.length === 0 ? (
-                <div className="rounded-[22px] border border-white/10 bg-white/5 p-4 text-sm leading-7 text-slate-400">
+                <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-xs leading-5 text-slate-400">
                   当前连接还没有项目。先新建项目，再新建模块和请求。
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-2">
                   {requestTree.map((project) => (
-                    <div key={project.id} className="rounded-[22px] border border-white/10 bg-white/5 p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div className="flex min-w-0 flex-1 items-start gap-2">
+                    <div key={project.id} className="rounded-xl border border-white/10 bg-white/5 p-2.5">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex min-w-0 flex-1 items-start gap-1.5">
                           <button
-                            className="mt-1 rounded-lg p-1 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                            className="mt-0.5 rounded-md p-0.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
                             onClick={() =>
                               setExpandedProjects((current) => ({ ...current, [project.id]: !current[project.id] }))
                             }
                           >
                             {expandedProjects[project.id] ? (
-                              <ChevronDown className="h-4 w-4" />
+                              <ChevronDown className="h-3.5 w-3.5" />
                             ) : (
-                              <ChevronRight className="h-4 w-4" />
+                              <ChevronRight className="h-3.5 w-3.5" />
                             )}
                           </button>
                           <button
-                            className="flex min-w-0 flex-1 items-start gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-white/10"
+                            className="flex min-w-0 flex-1 items-start gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition hover:bg-white/10"
                             onClick={() =>
                               setExpandedProjects((current) => ({ ...current, [project.id]: !current[project.id] }))
                             }
                           >
-                            <Folder className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                            <Folder className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300" />
                             <span className="min-w-0 flex-1">
-                              <span className="block whitespace-normal break-words text-sm font-bold leading-5 text-white">
+                              <span className="block whitespace-normal break-words font-bold leading-snug text-white">
                                 {project.name}
                               </span>
                             </span>
                           </button>
                         </div>
-                        <div className="ml-9 flex flex-wrap gap-2 sm:ml-0 sm:shrink-0">
+                        <div className="ml-7 flex flex-wrap gap-1 sm:ml-0 sm:shrink-0">
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 px-0"
+                            className="h-7 w-7 px-0 text-slate-200 hover:bg-white/10 hover:text-white"
                             onClick={() => openCreateModuleDialog(project.id)}
                           >
-                            <CirclePlus className="h-4 w-4" />
+                            <CirclePlus className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 px-0"
+                            className="h-7 w-7 px-0 text-slate-200 hover:bg-white/10 hover:text-white"
                             onClick={() => openEditProjectDialog(project)}
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 px-0 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
+                            className="h-7 w-7 px-0 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
                             onClick={() => handleDeleteProject(project)}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </div>
 
                       {expandedProjects[project.id] ? (
-                        <div className="mt-4 space-y-3">
+                        <div className="mt-2 space-y-2">
                           {project.modules.length === 0 ? (
-                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-xs leading-6 text-slate-400">
+                            <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-[11px] leading-4 text-slate-400">
                               当前项目还没有模块。
                             </div>
                           ) : null}
 
                           {project.modules.map((module) => (
-                            <div key={module.id} className="rounded-[18px] border border-white/10 bg-black/10 p-4">
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                <div className="flex min-w-0 flex-1 items-start gap-2">
+                            <div key={module.id} className="rounded-lg border border-white/10 bg-black/10 p-2">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="flex min-w-0 flex-1 items-start gap-1.5">
                                   <button
-                                    className="mt-1 rounded-lg p-1 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                                    className="mt-0.5 rounded-md p-0.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
                                     onClick={() =>
                                       setExpandedModules((current) => ({ ...current, [module.id]: !current[module.id] }))
                                     }
                                   >
                                     {expandedModules[module.id] ? (
-                                      <ChevronDown className="h-4 w-4" />
+                                      <ChevronDown className="h-3.5 w-3.5" />
                                     ) : (
-                                      <ChevronRight className="h-4 w-4" />
+                                      <ChevronRight className="h-3.5 w-3.5" />
                                     )}
                                   </button>
                                   <button
-                                    className={`flex min-w-0 flex-1 items-start gap-3 rounded-xl px-3 py-3 text-left transition ${
+                                    className={`flex min-w-0 flex-1 items-start gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition ${
                                       activeDraftState.targetModuleId === module.id
                                         ? "bg-emerald-500/20 text-white"
                                         : "hover:bg-white/10"
                                     }`}
                                     onClick={() => handleSelectModule(project.id, module.id)}
                                   >
-                                    <Boxes className="mt-0.5 h-4 w-4 shrink-0 text-slate-300" />
+                                    <Boxes className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-300" />
                                     <span className="min-w-0 flex-1">
-                                      <span className="block whitespace-normal break-words text-sm font-semibold leading-5">
+                                      <span className="block whitespace-normal break-words font-semibold leading-snug">
                                         {module.name}
                                       </span>
                                     </span>
                                   </button>
                                 </div>
-                                <div className="ml-9 flex flex-wrap gap-2 sm:ml-0 sm:shrink-0">
+                                <div className="ml-7 flex flex-wrap gap-1 sm:ml-0 sm:shrink-0">
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-8 w-8 px-0"
+                                    className="h-7 w-7 px-0 text-slate-200 hover:bg-white/10 hover:text-white"
                                     onClick={() => handleCreateRequest(module.id)}
                                   >
-                                    <CirclePlus className="h-4 w-4" />
+                                    <CirclePlus className="h-3.5 w-3.5" />
                                   </Button>
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-8 w-8 px-0"
+                                    className="h-7 w-7 px-0 text-slate-200 hover:bg-white/10 hover:text-white"
                                     onClick={() => openEditModuleDialog(module)}
                                   >
-                                    <Pencil className="h-4 w-4" />
+                                    <Pencil className="h-3.5 w-3.5" />
                                   </Button>
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-8 w-8 px-0 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
+                                    className="h-7 w-7 px-0 text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
                                     onClick={() => handleDeleteModule(module)}
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
                                 </div>
                               </div>
 
                               {expandedModules[module.id] ? (
-                                <div className="mt-3 space-y-2 border-l border-white/10 pl-3">
+                                <div className="mt-2 space-y-1.5 border-l border-white/10 pl-2">
                                   {module.requests.length === 0 ? (
-                                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-xs leading-6 text-slate-400">
+                                    <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-[11px] leading-4 text-slate-400">
                                       当前模块还没有请求。
                                     </div>
                                   ) : null}
@@ -913,7 +945,7 @@ export function ConsolePage() {
                                         key={request.id}
                                         role="button"
                                         tabIndex={0}
-                                        className={`cursor-pointer rounded-[18px] border p-3 transition ${
+                                        className={`cursor-pointer rounded-lg border p-2 text-xs transition ${
                                           isActive
                                             ? "border-white/30 bg-white text-slate-950"
                                             : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
@@ -926,18 +958,19 @@ export function ConsolePage() {
                                           }
                                         }}
                                       >
-                                        <div className="flex items-center justify-between gap-3">
-                                          <p className="truncate text-sm font-bold">{request.name}</p>
+                                        <div className="flex items-center justify-between gap-2">
+                                          <p className="truncate font-bold leading-snug">{request.name}</p>
                                           {request.lastStatus ? (
-                                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-700">
+                                            <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-slate-700">
                                               {request.lastStatus}
                                             </span>
                                           ) : null}
                                         </div>
-                                        <div className="mt-3 flex justify-end gap-2">
+                                        <div className="mt-1.5 flex justify-end gap-0.5">
                                           <Button
                                             variant="ghost"
                                             size="sm"
+                                            className="h-7 w-7 px-0 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                                             title="重命名请求"
                                             aria-label="重命名请求"
                                             onClick={(event) => {
@@ -945,11 +978,12 @@ export function ConsolePage() {
                                               openRenameRequestDialog(request);
                                             }}
                                           >
-                                            <Pencil className="h-4 w-4" />
+                                            <Pencil className="h-3.5 w-3.5" />
                                           </Button>
                                           <Button
                                             variant="ghost"
                                             size="sm"
+                                            className="h-7 w-7 px-0 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                                             title="复制请求"
                                             aria-label="复制请求"
                                             onClick={(event) => {
@@ -957,11 +991,12 @@ export function ConsolePage() {
                                               handleDuplicateRequest(request.id, request.name);
                                             }}
                                           >
-                                            <CopyPlus className="h-4 w-4" />
+                                            <CopyPlus className="h-3.5 w-3.5" />
                                           </Button>
                                           <Button
                                             variant="ghost"
                                             size="sm"
+                                            className="h-7 w-7 px-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                                             title="删除请求"
                                             aria-label="删除请求"
                                             onClick={(event) => {
@@ -969,7 +1004,7 @@ export function ConsolePage() {
                                               handleDeleteRequest(request);
                                             }}
                                           >
-                                            <Trash2 className="h-4 w-4" />
+                                            <Trash2 className="h-3.5 w-3.5" />
                                           </Button>
                                         </div>
                                       </div>
