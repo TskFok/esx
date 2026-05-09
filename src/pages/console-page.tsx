@@ -14,7 +14,7 @@ import {
   Server,
   Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ConsoleEditor } from "../components/console/console-editor";
@@ -24,6 +24,11 @@ import { Card } from "../components/ui/card";
 import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { buildConsoleAutocompleteContext, extractIndexNamesFromPath } from "../lib/console-autocomplete";
+import {
+  CONSOLE_EDITOR_SPLIT_STORAGE_KEY,
+  computeEditorFractionFromDrag,
+  readStoredConsoleEditorFraction,
+} from "../lib/console-split";
 import { buildRequestProjectTree } from "../lib/request-tree";
 import { buildConnectionLogContextFromProfile, buildRequestLogContext } from "../lib/error-logs";
 import { extractUnknownErrorDiagnostics, extractUnknownErrorMessage, getResponseErrorMessage } from "../lib/errors";
@@ -118,6 +123,15 @@ export function ConsolePage() {
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({});
   const [responseExpanded, setResponseExpanded] = useState(true);
+  const [editorFraction, setEditorFraction] = useState(readStoredConsoleEditorFraction);
+  const [isLgSplit, setIsLgSplit] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches,
+  );
+  const [splitDragging, setSplitDragging] = useState(false);
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const splitDragRef = useRef<{ pointerId: number; startX: number; startFraction: number } | null>(null);
+  const editorFractionRef = useRef(editorFraction);
+  editorFractionRef.current = editorFraction;
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
   const [moduleDialogOpen, setModuleDialogOpen] = useState(false);
   const [requestDialogOpen, setRequestDialogOpen] = useState(false);
@@ -135,6 +149,68 @@ export function ConsolePage() {
   const [moduleName, setModuleName] = useState("");
   const [requestName, setRequestName] = useState("");
   const [responsePreviewInputKb, setResponsePreviewInputKb] = useState("");
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const update = () => setIsLgSplit(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  const endSplitDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const drag = splitDragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) {
+      return;
+    }
+
+    splitDragRef.current = null;
+    setSplitDragging(false);
+    try {
+      localStorage.setItem(CONSOLE_EDITOR_SPLIT_STORAGE_KEY, String(editorFractionRef.current));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleSplitPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (!isLgSplit || event.button !== 0) {
+        return;
+      }
+
+      splitDragRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startFraction: editorFractionRef.current,
+      };
+      setSplitDragging(true);
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [isLgSplit],
+  );
+
+  const handleSplitPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const drag = splitDragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) {
+      return;
+    }
+
+    const pane = splitRef.current;
+    if (!pane) {
+      return;
+    }
+
+    const width = pane.getBoundingClientRect().width;
+    const next = computeEditorFractionFromDrag({
+      startFraction: drag.startFraction,
+      startClientX: drag.startX,
+      currentClientX: event.clientX,
+      containerWidth: width,
+    });
+    editorFractionRef.current = next;
+    setEditorFraction(next);
+  }, []);
 
   const runMutation = useMutation({
     mutationFn: async (payload: RunPayload) => {
@@ -1051,8 +1127,17 @@ export function ConsolePage() {
               />
             </div>
 
-            <div className="mt-4 grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
-              <Card className="flex min-h-[360px] min-w-0 flex-col overflow-hidden border border-slate-200 bg-white">
+            <div
+              ref={splitRef}
+              className="mt-4 flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-0"
+              style={splitDragging ? { cursor: "col-resize" } : undefined}
+            >
+              <Card
+                className={`flex min-h-[360px] min-w-0 flex-col overflow-hidden border border-slate-200 bg-white lg:min-h-0 ${
+                  isLgSplit ? "lg:shrink-0" : ""
+                }`}
+                style={isLgSplit ? { width: `${editorFraction * 100}%` } : undefined}
+              >
                 <div className="border-b border-slate-100 px-5 py-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -1085,8 +1170,24 @@ export function ConsolePage() {
                 </div>
               </Card>
 
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="拖动调整请求区与返回区宽度"
+                className={`hidden w-2 shrink-0 cursor-col-resize select-none lg:flex lg:items-stretch lg:justify-center lg:active:bg-slate-100 ${
+                  splitDragging ? "lg:bg-emerald-50" : "lg:hover:bg-slate-50"
+                }`}
+                onPointerDown={handleSplitPointerDown}
+                onPointerMove={handleSplitPointerMove}
+                onPointerUp={endSplitDrag}
+                onPointerCancel={endSplitDrag}
+                onLostPointerCapture={endSplitDrag}
+              >
+                <div className="pointer-events-none my-3 w-px flex-1 rounded-full bg-slate-200 shadow-sm lg:hover:bg-emerald-400" />
+              </div>
+
               <Card
-                className={`flex min-w-0 flex-col overflow-hidden border border-slate-200 bg-white ${
+                className={`flex min-w-0 flex-col overflow-hidden border border-slate-200 bg-white lg:min-h-0 lg:min-w-0 lg:flex-1 ${
                   responseExpanded ? "min-h-[360px]" : "self-start"
                 }`}
               >
