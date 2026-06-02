@@ -1,0 +1,239 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ConsoleRequestToolbar > matches toolbar markup snapshot 1`] = `
+<div
+  class="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:flex-wrap sm:items-center md:flex-nowrap"
+  data-testid="console-request-toolbar"
+>
+  <div
+    class="flex flex-wrap gap-3 sm:contents"
+    data-testid="console-toolbar-actions"
+  >
+    <button
+      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-check mr-2 h-4 w-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M20 6 9 17l-5-5"
+        />
+      </svg>
+      格式化 JSON
+    </button>
+    <button
+      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      title="AI 分析 (⌘⇧A)"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-sparkles mr-2 h-4 w-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z"
+        />
+        <path
+          d="M20 2v4"
+        />
+        <path
+          d="M22 4h-4"
+        />
+        <circle
+          cx="4"
+          cy="20"
+          r="2"
+        />
+      </svg>
+      AI 分析
+    </button>
+    <button
+      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      title="AI 生成请求"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-wand-sparkles mr-2 h-4 w-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72"
+        />
+        <path
+          d="m14 7 3 3"
+        />
+        <path
+          d="M5 6v4"
+        />
+        <path
+          d="M19 14v4"
+        />
+        <path
+          d="M10 2v2"
+        />
+        <path
+          d="M7 8H3"
+        />
+        <path
+          d="M21 16h-4"
+        />
+        <path
+          d="M11 3H9"
+        />
+      </svg>
+      AI 生成
+    </button>
+    <button
+      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      title="请求模板"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-layout-template mr-2 h-4 w-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <rect
+          height="7"
+          rx="1"
+          width="18"
+          x="3"
+          y="3"
+        />
+        <rect
+          height="7"
+          rx="1"
+          width="9"
+          x="3"
+          y="14"
+        />
+        <rect
+          height="7"
+          rx="1"
+          width="5"
+          x="16"
+          y="14"
+        />
+      </svg>
+      模板
+    </button>
+    <button
+      aria-label="AI 分析设置"
+      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      title="AI 分析设置"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-settings2 lucide-settings-2 mr-2 h-4 w-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M14 17H5"
+        />
+        <path
+          d="M19 7h-9"
+        />
+        <circle
+          cx="17"
+          cy="17"
+          r="3"
+        />
+        <circle
+          cx="7"
+          cy="7"
+          r="3"
+        />
+      </svg>
+      AI 设置
+    </button>
+    <button
+      aria-label="快捷键帮助"
+      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      title="快捷键帮助 (? 或 ⌘/)"
+      type="button"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-circle-question-mark mr-2 h-4 w-4 shrink-0"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+        />
+        <path
+          d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+        />
+        <path
+          d="M12 17h.01"
+        />
+      </svg>
+      快捷键
+    </button>
+  </div>
+  <input
+    autocapitalize="off"
+    autocomplete="off"
+    autocorrect="off"
+    class="flex h-12 rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 w-full sm:min-w-0 sm:flex-1 md:min-w-[12rem]"
+    placeholder="请求名称（为空时默认使用 METHOD /path，Command + Enter 运行并保存）"
+    spellcheck="false"
+    value="search users"
+  />
+</div>
+`;
