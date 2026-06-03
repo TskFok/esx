@@ -16,6 +16,11 @@ import { Card } from "../components/ui/card";
 import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
+import {
+  getAuthSecretFromForm,
+  validateConnectionSecurity,
+  validateSshHostKey,
+} from "../lib/connection-security";
 import { buildSshTunnelConfig, getSshSecretFromForm } from "../lib/connections";
 import {
   buildConnectionDeleteDescription,
@@ -45,9 +50,18 @@ import type {
 const defaultConnectionForm: ConnectionFormValues = {
   name: "",
   baseUrl: "",
+  authType: "basic",
   username: "",
   password: "",
+  apiKey: "",
+  bearerToken: "",
+  tlsMode: "default",
+  tlsCaPath: "",
+  tlsFingerprint: "",
   insecureTls: false,
+  environment: "dev",
+  readonly: false,
+  allowInsecureProductionTls: false,
   sshProfileId: "",
 };
 
@@ -125,7 +139,24 @@ export function ConnectionsPage() {
         throw new DetailedError(result.errorMessage?.trim() || "SSH 通道验证失败", result.diagnostics ?? []);
       }
 
-      return upsertSshProfile(payload, editingSshProfile?.id);
+      const timestamp = new Date().toISOString();
+      const profileForValidation: SshProfile =
+        editingSshProfile ?? {
+          id: "temporary",
+          name: payload.name.trim() || sshTunnel.host,
+          tunnel: sshTunnel,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          lastVerifiedAt: timestamp,
+          hostKeyPolicy: "trustOnFirstUse",
+          trustedHostKeySha256: null,
+        };
+      const hostKeyValidation = validateSshHostKey(profileForValidation, result.hostKeySha256 ?? null);
+      if (!hostKeyValidation.ok) {
+        throw new DetailedError(hostKeyValidation.errorMessage ?? "SSH 主机指纹校验失败", result.diagnostics ?? []);
+      }
+
+      return upsertSshProfile(payload, editingSshProfile?.id, hostKeyValidation.trustedHostKeySha256);
     },
     onSuccess(profile) {
       toast.success(editingSshProfile ? "SSH 通道已更新。" : "SSH 通道已验证并保存。");
@@ -153,14 +184,44 @@ export function ConnectionsPage() {
         ? sshProfiles.find((item) => item.id === payload.sshProfileId.trim()) ?? null
         : null;
       const sshSecret = await getSshSecret(sshProfile);
+      const securityValidation = validateConnectionSecurity({
+        id: editingConnection?.id ?? "temporary",
+        name: payload.name.trim() || payload.baseUrl.trim(),
+        baseUrl: payload.baseUrl,
+        username: payload.username,
+        auth: { type: payload.authType },
+        tls: {
+          mode: payload.tlsMode,
+          caPath: payload.tlsCaPath.trim() || undefined,
+          fingerprint: payload.tlsFingerprint.trim() || undefined,
+        },
+        environment: payload.environment,
+        readonly: payload.readonly,
+        insecureTls: payload.tlsMode === "insecure" || payload.insecureTls,
+        sshProfileId: payload.sshProfileId.trim() || null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+      }, { allowInsecureProductionTls: payload.allowInsecureProductionTls });
+      if (!securityValidation.ok) {
+        throw new DetailedError(securityValidation.warnings[0] ?? "连接安全配置无效", securityValidation.warnings);
+      }
 
       await testConnection(
         {
           baseUrl: payload.baseUrl,
           username: payload.username,
-          insecureTls: payload.insecureTls,
+          auth: { type: payload.authType },
+          tls: {
+            mode: payload.tlsMode,
+            caPath: payload.tlsCaPath.trim() || undefined,
+            fingerprint: payload.tlsFingerprint.trim() || undefined,
+          },
+          environment: payload.environment,
+          readonly: payload.readonly,
+          insecureTls: payload.tlsMode === "insecure" || payload.insecureTls,
         },
-        payload.password,
+        getAuthSecretFromForm(payload),
         sshSecret,
         sshProfile?.tunnel ?? null,
       );
@@ -195,13 +256,23 @@ export function ConnectionsPage() {
 
   async function openEditConnectionDialog(connection: ConnectionProfile) {
     const password = await getPassword(connection);
+    const authType = connection.auth?.type ?? "basic";
     setEditingConnection(connection);
     setConnectionFormValues({
       name: connection.name,
       baseUrl: connection.baseUrl,
+      authType,
       username: connection.username,
-      password: password ?? "",
-      insecureTls: connection.insecureTls,
+      password: authType === "basic" ? password ?? "" : "",
+      apiKey: authType === "apiKey" ? password ?? "" : "",
+      bearerToken: authType === "bearer" ? password ?? "" : "",
+      tlsMode: connection.tls?.mode ?? (connection.insecureTls ? "insecure" : "default"),
+      tlsCaPath: connection.tls?.caPath ?? "",
+      tlsFingerprint: connection.tls?.fingerprint ?? "",
+      insecureTls: connection.insecureTls || connection.tls?.mode === "insecure",
+      environment: connection.environment ?? "dev",
+      readonly: connection.readonly ?? false,
+      allowInsecureProductionTls: false,
       sshProfileId: connection.sshProfileId ?? "",
     });
     setConnectionDialogOpen(true);
@@ -242,6 +313,11 @@ export function ConnectionsPage() {
         throw new DetailedError(result.errorMessage?.trim() || "SSH 通道测试失败", result.diagnostics ?? []);
       }
 
+      const hostKeyValidation = validateSshHostKey(profile, result.hostKeySha256 ?? null);
+      if (!hostKeyValidation.ok) {
+        throw new DetailedError(hostKeyValidation.errorMessage ?? "SSH 主机指纹校验失败", result.diagnostics ?? []);
+      }
+
       toast.success("SSH 通道测试成功。");
     } catch (error) {
       const message = extractUnknownErrorMessage(error, "SSH 通道测试失败");
@@ -278,6 +354,10 @@ export function ConnectionsPage() {
         {
           baseUrl: connection.baseUrl,
           username: connection.username,
+          auth: connection.auth,
+          tls: connection.tls,
+          environment: connection.environment,
+          readonly: connection.readonly,
           insecureTls: connection.insecureTls,
         },
         password,
@@ -360,8 +440,13 @@ export function ConnectionsPage() {
 
   const connectionFormIncomplete =
     !connectionFormValues.baseUrl.trim() ||
-    !connectionFormValues.username.trim() ||
-    !connectionFormValues.password.trim();
+    (connectionFormValues.authType === "basic"
+      ? !connectionFormValues.username.trim() || !connectionFormValues.password.trim()
+      : connectionFormValues.authType === "apiKey"
+        ? !connectionFormValues.apiKey.trim()
+        : !connectionFormValues.bearerToken.trim()) ||
+    (connectionFormValues.tlsMode === "caCertificate" && !connectionFormValues.tlsCaPath.trim()) ||
+    (connectionFormValues.tlsMode === "certificateFingerprint" && !connectionFormValues.tlsFingerprint.trim());
 
   return (
     <div className="min-h-screen bg-hero-grid px-4 py-4 sm:px-6 sm:py-5" onContextMenu={(event) => event.preventDefault()}>
@@ -683,28 +768,98 @@ export function ConnectionsPage() {
             </p>
           </label>
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">Elasticsearch 用户名</span>
-            <Input
-              placeholder="elastic"
-              value={connectionFormValues.username}
-              onChange={(event) =>
-                setConnectionFormValues((current) => ({ ...current, username: event.target.value }))
-              }
-            />
-          </label>
+          <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-white p-2.5">
+            <p className="text-xs font-semibold text-slate-900 sm:text-sm">认证方式</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {(["basic", "apiKey", "bearer"] as const).map((authType) => (
+                <Button
+                  key={authType}
+                  variant={connectionFormValues.authType === authType ? "default" : "outline"}
+                  className="h-8 rounded-lg px-2.5 text-xs"
+                  onClick={() => setConnectionFormValues((current) => ({ ...current, authType }))}
+                >
+                  {authType === "basic" ? "Basic" : authType === "apiKey" ? "API Key" : "Bearer"}
+                </Button>
+              ))}
+            </div>
+          </div>
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">Elasticsearch 密码</span>
-            <Input
-              type="password"
-              placeholder="请输入密码"
-              value={connectionFormValues.password}
-              onChange={(event) =>
-                setConnectionFormValues((current) => ({ ...current, password: event.target.value }))
-              }
-            />
-          </label>
+          {connectionFormValues.authType === "basic" ? (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">Elasticsearch 用户名</span>
+                <Input
+                  placeholder="elastic"
+                  value={connectionFormValues.username}
+                  onChange={(event) =>
+                    setConnectionFormValues((current) => ({ ...current, username: event.target.value }))
+                  }
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">Elasticsearch 密码</span>
+                <Input
+                  type="password"
+                  placeholder="请输入密码"
+                  value={connectionFormValues.password}
+                  onChange={(event) =>
+                    setConnectionFormValues((current) => ({ ...current, password: event.target.value }))
+                  }
+                />
+              </label>
+            </>
+          ) : connectionFormValues.authType === "apiKey" ? (
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">API Key</span>
+              <Input
+                type="password"
+                placeholder="请输入 Elasticsearch API Key"
+                value={connectionFormValues.apiKey}
+                onChange={(event) => setConnectionFormValues((current) => ({ ...current, apiKey: event.target.value }))}
+              />
+            </label>
+          ) : (
+            <label className="block sm:col-span-2">
+              <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">Bearer Token</span>
+              <Input
+                type="password"
+                placeholder="请输入 Bearer Token"
+                value={connectionFormValues.bearerToken}
+                onChange={(event) =>
+                  setConnectionFormValues((current) => ({ ...current, bearerToken: event.target.value }))
+                }
+              />
+            </label>
+          )}
+
+          <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-white p-2.5">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold text-slate-900 sm:text-sm">环境与写入保护</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">生产环境会对危险操作启用更严格确认；只读连接会阻断写入请求。</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-600">只读</span>
+                <Switch
+                  checked={connectionFormValues.readonly}
+                  onChange={(event) => setConnectionFormValues((current) => ({ ...current, readonly: event.target.checked }))}
+                />
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {(["dev", "test", "staging", "prod"] as const).map((environment) => (
+                <Button
+                  key={environment}
+                  variant={connectionFormValues.environment === environment ? "default" : "outline"}
+                  className="h-8 rounded-lg px-2.5 text-xs"
+                  onClick={() => setConnectionFormValues((current) => ({ ...current, environment }))}
+                >
+                  {environment === "prod" ? "生产" : environment === "staging" ? "预发" : environment === "test" ? "测试" : "开发"}
+                </Button>
+              ))}
+            </div>
+          </div>
 
           <div className="sm:col-span-2 rounded-xl border border-cyan-100 bg-cyan-50/80 p-2.5">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -790,22 +945,54 @@ export function ConnectionsPage() {
             ) : null}
           </div>
 
-          <div className="sm:col-span-2 flex items-start justify-between gap-2 rounded-xl border border-amber-100 bg-amber-50/80 p-2.5">
+          <div className="sm:col-span-2 rounded-xl border border-amber-100 bg-amber-50/80 p-2.5">
             <div className="pr-2">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-900 sm:text-sm">
                 <ShieldAlert className="h-3.5 w-3.5" />
-                允许无效证书 / 主机名
+                TLS 校验策略
               </div>
               <p className="mt-1 text-xs leading-5 text-amber-800 sm:text-sm">
-                仅建议用于内网或测试环境。开启后会放宽 HTTPS 证书校验。
+                默认校验最安全。跳过校验仅建议用于内网或测试环境；生产连接应使用默认校验、CA 证书或证书指纹。
               </p>
             </div>
-            <Switch
-              checked={connectionFormValues.insecureTls}
-              onChange={(event) =>
-                setConnectionFormValues((current) => ({ ...current, insecureTls: event.target.checked }))
-              }
-            />
+            <div className="mt-2 flex flex-wrap gap-1">
+              {(["default", "insecure", "caCertificate", "certificateFingerprint"] as const).map((tlsMode) => (
+                <Button
+                  key={tlsMode}
+                  variant={connectionFormValues.tlsMode === tlsMode ? "default" : "outline"}
+                  className="h-8 rounded-lg px-2.5 text-xs"
+                  onClick={() =>
+                    setConnectionFormValues((current) => ({
+                      ...current,
+                      tlsMode,
+                      insecureTls: tlsMode === "insecure",
+                    }))
+                  }
+                >
+                  {tlsMode === "default" ? "默认" : tlsMode === "insecure" ? "跳过校验" : tlsMode === "caCertificate" ? "CA 证书" : "证书指纹"}
+                </Button>
+              ))}
+            </div>
+            {connectionFormValues.tlsMode === "caCertificate" ? (
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-amber-900 sm:text-sm">CA 证书路径</span>
+                <Input
+                  placeholder="/path/to/ca.crt"
+                  value={connectionFormValues.tlsCaPath}
+                  onChange={(event) => setConnectionFormValues((current) => ({ ...current, tlsCaPath: event.target.value }))}
+                />
+              </label>
+            ) : null}
+            {connectionFormValues.tlsMode === "certificateFingerprint" ? (
+              <label className="mt-2 block">
+                <span className="mb-1 block text-xs font-semibold text-amber-900 sm:text-sm">证书 SHA256 指纹</span>
+                <Input
+                  placeholder="SHA256:..."
+                  value={connectionFormValues.tlsFingerprint}
+                  onChange={(event) => setConnectionFormValues((current) => ({ ...current, tlsFingerprint: event.target.value }))}
+                />
+              </label>
+            ) : null}
           </div>
         </div>
       </Dialog>

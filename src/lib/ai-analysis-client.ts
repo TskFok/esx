@@ -1,7 +1,7 @@
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { AiAnalysisSettings } from "../types/ai-settings";
 import { supportsKimiThinkingMode } from "../types/ai-settings";
 import { readOpenAiSseStream, type AiStreamDelta } from "./ai-sse";
+import { executeAiHttpRequest, type TauriHttpResponse } from "./tauri";
 import { ensureTrailingSlashless } from "./utils";
 import type { RequestAnalysisResult } from "./request-analyzer";
 
@@ -284,15 +284,15 @@ export type AiConnectionTestResult = {
   models: string[];
 };
 
-function buildRequestHeaders(apiKey: string, accept = "application/json") {
-  const headers: Record<string, string> = {
-    Accept: accept,
-  };
-  const trimmedApiKey = apiKey.trim();
-  if (trimmedApiKey) {
-    headers.Authorization = `Bearer ${trimmedApiKey}`;
-  }
-  return headers;
+function responseFromTauriHttp(result: TauriHttpResponse, contentType: string) {
+  const status = result.status >= 200 && result.status <= 599 ? result.status : 599;
+  return new Response(result.bodyText, {
+    status,
+    statusText: result.statusText || "REQUEST_FAILED",
+    headers: {
+      "Content-Type": contentType,
+    },
+  });
 }
 
 function parseModelsPayload(bodyText: string) {
@@ -330,12 +330,14 @@ export async function fetchAiModels(request: AiConnectionTestRequest) {
   }
 
   const url = resolveModelsUrl(request.settings.baseUrl);
-  const response = await tauriFetch(url, {
+  const response = await executeAiHttpRequest({
+    url,
     method: "GET",
-    headers: buildRequestHeaders(request.apiKey),
+    apiKey: request.apiKey,
+    accept: "application/json",
   });
 
-  const bodyText = await response.text();
+  const bodyText = response.bodyText;
   if (!response.ok) {
     throw new Error(extractApiErrorMessage(bodyText, response.status));
   }
@@ -351,20 +353,16 @@ export async function postAiChatCompletion(
   jsonResponse = !stream,
 ) {
   const { url } = validateAiRequestSettings(settings, apiKey);
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: stream ? "text/event-stream" : "application/json",
-  };
-  const trimmedApiKey = apiKey.trim();
-  if (trimmedApiKey) {
-    headers.Authorization = `Bearer ${trimmedApiKey}`;
-  }
-
-  return tauriFetch(url, {
+  const accept = stream ? "text/event-stream" : "application/json";
+  const response = await executeAiHttpRequest({
+    url,
     method: "POST",
-    headers,
-    body: buildChatCompletionBody(settings, messages, stream, jsonResponse),
+    apiKey,
+    accept,
+    contentType: "application/json",
+    bodyText: buildChatCompletionBody(settings, messages, stream, jsonResponse),
   });
+  return responseFromTauriHttp(response, accept);
 }
 
 export async function testAiConnection(request: AiConnectionTestRequest): Promise<AiConnectionTestResult> {

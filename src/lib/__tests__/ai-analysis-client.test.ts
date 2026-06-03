@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockFetch } = vi.hoisted(() => ({
-  mockFetch: vi.fn(),
+const { mockExecuteAiHttpRequest } = vi.hoisted(() => ({
+  mockExecuteAiHttpRequest: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/plugin-http", () => ({
-  fetch: mockFetch,
+vi.mock("../tauri", () => ({
+  executeAiHttpRequest: mockExecuteAiHttpRequest,
 }));
 
 import {
@@ -172,17 +172,17 @@ describe("resolveModelsUrl", () => {
 
 describe("fetchAiModels", () => {
   beforeEach(() => {
-    mockFetch.mockReset();
+    mockExecuteAiHttpRequest.mockReset();
   });
 
   it("parses model ids from openai compatible payload", async () => {
-    mockFetch.mockResolvedValue({
+    mockExecuteAiHttpRequest.mockResolvedValue({
       ok: true,
       status: 200,
-      text: async () =>
-        JSON.stringify({
-          data: [{ id: "gpt-4o-mini" }, { id: "gpt-4o" }],
-        }),
+      statusText: "OK",
+      bodyText: JSON.stringify({
+        data: [{ id: "gpt-4o-mini" }, { id: "gpt-4o" }],
+      }),
     });
 
     const models = await fetchAiModels({
@@ -203,26 +203,26 @@ describe("fetchAiModels", () => {
 
 describe("testAiConnection", () => {
   beforeEach(() => {
-    mockFetch.mockReset();
+    mockExecuteAiHttpRequest.mockReset();
   });
 
   it("calls chat completions endpoint and returns models", async () => {
-    mockFetch
+    mockExecuteAiHttpRequest
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        text: async () =>
-          JSON.stringify({
-            choices: [{ message: { content: "OK" } }],
-          }),
+        statusText: "OK",
+        bodyText: JSON.stringify({
+          choices: [{ message: { content: "OK" } }],
+        }),
       })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        text: async () =>
-          JSON.stringify({
-            data: [{ id: "gpt-4o-mini" }],
-          }),
+        statusText: "OK",
+        bodyText: JSON.stringify({
+          data: [{ id: "gpt-4o-mini" }],
+        }),
       });
 
     await expect(
@@ -241,22 +241,22 @@ describe("testAiConnection", () => {
   });
 
   it("sends kimi non-thinking options for disabled thinking mode", async () => {
-    mockFetch
+    mockExecuteAiHttpRequest
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        text: async () =>
-          JSON.stringify({
-            choices: [{ message: { content: "OK" } }],
-          }),
+        statusText: "OK",
+        bodyText: JSON.stringify({
+          choices: [{ message: { content: "OK" } }],
+        }),
       })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        text: async () =>
-          JSON.stringify({
-            data: [{ id: "kimi-k2.6" }],
-          }),
+        statusText: "OK",
+        bodyText: JSON.stringify({
+          data: [{ id: "kimi-k2.6" }],
+        }),
       });
 
     await testAiConnection({
@@ -264,29 +264,29 @@ describe("testAiConnection", () => {
       apiKey: "sk-test",
     });
 
-    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const requestBody = JSON.parse(String(mockExecuteAiHttpRequest.mock.calls[0]?.[0]?.bodyText));
     expect(requestBody.temperature).toBe(0.6);
     expect(requestBody.thinking).toEqual({ type: "disabled" });
     expect(requestBody.model).toBe("kimi-k2.6");
   });
 
   it("sends kimi thinking options when thinking mode is enabled", async () => {
-    mockFetch
+    mockExecuteAiHttpRequest
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        text: async () =>
-          JSON.stringify({
-            choices: [{ message: { content: "OK" } }],
-          }),
+        statusText: "OK",
+        bodyText: JSON.stringify({
+          choices: [{ message: { content: "OK" } }],
+        }),
       })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        text: async () =>
-          JSON.stringify({
-            data: [{ id: "kimi-k2.6" }],
-          }),
+        statusText: "OK",
+        bodyText: JSON.stringify({
+          data: [{ id: "kimi-k2.6" }],
+        }),
       });
 
     await testAiConnection({
@@ -297,7 +297,7 @@ describe("testAiConnection", () => {
       apiKey: "sk-test",
     });
 
-    const requestBody = JSON.parse(String(mockFetch.mock.calls[0]?.[1]?.body));
+    const requestBody = JSON.parse(String(mockExecuteAiHttpRequest.mock.calls[0]?.[0]?.bodyText));
     expect(requestBody.temperature).toBe(1.0);
     expect(requestBody.thinking).toEqual({ type: "enabled" });
   });

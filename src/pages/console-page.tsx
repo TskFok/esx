@@ -71,17 +71,18 @@ import { formatTagsInput, parseTagsInput } from "../lib/request-tags";
 import { buildConnectionLogContextFromProfile, buildRequestLogContext } from "../lib/error-logs";
 import { extractUnknownErrorDiagnostics, extractUnknownErrorMessage, getResponseErrorMessage } from "../lib/errors";
 import { executeConsoleRequest } from "../lib/http-client";
-import { formatConsoleRequest, parseConsoleRequest } from "../lib/console-parser";
+import { formatConsoleRequest, parseConsoleRequest, parseConsoleRequests } from "../lib/console-parser";
 import { analyzeRequestContent, type RequestAnalysisResult } from "../lib/request-analysis";
 import { fetchAiModels, isAiAnalysisConfigured, testAiConnection } from "../lib/ai-analysis-client";
 import { generateRequestContent } from "../lib/ai-generate-client";
 import { MIN_RESPONSE_PREVIEW_BYTES } from "../lib/response-snapshot";
+import { classifyRequestSafety } from "../lib/request-safety";
 import { getSearchSizeWarning } from "../lib/search-size-warning";
 import { formatShanghaiDateTime } from "../lib/time";
 import { formatBytes } from "../lib/utils";
 import { useAppState } from "../providers/app-state";
 import type { ConnectionProfile } from "../types/connections";
-import type { SavedRequest } from "../types/requests";
+import type { ResponseSnapshot, SavedRequest } from "../types/requests";
 
 type RunPayload = {
   connection: ConnectionProfile;
@@ -99,7 +100,11 @@ function resolveDraftRequestName(preferredName: string, fallbackName: string | n
   }
 
   try {
-    const parsed = parseConsoleRequest(content);
+    const requests = parseConsoleRequests(content);
+    if (requests.length > 1) {
+      return `多请求（${requests.length} 条）`;
+    }
+    const parsed = requests[0] ?? parseConsoleRequest(content);
     return `${parsed.method} ${parsed.path}`;
   } catch {
     return "未命名请求";
@@ -484,10 +489,36 @@ export function ConsolePage() {
         throw new Error("当前连接未找到已保存密码，请回到连接页重新保存。");
       }
 
-      const request = parseConsoleRequest(payload.content);
-      return executeConsoleRequest(payload.connection, { password, sshSecret }, request, sshProfile?.tunnel ?? null, {
-        responsePreviewBytes,
-      });
+      const requests = parseConsoleRequests(payload.content);
+      let lastResponse: ResponseSnapshot | null = null;
+      for (const [index, request] of requests.entries()) {
+        const safety = classifyRequestSafety(request, payload.connection);
+        if (safety.blocked) {
+          throw new Error(`第 ${index + 1} 条请求被阻断：${safety.reasons.join(" ")}`);
+        }
+        if (safety.requiresConfirmation) {
+          const confirmed = window.confirm(
+            `第 ${index + 1} 条请求 ${request.method} ${request.path} 被识别为 ${
+              safety.level === "destructive" ? "高危破坏性操作" : "集群管理操作"
+            }。\n\n${safety.reasons.join("\n")}\n\n确认继续执行？`,
+          );
+          if (!confirmed) {
+            throw new Error("已取消执行高风险请求。");
+          }
+        }
+
+        lastResponse = await executeConsoleRequest(payload.connection, { password, sshSecret }, request, sshProfile?.tunnel ?? null, {
+          responsePreviewBytes,
+        });
+        if (!lastResponse.ok) {
+          return lastResponse;
+        }
+      }
+
+      if (!lastResponse) {
+        throw new Error("请输入请求内容。");
+      }
+      return lastResponse;
     },
     onSuccess(response, payload) {
       let saveErrorMessage: string | null = null;

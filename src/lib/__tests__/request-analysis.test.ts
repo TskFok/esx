@@ -1,18 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockFetch } = vi.hoisted(() => ({
-  mockFetch: vi.fn(),
+const { mockExecuteAiHttpRequest } = vi.hoisted(() => ({
+  mockExecuteAiHttpRequest: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/plugin-http", () => ({
-  fetch: mockFetch,
+vi.mock("../tauri", () => ({
+  executeAiHttpRequest: mockExecuteAiHttpRequest,
 }));
 
 import { analyzeRequestContent, analyzeRequestContentLocally } from "../request-analysis";
 
 describe("analyzeRequestContent", () => {
   beforeEach(() => {
-    mockFetch.mockReset();
+    mockExecuteAiHttpRequest.mockReset();
   });
 
   it("uses local analysis when ai is disabled", async () => {
@@ -31,14 +31,15 @@ describe("analyzeRequestContent", () => {
 
     expect(result.valid).toBe(true);
     expect(result.source).toBe("local");
-    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockExecuteAiHttpRequest).not.toHaveBeenCalled();
   });
 
   it("falls back to local analysis when ai request fails", async () => {
-    mockFetch.mockResolvedValue({
+    mockExecuteAiHttpRequest.mockResolvedValue({
       ok: false,
       status: 401,
-      text: async () => JSON.stringify({ error: { message: "invalid key" } }),
+      statusText: "Unauthorized",
+      bodyText: JSON.stringify({ error: { message: "invalid key" } }),
     });
 
     const result = await analyzeRequestContent({
@@ -59,27 +60,14 @@ describe("analyzeRequestContent", () => {
   });
 
   it("streams ai deltas when callback is provided", async () => {
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(
-          encoder.encode('data: {"choices":[{"delta":{"content":"{\\"valid\\":true,"}}]}\n\n'),
-        );
-        controller.enqueue(
-          encoder.encode(
-            'data: {"choices":[{"delta":{"content":"\\"meaning\\":\\"测试\\",\\"details\\":[],\\"issues\\":[],\\"suggestion\\":null}"}}]}\n\n',
-          ),
-        );
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
-      },
-    });
-
-    mockFetch.mockResolvedValue({
+    mockExecuteAiHttpRequest.mockResolvedValue({
       ok: true,
       status: 200,
-      body: stream,
-      text: async () => "",
+      statusText: "OK",
+      bodyText:
+        'data: {"choices":[{"delta":{"content":"{\\"valid\\":true,"}}]}\n\n' +
+        'data: {"choices":[{"delta":{"content":"\\"meaning\\":\\"测试\\",\\"details\\":[],\\"issues\\":[],\\"suggestion\\":null}"}}]}\n\n' +
+        "data: [DONE]\n\n",
     });
 
     const deltas: Array<{ kind: "reasoning" | "content"; text: string }> = [];

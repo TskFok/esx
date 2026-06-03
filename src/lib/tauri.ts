@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SecretsMigrationHint, SecretsVaultStatus } from "./secrets-vault";
-import type { SshTunnelConfig } from "../types/connections";
+import type { ConnectionAuthConfig, ConnectionTlsConfig, SshTunnelConfig } from "../types/connections";
 
 const SSH_AUTH_SECRET_KEY = "ssh-auth-secret";
 
@@ -79,12 +79,47 @@ export async function deleteAiApiKey() {
 type ExecuteSshHttpRequestPayload = {
   url: string;
   method: string;
+  auth: ConnectionAuthConfig;
   username: string;
   password: string;
+  authSecret: string;
   bodyText: string;
+  contentType?: string | null;
   insecureTls: boolean;
   sshTunnel: SshTunnelConfig;
   sshSecret?: string | null;
+};
+
+type ExecuteEsHttpRequestPayload = {
+  url: string;
+  method: string;
+  auth: ConnectionAuthConfig;
+  username: string;
+  password: string;
+  authSecret: string;
+  bodyText: string;
+  contentType?: string | null;
+  insecureTls: boolean;
+  tls: ConnectionTlsConfig;
+};
+
+type ValidateEsConnectionPayload = {
+  baseUrl: string;
+  auth: ConnectionAuthConfig;
+  username: string;
+  password: string;
+  authSecret: string;
+  insecureTls: boolean;
+  tls: ConnectionTlsConfig;
+};
+
+type ExecuteAiHttpRequestPayload = {
+  url: string;
+  method: string;
+  apiKey?: string | null;
+  bodyText?: string | null;
+  contentType?: string | null;
+  accept?: string | null;
 };
 
 type ValidateSshTunnelPayload = {
@@ -103,12 +138,25 @@ export type TauriHttpResponse = {
 
 export type TauriTunnelValidationResponse = {
   ok: boolean;
+  hostKeySha256?: string | null;
   errorMessage?: string;
   diagnostics?: string[];
 };
 
 export async function executeSshHttpRequest(payload: ExecuteSshHttpRequestPayload) {
   return invoke<TauriHttpResponse>("execute_ssh_http_request", { payload });
+}
+
+export async function executeEsHttpRequest(payload: ExecuteEsHttpRequestPayload) {
+  return invoke<TauriHttpResponse>("execute_es_http_request", { payload });
+}
+
+export async function validateEsConnection(payload: ValidateEsConnectionPayload) {
+  return invoke<TauriHttpResponse>("validate_es_connection", { payload });
+}
+
+export async function executeAiHttpRequest(payload: ExecuteAiHttpRequestPayload) {
+  return invoke<TauriHttpResponse>("execute_ai_http_request", { payload });
 }
 
 export async function validateSshTunnel(payload: ValidateSshTunnelPayload) {

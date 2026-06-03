@@ -22,6 +22,12 @@ import {
   normalizeResponseSnapshot,
 } from "../lib/response-snapshot";
 import { buildSshTunnelConfig, getSshSecretFromForm } from "../lib/connections";
+import {
+  getAuthSecretFromForm,
+  getAuthSecretKey,
+  normalizeConnectionProfileSecurity,
+  normalizeSshProfileSecurity,
+} from "../lib/connection-security";
 import type { AiAnalysisSettings } from "../types/ai-settings";
 import { DEFAULT_AI_ANALYSIS_SETTINGS } from "../types/ai-settings";
 import type { AiAnalysisHistoryEntry } from "../types/ai-analysis-history";
@@ -30,13 +36,16 @@ import type { RequestAnalysisResult } from "../lib/request-analyzer";
 import type { ErrorLogConnectionContext, ErrorLogEntry, ErrorLogRequestContext } from "../types/logs";
 import {
   deleteAiApiKey,
+  deleteConnectionSecret,
   deleteConnectionSshSecret,
   deleteConnectionPassword,
   getAiApiKey,
+  getConnectionSecret,
   getConnectionSshSecret,
   getConnectionPassword,
   loadSecretsVault,
   saveAiApiKey,
+  saveConnectionSecret,
   saveConnectionSshSecret,
   saveConnectionPassword,
 } from "../lib/tauri";
@@ -54,7 +63,9 @@ import {
 } from "../lib/request-state-mutations";
 import { mergeTagChanges, normalizeRequestTags } from "../lib/request-tags";
 import { isErrorLoggingEnabled, normalizeErrorLogSettings } from "../lib/error-log-settings";
+import { redactSensitiveList, redactSensitiveText } from "../lib/log-redaction";
 import { buildSecretsMigrationHint } from "../lib/secrets-vault";
+import { appendStatusHistorySnapshot } from "../lib/status-diagnostics";
 import { normalizeBaseUrl } from "../lib/http-client";
 import type {
   ConnectionFormValues,
@@ -68,6 +79,7 @@ import type {
   ResponseSnapshot,
   SavedRequest,
 } from "../types/requests";
+import type { ServerStatusSnapshot } from "../types/status";
 
 type AppStateShape = ReturnType<typeof createEmptyStorage>;
 
@@ -108,6 +120,7 @@ type AppStateContextValue = {
   aiApiKeyConfigured: boolean;
   aiAnalysisHistory: AiAnalysisHistoryEntry[];
   errorLogs: ErrorLogEntry[];
+  statusHistoryByConnection: Record<string, ServerStatusSnapshot[]>;
   setCurrentConnection: (connectionId: string) => void;
   setErrorLoggingEnabled: (enabled: boolean) => void;
   setResponsePreviewBytes: (bytes: number) => void;
@@ -126,6 +139,7 @@ type AppStateContextValue = {
   }) => void;
   clearAiAnalysisHistory: () => void;
   clearErrorLogs: () => void;
+  recordStatusSnapshot: (connectionId: string, snapshot: ServerStatusSnapshot) => void;
   recordErrorLog: (payload: {
     scope: ErrorLogEntry["scope"];
     title: string;
@@ -174,7 +188,11 @@ type AppStateContextValue = {
     content: string,
     response: ResponseSnapshot,
   ) => void;
-  upsertSshProfile: (formValues: SshProfileFormValues, existingProfileId?: string) => Promise<SshProfile>;
+  upsertSshProfile: (
+    formValues: SshProfileFormValues,
+    existingProfileId?: string,
+    trustedHostKeySha256?: string | null,
+  ) => Promise<SshProfile>;
   upsertConnection: (
     formValues: ConnectionFormValues,
     existingConnectionId?: string,
@@ -195,11 +213,11 @@ function now() {
 }
 
 function normalizeStoredConnection(connection: ConnectionProfile) {
-  return {
+  return normalizeConnectionProfileSecurity({
     ...connection,
     sshProfileId: connection.sshProfileId ?? (connection.sshTunnel ? connection.id : null),
     sshTunnel: connection.sshTunnel ?? null,
-  } satisfies ConnectionProfile;
+  } satisfies ConnectionProfile);
 }
 
 function normalizeStoredDraft(draft: LegacyStoredDraft): ConsoleDraft {
@@ -269,10 +287,10 @@ function normalizeStoredSearchMetadata(
 }
 
 function normalizeStoredSshProfile(profile: SshProfile) {
-  return {
+  return normalizeSshProfileSecurity({
     ...profile,
     name: profile.name.trim() || `${profile.tunnel.username}@${profile.tunnel.host}`,
-  } satisfies SshProfile;
+  } satisfies SshProfile);
 }
 
 function buildLegacySshProfile(connection: ConnectionProfile) {
@@ -287,6 +305,8 @@ function buildLegacySshProfile(connection: ConnectionProfile) {
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt,
     lastVerifiedAt: connection.updatedAt,
+    hostKeyPolicy: "trustOnFirstUse",
+    trustedHostKeySha256: null,
   } satisfies SshProfile;
 }
 
@@ -402,6 +422,17 @@ function normalizeState(state: AppStateShape): AppStateShape {
     errorLogs: [...(state.errorLogs ?? [])]
       .map((log) => normalizeStoredErrorLog(log, responsePreviewBytes))
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+    statusHistory: Object.fromEntries(
+      Object.entries(state.statusHistory ?? {})
+        .filter(([connectionId]) => connectionIds.has(connectionId))
+        .map(([connectionId, history]) => [
+          connectionId,
+          [...(history ?? [])]
+            .filter((item) => item && typeof item.fetchedAt === "string")
+            .sort((left, right) => right.fetchedAt.localeCompare(left.fetchedAt))
+            .slice(0, 200),
+        ]),
+    ),
   };
 }
 
@@ -521,6 +552,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       aiApiKeyConfigured,
       aiAnalysisHistory: state.aiAnalysisHistory,
       errorLogs: state.errorLogs,
+      statusHistoryByConnection: state.statusHistory,
       setCurrentConnection(connectionId) {
         setState((current) =>
           normalizeState({
@@ -610,6 +642,15 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           errorLogs: [],
         }));
       },
+      recordStatusSnapshot(connectionId, snapshot) {
+        setState((current) => ({
+          ...current,
+          statusHistory: {
+            ...current.statusHistory,
+            [connectionId]: appendStatusHistorySnapshot(current.statusHistory[connectionId] ?? [], snapshot),
+          },
+        }));
+      },
       recordErrorLog(payload) {
         setState((current) => {
           if (!isErrorLoggingEnabled(current.settings)) {
@@ -622,11 +663,20 @@ export function AppStateProvider({ children }: PropsWithChildren) {
             scope: payload.scope,
             title: payload.title,
             summary: payload.summary,
-            diagnostics: (payload.diagnostics ?? []).map((item) => createTextPreview(item, current.settings.responsePreviewBytes).text),
+            diagnostics: redactSensitiveList(payload.diagnostics ?? []).map((item) =>
+              createTextPreview(item, current.settings.responsePreviewBytes).text
+            ),
             status: payload.status ?? null,
-            rawResponse: payload.rawResponse ? createTextPreview(payload.rawResponse, current.settings.responsePreviewBytes).text : undefined,
+            rawResponse: payload.rawResponse
+              ? createTextPreview(redactSensitiveText(payload.rawResponse), current.settings.responsePreviewBytes).text
+              : undefined,
             connection: payload.connection,
-            request: payload.request,
+            request: payload.request
+              ? {
+                  ...payload.request,
+                  content: payload.request.content ? redactSensitiveText(payload.request.content) : undefined,
+                }
+              : undefined,
           } satisfies ErrorLogEntry;
 
           return {
@@ -1012,10 +1062,11 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           };
         });
       },
-      async upsertSshProfile(formValues, existingProfileId) {
+      async upsertSshProfile(formValues, existingProfileId, trustedHostKeySha256) {
         const timestamp = now();
         const tunnel = buildSshTunnelConfig(formValues);
         const previous = existingProfileId ? state.sshProfiles.find((item) => item.id === existingProfileId) ?? null : null;
+        const normalizedPrevious = previous ? normalizeSshProfileSecurity(previous) : null;
         const profileId = previous?.id ?? crypto.randomUUID();
         const sshSecret = getSshSecretFromForm(formValues);
 
@@ -1032,6 +1083,8 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           createdAt: previous?.createdAt ?? timestamp,
           updatedAt: timestamp,
           lastVerifiedAt: timestamp,
+          hostKeyPolicy: normalizedPrevious?.hostKeyPolicy ?? "trustOnFirstUse",
+          trustedHostKeySha256: trustedHostKeySha256 ?? normalizedPrevious?.trustedHostKeySha256 ?? null,
         } satisfies SshProfile;
 
         setState((current) => {
@@ -1055,23 +1108,39 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       async upsertConnection(formValues, existingConnectionId) {
         const timestamp = now();
         const normalizedBaseUrl = normalizeBaseUrl(formValues.baseUrl);
+        const auth = { type: formValues.authType };
         const previous = existingConnectionId
           ? state.connections.find((item) => item.id === existingConnectionId) ?? null
           : null;
         const connectionId = previous?.id ?? crypto.randomUUID();
 
-        if (previous && previous.username !== formValues.username) {
-          await deleteConnectionPassword(previous.id, previous.username);
+        if (previous) {
+          await deleteConnectionSecret(previous.id, getAuthSecretKey(previous.auth, previous.username));
+          if (previous.username !== formValues.username) {
+            await deleteConnectionPassword(previous.id, previous.username);
+          }
         }
 
-        await saveConnectionPassword(connectionId, formValues.username, formValues.password);
+        const authSecret = getAuthSecretFromForm(formValues);
+        await saveConnectionSecret(connectionId, getAuthSecretKey(auth, formValues.username), authSecret);
+        if (auth.type === "basic") {
+          await saveConnectionPassword(connectionId, formValues.username, formValues.password);
+        }
 
         const profile = {
           id: connectionId,
           name: formValues.name.trim() || normalizedBaseUrl,
           baseUrl: normalizedBaseUrl,
           username: formValues.username.trim(),
-          insecureTls: formValues.insecureTls,
+          auth,
+          tls: {
+            mode: formValues.tlsMode,
+            caPath: formValues.tlsCaPath.trim() || undefined,
+            fingerprint: formValues.tlsFingerprint.trim() || undefined,
+          },
+          environment: formValues.environment,
+          readonly: formValues.readonly,
+          insecureTls: formValues.tlsMode === "insecure" || formValues.insecureTls,
           sshProfileId: formValues.sshProfileId.trim() || null,
           sshTunnel: null,
           createdAt: previous?.createdAt ?? timestamp,
@@ -1136,10 +1205,16 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         }
 
         await deleteConnectionPassword(target.id, target.username);
+        await deleteConnectionSecret(target.id, getAuthSecretKey(target.auth, target.username));
 
         setState((current) => removeConnectionsFromState(current, new Set([connectionId])));
       },
       async getPassword(connection) {
+        const normalized = normalizeConnectionProfileSecurity(connection);
+        const authSecret = await getConnectionSecret(connection.id, getAuthSecretKey(normalized.auth, normalized.username));
+        if (authSecret) {
+          return normalized.auth.type === "basic" ? authSecret.split(":", 2)[1] ?? authSecret : authSecret;
+        }
         return getConnectionPassword(connection.id, connection.username);
       },
       async getSshSecret(sshProfile) {

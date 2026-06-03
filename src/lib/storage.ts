@@ -4,6 +4,7 @@ import { DEFAULT_AI_ANALYSIS_SETTINGS } from "../types/ai-settings";
 import type { AiAnalysisHistoryEntry } from "../types/ai-analysis-history";
 import type { ConnectionProfile, SshProfile } from "../types/connections";
 import type { ErrorLogEntry, ErrorLogSettings } from "../types/logs";
+import type { ServerStatusSnapshot } from "../types/status";
 import type {
   ConnectionSearchMetadata,
   ConsoleDraft,
@@ -22,6 +23,7 @@ type AppStorageState = {
   aiSettings: AiAnalysisSettings;
   aiAnalysisHistory: AiAnalysisHistoryEntry[];
   errorLogs: ErrorLogEntry[];
+  statusHistory: Record<string, ServerStatusSnapshot[]>;
 };
 
 const STORE_KEY = "app-state";
@@ -52,6 +54,7 @@ export function createEmptyStorage(): AppStorageState {
     aiSettings: { ...DEFAULT_AI_ANALYSIS_SETTINGS },
     aiAnalysisHistory: [],
     errorLogs: [],
+    statusHistory: {},
   };
 }
 

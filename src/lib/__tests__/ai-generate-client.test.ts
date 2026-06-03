@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockFetch } = vi.hoisted(() => ({
-  mockFetch: vi.fn(),
+const { mockExecuteAiHttpRequest } = vi.hoisted(() => ({
+  mockExecuteAiHttpRequest: vi.fn(),
 }));
 
-vi.mock("@tauri-apps/plugin-http", () => ({
-  fetch: mockFetch,
+vi.mock("../tauri", () => ({
+  executeAiHttpRequest: mockExecuteAiHttpRequest,
 }));
 
 import {
@@ -70,16 +70,17 @@ describe("buildGenerateUserPrompt", () => {
 
 describe("generateRequestContentWithAi", () => {
   beforeEach(() => {
-    mockFetch.mockReset();
+    mockExecuteAiHttpRequest.mockReset();
   });
 
   it("returns formatted request content from ai response", async () => {
-    mockFetch.mockResolvedValue({
+    mockExecuteAiHttpRequest.mockResolvedValue({
       ok: true,
-      text: async () =>
-        JSON.stringify({
-          choices: [{ message: { content: 'POST /users/_search\n{"query":{"term":{"status":"active"}}}' } }],
-        }),
+      status: 200,
+      statusText: "OK",
+      bodyText: JSON.stringify({
+        choices: [{ message: { content: 'POST /users/_search\n{"query":{"term":{"status":"active"}}}' } }],
+      }),
     });
 
     const result = await generateRequestContentWithAi({
@@ -93,10 +94,11 @@ describe("generateRequestContentWithAi", () => {
   });
 
   it("throws when ai service returns error", async () => {
-    mockFetch.mockResolvedValue({
+    mockExecuteAiHttpRequest.mockResolvedValue({
       ok: false,
       status: 401,
-      text: async () => JSON.stringify({ error: { message: "invalid api key" } }),
+      statusText: "Unauthorized",
+      bodyText: JSON.stringify({ error: { message: "invalid api key" } }),
     });
 
     await expect(
@@ -111,7 +113,7 @@ describe("generateRequestContentWithAi", () => {
 
 describe("generateRequestContent", () => {
   beforeEach(() => {
-    mockFetch.mockReset();
+    mockExecuteAiHttpRequest.mockReset();
   });
 
   it("throws when ai is not configured", async () => {

@@ -1,4 +1,3 @@
-import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import {
   DetailedError,
   extractUnknownErrorDiagnostics,
@@ -8,12 +7,13 @@ import {
 } from "./errors";
 import { buildResponseSnapshot } from "./response-snapshot";
 import { buildServerStatus } from "./status";
-import { ensureTrailingSlashless, toBase64 } from "./utils";
-import { executeSshHttpRequest, type TauriHttpResponse } from "./tauri";
+import { ensureTrailingSlashless } from "./utils";
+import { executeEsHttpRequest, executeSshHttpRequest, type TauriHttpResponse } from "./tauri";
 import type { ConnectionProfile, SshTunnelConfig } from "../types/connections";
 import type { ParsedConsoleRequest } from "./console-parser";
 import type { ResponseSnapshot } from "../types/requests";
 import { flattenMappingFields, flattenMappingFieldsByIndex } from "./console-autocomplete";
+import { normalizeConnectionProfileSecurity } from "./connection-security";
 
 type ConnectionProbe = {
   path: string;
@@ -29,6 +29,7 @@ type ProbeAttempt = {
 
 type RequestCredentials = {
   password: string;
+  authSecret?: string;
   sshSecret?: string | null;
 };
 
@@ -65,6 +66,21 @@ function buildSnapshot(
     errorMessage: result.errorMessage,
     diagnostics: result.diagnostics ?? [],
   }, responsePreviewBytes);
+}
+
+function isInsecureTls(connection: ConnectionProfile) {
+  return connection.tls?.mode === "insecure" || connection.insecureTls;
+}
+
+function resolveAuthSecret(connection: ConnectionProfile, credentials: RequestCredentials) {
+  const normalized = normalizeConnectionProfileSecurity(connection);
+  if (credentials.authSecret) {
+    return credentials.authSecret;
+  }
+  if (normalized.auth.type === "basic") {
+    return `${normalized.username}:${credentials.password}`;
+  }
+  return credentials.password;
 }
 
 function parseJsonRecord(bodyText: string) {
@@ -484,16 +500,21 @@ async function executeConsoleRequestRaw(
   const startedAt = performance.now();
   const executedAt = new Date().toISOString();
   const sshTunnel = sshTunnelOverride ?? connection.sshTunnel ?? null;
+  const normalizedConnection = normalizeConnectionProfileSecurity(connection);
+  const authSecret = resolveAuthSecret(normalizedConnection, credentials);
 
   try {
     if (sshTunnel) {
       const response = await executeSshHttpRequest({
         url: resolveRequestUrl(connection.baseUrl, parsed.path),
         method: parsed.method,
-        username: connection.username,
+        auth: normalizedConnection.auth,
+        username: normalizedConnection.username,
         password: credentials.password,
+        authSecret,
         bodyText: parsed.bodyText,
-        insecureTls: connection.insecureTls,
+        contentType: parsed.contentType,
+        insecureTls: isInsecureTls(normalizedConnection),
         sshTunnel,
         sshSecret: credentials.sshSecret ?? null,
       });
@@ -505,30 +526,27 @@ async function executeConsoleRequestRaw(
       };
     }
 
-    const response = await tauriFetch(resolveRequestUrl(connection.baseUrl, parsed.path), {
+    const response = await executeEsHttpRequest({
+      url: resolveRequestUrl(connection.baseUrl, parsed.path),
       method: parsed.method,
-      headers: {
-        Accept: "application/json, text/plain, */*",
-        Authorization: `Basic ${toBase64(`${connection.username}:${credentials.password}`)}`,
-        ...(parsed.bodyText ? { "Content-Type": "application/json" } : {}),
-      },
-      body: parsed.bodyText || undefined,
-      connectTimeout: 15000,
-      danger: connection.insecureTls
-        ? {
-            acceptInvalidCerts: true,
-            acceptInvalidHostnames: true,
-          }
-        : undefined,
+      auth: normalizedConnection.auth,
+      username: normalizedConnection.username,
+      password: credentials.password,
+      authSecret,
+      bodyText: parsed.bodyText,
+      contentType: parsed.contentType,
+      insecureTls: isInsecureTls(normalizedConnection),
+      tls: normalizedConnection.tls,
     });
 
-    const bodyText = await response.text();
     return {
       response: {
         ok: response.ok,
         status: response.status,
         statusText: response.statusText,
-        bodyText,
+        bodyText: response.bodyText,
+        errorMessage: response.errorMessage,
+        diagnostics: response.diagnostics ?? [],
       },
       durationMs: Math.round(performance.now() - startedAt),
       executedAt,
@@ -643,6 +661,8 @@ async function runSearchMetadataProbe(
       path: probe.path,
       bodyText: "",
       bodyJson: null,
+      bodyKind: "empty",
+      contentType: null,
     },
     sshTunnelOverride,
   );
@@ -665,6 +685,8 @@ async function runServerStatusProbe(
       path: probe.path,
       bodyText: "",
       bodyJson: null,
+      bodyKind: "empty",
+      contentType: null,
     },
     sshTunnelOverride,
   );
@@ -846,23 +868,28 @@ export async function fetchIndexMappingFields(
 }
 
 export async function testConnection(
-  profile: Pick<ConnectionProfile, "baseUrl" | "username" | "insecureTls">,
-  password: string,
+  profile: Pick<ConnectionProfile, "baseUrl" | "username" | "insecureTls"> &
+    Partial<Pick<ConnectionProfile, "auth" | "tls" | "environment" | "readonly">>,
+  authSecret: string,
   sshSecret?: string | null,
   sshTunnel?: SshTunnelConfig | null,
 ) {
-  const connection = {
+  const connection = normalizeConnectionProfileSecurity({
     id: "temporary",
     name: "temporary",
     baseUrl: normalizeBaseUrl(profile.baseUrl),
     username: profile.username,
+    auth: profile.auth ?? { type: "basic" },
+    tls: profile.tls ?? { mode: profile.insecureTls ? "insecure" : "default" },
+    environment: profile.environment ?? "dev",
+    readonly: profile.readonly ?? false,
     insecureTls: profile.insecureTls,
     sshProfileId: null,
     sshTunnel: sshTunnel ?? null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     lastUsedAt: new Date().toISOString(),
-  } satisfies ConnectionProfile;
+  } satisfies ConnectionProfile);
 
   const probes: ConnectionProbe[] = [
     { path: "/", label: "根信息", matches: isElasticsearchRootResponse },
@@ -873,7 +900,7 @@ export async function testConnection(
   const attempts: ProbeAttempt[] = [];
 
   for (const probe of probes) {
-    const attempt = await runConnectionProbe(connection, { password, sshSecret }, probe);
+    const attempt = await runConnectionProbe(connection, { password: authSecret, authSecret, sshSecret }, probe);
     attempts.push(attempt);
 
     if (attempt.snapshot.ok && probe.matches(attempt.bodyText)) {
@@ -902,6 +929,8 @@ async function runConnectionProbe(
     path: probe.path,
     bodyText: "",
     bodyJson: null,
+    bodyKind: "empty",
+    contentType: null,
   });
 
   return {

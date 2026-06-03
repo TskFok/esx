@@ -1,5 +1,23 @@
 export type SshAuthMethod = "password" | "privateKey";
 
+export type ConnectionAuthType = "basic" | "apiKey" | "bearer";
+
+export type ConnectionAuthConfig = {
+  type: ConnectionAuthType;
+};
+
+export type ConnectionTlsMode = "default" | "insecure" | "caCertificate" | "certificateFingerprint";
+
+export type ConnectionTlsConfig = {
+  mode: ConnectionTlsMode;
+  caPath?: string;
+  fingerprint?: string;
+};
+
+export type ConnectionEnvironment = "dev" | "test" | "staging" | "prod";
+
+export type SshHostKeyPolicy = "trustOnFirstUse" | "strict";
+
 export type SshTunnelConfig = {
   host: string;
   port: number;
@@ -15,6 +33,8 @@ export type SshProfile = {
   createdAt: string;
   updatedAt: string;
   lastVerifiedAt: string;
+  hostKeyPolicy: SshHostKeyPolicy;
+  trustedHostKeySha256: string | null;
 };
 
 export type ConnectionProfile = {
@@ -22,6 +42,10 @@ export type ConnectionProfile = {
   name: string;
   baseUrl: string;
   username: string;
+  auth: ConnectionAuthConfig;
+  tls: ConnectionTlsConfig;
+  environment: ConnectionEnvironment;
+  readonly: boolean;
   insecureTls: boolean;
   sshProfileId: string | null;
   sshTunnel?: SshTunnelConfig | null;
@@ -33,9 +57,18 @@ export type ConnectionProfile = {
 export type ConnectionFormValues = {
   name: string;
   baseUrl: string;
+  authType: ConnectionAuthType;
   username: string;
   password: string;
+  apiKey: string;
+  bearerToken: string;
+  tlsMode: ConnectionTlsMode;
+  tlsCaPath: string;
+  tlsFingerprint: string;
   insecureTls: boolean;
+  environment: ConnectionEnvironment;
+  readonly: boolean;
+  allowInsecureProductionTls: boolean;
   sshProfileId: string;
 };
 

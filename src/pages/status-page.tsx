@@ -23,6 +23,7 @@ import { buildConnectionLogContextFromProfile } from "../lib/error-logs";
 import { extractUnknownErrorDiagnostics, extractUnknownErrorMessage } from "../lib/errors";
 import { fetchServerStatus } from "../lib/http-client";
 import { filterStatusIndices, sortStatusIndices } from "../lib/status";
+import { buildDiagnosticActions, buildStatusTrendSummary } from "../lib/status-diagnostics";
 import { formatShanghaiDateTime } from "../lib/time";
 import { cn } from "../lib/utils";
 import { useAppState } from "../providers/app-state";
@@ -478,6 +479,61 @@ function RiskFindingsPanel({ risks }: { risks: ServerRiskFinding[] }) {
   );
 }
 
+function DiagnosticsPanel({ status }: { status: ServerStatusSnapshot }) {
+  const actions = buildDiagnosticActions(status);
+  if (actions.length === 0) {
+    return null;
+  }
+
+  return (
+    <Card className="p-3 sm:p-4">
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Diagnostics</p>
+        <h2 className="mt-1 text-lg font-bold text-slate-950">建议诊断请求</h2>
+        <p className="mt-0.5 text-xs leading-5 text-slate-500 sm:text-sm">
+          根据当前状态快照推荐下一步排障入口，可复制到 Console 执行。
+        </p>
+      </div>
+      <div className="mt-3 grid gap-2 lg:grid-cols-2">
+        {actions.map((action) => (
+          <div key={action.id} className="rounded-xl border border-slate-200 bg-white p-2.5">
+            <p className="text-sm font-bold text-slate-950">{action.title}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{action.reason}</p>
+            <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">
+              GET {action.path}
+            </pre>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function TrendPanel({ history }: { history: ServerStatusSnapshot[] }) {
+  const trend = buildStatusTrendSummary(history);
+  if (!trend) {
+    return null;
+  }
+
+  return (
+    <Card className="p-3 sm:p-4">
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Trend</p>
+        <h2 className="mt-1 text-lg font-bold text-slate-950">最近快照增量</h2>
+        <p className="mt-0.5 text-xs leading-5 text-slate-500 sm:text-sm">
+          基于最近两次手动/页面刷新计算，间隔 {formatNumber(trend.intervalSeconds)} 秒。
+        </p>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <CompactMetric label="Search QPS" value={String(trend.searchQueriesPerSecond)} detail={`增量 ${formatNumber(trend.searchQueriesDelta)}`} />
+        <CompactMetric label="Indexing/s" value={String(trend.indexingPerSecond)} detail={`增量 ${formatNumber(trend.indexingDelta)}`} />
+        <CompactMetric label="Rejected" value={formatNumber(trend.threadPoolRejectedDelta)} detail="Thread pool rejected 增量" />
+        <CompactMetric label="Breaker" value={formatNumber(trend.breakerTrippedDelta)} detail="Circuit breaker tripped 增量" />
+      </div>
+    </Card>
+  );
+}
+
 function SortHeader({
   label,
   sortKey,
@@ -524,6 +580,8 @@ export function StatusPage() {
     getSshSecret,
     getSshProfileForConnection,
     recordErrorLog,
+    recordStatusSnapshot,
+    statusHistoryByConnection,
   } = useAppState();
   const [status, setStatus] = useState<ServerStatusSnapshot | null>(null);
   const [query, setQuery] = useState("");
@@ -541,8 +599,9 @@ export function StatusPage() {
 
       return fetchServerStatus(connection, { password, sshSecret }, sshProfile?.tunnel ?? null);
     },
-    onSuccess(nextStatus) {
+    onSuccess(nextStatus, connection) {
       setStatus(nextStatus);
+      recordStatusSnapshot(connection.id, nextStatus);
     },
     onError(error) {
       const message = extractUnknownErrorMessage(error, "服务器状态读取失败");
@@ -587,6 +646,7 @@ export function StatusPage() {
   }
 
   const connection = currentConnection;
+  const statusHistory = statusHistoryByConnection[connection.id] ?? [];
 
   function refreshStatus() {
     statusMutation.mutate(connection);
@@ -705,6 +765,10 @@ export function StatusPage() {
             </div>
 
             <RiskFindingsPanel risks={status.risks} />
+
+            <DiagnosticsPanel status={status} />
+
+            <TrendPanel history={statusHistory} />
 
             <OperationsPanel operations={status.operations} />
 
