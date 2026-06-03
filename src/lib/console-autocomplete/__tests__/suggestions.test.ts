@@ -43,6 +43,39 @@ describe("selectPropertySuggestions", () => {
     const labels = labelsOf(selectPropertySuggestions(["aggs", "my_agg"]));
     expect(labels).toEqual(expect.arrayContaining(["terms", "date_histogram", "avg", "sum", "aggs"]));
   });
+
+  it("suggests terms aggregation properties inside aggs.<name>.terms", () => {
+    const labels = labelsOf(selectPropertySuggestions(["aggs", "key", "terms"]));
+    expect(labels).toEqual(expect.arrayContaining(["field", "size", "order"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["date_histogram", "avg", "aggs"]));
+  });
+
+  it("suggests terms aggregation properties inside aggregations.<name>.terms", () => {
+    const labels = labelsOf(selectPropertySuggestions(["aggregations", "key", "terms"]));
+    expect(labels).toEqual(expect.arrayContaining(["field", "size", "order"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["date_histogram", "avg", "aggs"]));
+  });
+
+  it("suggests aggregation properties inside nested sub aggregations", () => {
+    const labels = labelsOf(selectPropertySuggestions(["aggs", "outer", "aggs", "inner", "terms"]));
+    expect(labels).toEqual(expect.arrayContaining(["field", "size", "order"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["date_histogram", "avg", "aggs"]));
+  });
+
+  it("suggests type-specific properties for aggregation leaf objects", () => {
+    expect(labelsOf(selectPropertySuggestions(["aggs", "key", "date_histogram"]))).toEqual(
+      expect.arrayContaining(["field", "calendar_interval"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["aggs", "key", "histogram"]))).toEqual(
+      expect.arrayContaining(["field", "interval"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["aggs", "key", "range"]))).toEqual(
+      expect.arrayContaining(["field", "ranges"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["aggs", "key", "cardinality"]))).toEqual(
+      expect.arrayContaining(["field", "precision_threshold"]),
+    );
+  });
 });
 
 describe("selectValueSuggestions", () => {

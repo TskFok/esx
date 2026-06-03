@@ -1,5 +1,6 @@
 import {
   AGGS_CONTAINER_PROPERTY_SNIPPET,
+  AGG_PROPERTY_SNIPPETS_BY_TYPE,
   AGG_TYPE_PROPERTY_SNIPPETS,
   BOOL_PROPERTY_SNIPPETS,
   LITERAL_VALUE_SNIPPETS,
@@ -34,6 +35,7 @@ export function selectPropertySuggestions(path: JsonPathSegment[]): RawSnippet[]
   const last = path[path.length - 1];
   const secondLast = path[path.length - 2];
   const thirdLast = path[path.length - 3];
+  const aggregationProperties = selectAggregationPropertySuggestions(path);
 
   if (path.length === 0) {
     return [...ROOT_PROPERTY_SNIPPETS];
@@ -65,6 +67,10 @@ export function selectPropertySuggestions(path: JsonPathSegment[]): RawSnippet[]
     return [...QUERY_LEAF_PROPERTY_SNIPPETS];
   }
 
+  if (aggregationProperties) {
+    return [...aggregationProperties];
+  }
+
   if (last === "aggs" || last === "aggregations") {
     return [AGGS_CONTAINER_PROPERTY_SNIPPET];
   }
@@ -78,6 +84,17 @@ export function selectPropertySuggestions(path: JsonPathSegment[]): RawSnippet[]
   }
 
   return [...ROOT_PROPERTY_SNIPPETS, ...QUERY_LEAF_PROPERTY_SNIPPETS];
+}
+
+function selectAggregationPropertySuggestions(path: JsonPathSegment[]) {
+  const last = path[path.length - 1];
+  const thirdLast = path[path.length - 3];
+
+  if (typeof last !== "string" || (thirdLast !== "aggs" && thirdLast !== "aggregations")) {
+    return null;
+  }
+
+  return AGG_PROPERTY_SNIPPETS_BY_TYPE[last] ?? null;
 }
 
 export function selectValueSuggestions(path: JsonPathSegment[]): RawSnippet[] {
