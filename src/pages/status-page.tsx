@@ -32,6 +32,7 @@ import type {
   IndexStatus,
   ServerHealth,
   ServerOperationStatus,
+  ServerRiskFinding,
   ServerStatusSnapshot,
   ServerStatusSort,
 } from "../types/status";
@@ -78,6 +79,18 @@ const diskWatermarkClasses: Record<DiskWatermark, string> = {
   high: "border-orange-200 bg-orange-50 text-orange-700",
   flood_stage: "border-rose-200 bg-rose-50 text-rose-700",
   unknown: "border-slate-200 bg-slate-50 text-slate-600",
+};
+
+const riskSeverityLabels: Record<ServerRiskFinding["severity"], string> = {
+  critical: "严重",
+  warning: "警告",
+  info: "提示",
+};
+
+const riskSeverityClasses: Record<ServerRiskFinding["severity"], string> = {
+  critical: "border-rose-200 bg-rose-50 text-rose-700",
+  warning: "border-amber-200 bg-amber-50 text-amber-700",
+  info: "border-cyan-200 bg-cyan-50 text-cyan-700",
 };
 
 function formatDataBytes(value: number | null) {
@@ -407,6 +420,64 @@ function OperationsPanel({ operations }: { operations: ServerOperationStatus }) 
   );
 }
 
+function RiskFindingsPanel({ risks }: { risks: ServerRiskFinding[] }) {
+  if (risks.length === 0) {
+    return (
+      <Card className="border-emerald-100 bg-emerald-50/70 p-3 sm:p-4">
+        <div className="flex items-start gap-2">
+          <Activity className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <div>
+            <p className="text-sm font-bold text-emerald-950">暂无明显运维风险</p>
+            <p className="mt-0.5 text-xs leading-5 text-emerald-800 sm:text-sm">
+              当前快照未触发集群健康、磁盘、Heap、CPU、Thread Pool、Breaker 或索引膨胀风险规则。
+            </p>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  const criticalCount = risks.filter((risk) => risk.severity === "critical").length;
+  const warningCount = risks.filter((risk) => risk.severity === "warning").length;
+
+  return (
+    <Card className="p-3 sm:p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Risk Findings</p>
+          <h2 className="mt-1 text-lg font-bold text-slate-950">风险结论</h2>
+          <p className="mt-0.5 text-xs leading-5 text-slate-500 sm:text-sm">
+            命中 {risks.length} 条规则，严重 {criticalCount} 条，警告 {warningCount} 条。
+          </p>
+        </div>
+        <span
+          className={cn(
+            "w-fit rounded-full border px-2 py-0.5 text-[10px] font-bold",
+            criticalCount > 0 ? riskSeverityClasses.critical : warningCount > 0 ? riskSeverityClasses.warning : riskSeverityClasses.info,
+          )}
+        >
+          {criticalCount > 0 ? "需要优先处理" : warningCount > 0 ? "建议关注" : "仅提示"}
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-2 lg:grid-cols-2">
+        {risks.map((risk) => (
+          <div key={risk.id} className="rounded-xl border border-slate-200 bg-white p-2.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className={cn("rounded-full border px-1.5 py-px text-[10px] font-bold", riskSeverityClasses[risk.severity])}>
+                {riskSeverityLabels[risk.severity]}
+              </span>
+              <p className="text-sm font-bold text-slate-950">{risk.title}</p>
+            </div>
+            <p className="mt-1.5 text-xs leading-5 text-slate-600 sm:text-sm">{risk.detail}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">{risk.recommendation}</p>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function SortHeader({
   label,
   sortKey,
@@ -632,6 +703,8 @@ export function StatusPage() {
               <HealthDistribution status={status} />
               <ShardOverview status={status} />
             </div>
+
+            <RiskFindingsPanel risks={status.risks} />
 
             <OperationsPanel operations={status.operations} />
 

@@ -5,6 +5,7 @@ import type {
   NodeOperationStatus,
   ServerOperationStatus,
   ServerHealth,
+  ServerRiskFinding,
   ServerStatusSnapshot,
   ServerStatusSort,
   ThreadPoolOperationStatus,
@@ -522,9 +523,160 @@ function summarizeShardCounts(indices: IndexStatus[]) {
   }), emptyShardSummary());
 }
 
+function buildRiskFindings({
+  cluster,
+  indices,
+  summary,
+  operations,
+}: {
+  cluster: ClusterStatus;
+  indices: IndexStatus[];
+  summary: ServerStatusSnapshot["summary"];
+  operations: ServerOperationStatus;
+}) {
+  const risks: ServerRiskFinding[] = [];
+  const pushRisk = (risk: ServerRiskFinding) => {
+    risks.push(risk);
+  };
+
+  if (cluster.health === "red") {
+    pushRisk({
+      id: "cluster-red",
+      severity: "critical",
+      title: "集群处于 red 状态",
+      detail: "至少有主分片不可用，查询或写入可能已经受影响。",
+      recommendation: "优先查看未分配分片和节点状态，必要时使用 `_cluster/allocation/explain` 定位分配失败原因。",
+    });
+  } else if (cluster.health === "yellow") {
+    pushRisk({
+      id: "cluster-yellow",
+      severity: "warning",
+      title: "集群处于 yellow 状态",
+      detail: "主分片可用，但至少有副本分片未分配，容灾能力下降。",
+      recommendation: "检查副本数、节点数量、磁盘水位和 allocation 规则，确认副本能否恢复分配。",
+    });
+  }
+
+  if (summary.shardCounts.unassigned > 0 || (cluster.unassignedShards ?? 0) > 0) {
+    pushRisk({
+      id: "unassigned-shards",
+      severity: cluster.health === "red" ? "critical" : "warning",
+      title: "存在未分配分片",
+      detail: `当前检测到 ${summary.shardCounts.unassigned || cluster.unassignedShards || 0} 个未分配分片。`,
+      recommendation: "查看具体 index 的 shard 状态，并执行 allocation explain 判断是磁盘、节点、过滤规则还是副本数导致。",
+    });
+  }
+
+  if (operations.diskWatermark === "flood_stage") {
+    pushRisk({
+      id: "disk-flood-stage",
+      severity: "critical",
+      title: "磁盘达到 flood stage 风险",
+      detail: `集群聚合磁盘使用率 ${operations.diskUsedPercent === null ? "未知" : `${operations.diskUsedPercent}%`}，至少一个节点可能接近 95%。`,
+      recommendation: "尽快释放磁盘、扩容节点或迁移分片，并检查索引是否被自动设置为 read_only_allow_delete。",
+    });
+  } else if (operations.diskWatermark === "high") {
+    pushRisk({
+      id: "disk-high-watermark",
+      severity: "warning",
+      title: "磁盘超过 high watermark",
+      detail: "至少一个节点磁盘使用率接近或超过 90%，分片分配可能受限。",
+      recommendation: "清理过期索引、增加容量或调整分片布局，避免进一步进入 flood stage。",
+    });
+  } else if (operations.diskWatermark === "low") {
+    pushRisk({
+      id: "disk-low-watermark",
+      severity: "info",
+      title: "磁盘超过 low watermark",
+      detail: "至少一个节点磁盘使用率接近或超过 85%，后续分片分配空间开始收紧。",
+      recommendation: "关注索引增长速度，提前规划清理、扩容或冷热分层策略。",
+    });
+  }
+
+  if ((operations.maxHeapPercent ?? 0) >= 90) {
+    pushRisk({
+      id: "heap-critical",
+      severity: "critical",
+      title: "JVM Heap 使用率过高",
+      detail: `最高 heap 使用率 ${operations.maxHeapPercent}%，存在频繁 GC 或 OOM 风险。`,
+      recommendation: "检查大查询、高基数字段聚合、fielddata、segment 内存和老年代 GC，必要时降低查询压力或扩容。",
+    });
+  } else if ((operations.maxHeapPercent ?? 0) >= 75) {
+    pushRisk({
+      id: "heap-warning",
+      severity: "warning",
+      title: "JVM Heap 使用率偏高",
+      detail: `最高 heap 使用率 ${operations.maxHeapPercent}%，需要持续观察 GC 和 breaker。`,
+      recommendation: "关注查询聚合、批量写入和缓存压力，避免 heap 继续攀升。",
+    });
+  }
+
+  if ((operations.maxCpuPercent ?? 0) >= 90) {
+    pushRisk({
+      id: "cpu-critical",
+      severity: "critical",
+      title: "节点 CPU 压力过高",
+      detail: `最高 CPU 使用率 ${operations.maxCpuPercent}%，可能影响查询和写入延迟。`,
+      recommendation: "检查 hot threads、慢查询、批量写入和 merge 压力，确认是否存在热点节点。",
+    });
+  } else if ((operations.maxCpuPercent ?? 0) >= 75) {
+    pushRisk({
+      id: "cpu-warning",
+      severity: "warning",
+      title: "节点 CPU 压力偏高",
+      detail: `最高 CPU 使用率 ${operations.maxCpuPercent}%，建议观察是否持续升高。`,
+      recommendation: "结合查询量、写入量和 merge 指标判断是否需要限流或扩容。",
+    });
+  }
+
+  if (operations.threadPools.rejected > 0) {
+    pushRisk({
+      id: "thread-pool-rejections",
+      severity: "warning",
+      title: "Thread Pool 出现拒绝",
+      detail: `累计 rejected ${operations.threadPools.rejected} 次，部分请求可能已被拒绝。`,
+      recommendation: "查看热点线程池类型，降低并发、优化批量大小，或扩容对应角色节点。",
+    });
+  }
+
+  if (operations.breakers.tripped > 0) {
+    pushRisk({
+      id: "breaker-tripped",
+      severity: "warning",
+      title: "Circuit Breaker 被触发",
+      detail: `累计 tripped ${operations.breakers.tripped} 次，说明请求内存压力曾超过保护阈值。`,
+      recommendation: "检查大聚合、返回字段、fielddata 和批量请求，优先降低单次请求内存占用。",
+    });
+  }
+
+  const highDeletedRatioIndex = indices.find((index) => {
+    const docs = index.docsCount ?? 0;
+    const deleted = index.docsDeleted ?? 0;
+    return docs >= 100 && deleted / Math.max(docs, 1) >= 0.5;
+  });
+  if (highDeletedRatioIndex) {
+    pushRisk({
+      id: "deleted-docs-ratio",
+      severity: "info",
+      title: "索引删除文档比例偏高",
+      detail: `${highDeletedRatioIndex.name} 的 deleted docs 接近或超过当前文档数的 50%。`,
+      recommendation: "确认是否需要通过 rollover、forcemerge 或重建索引降低段膨胀和查询成本。",
+    });
+  }
+
+  const severityOrder: Record<ServerRiskFinding["severity"], number> = {
+    critical: 0,
+    warning: 1,
+    info: 2,
+  };
+
+  return risks.sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity]);
+}
+
 export function buildServerStatus(input: ServerStatusInput): ServerStatusSnapshot {
   const shardSummaries = buildShardSummaries(input.shardsText);
   const indices = parseIndices(input.indicesText, shardSummaries);
+  const cluster = parseClusterStatus(input.clusterHealthText);
   const healthCounts = indices.reduce<Record<ServerHealth, number>>(
     (counts, index) => ({
       ...counts,
@@ -532,19 +684,22 @@ export function buildServerStatus(input: ServerStatusInput): ServerStatusSnapsho
     }),
     { green: 0, yellow: 0, red: 0, unknown: 0 },
   );
+  const summary = {
+    totalIndices: indices.length,
+    systemIndices: indices.filter((index) => index.name.startsWith(".")).length,
+    visibleStoreBytes: sumKnownNumbers(indices, (index) => index.storeBytes),
+    visibleDocsCount: sumKnownNumbers(indices, (index) => index.docsCount),
+    healthCounts,
+    shardCounts: summarizeShardCounts(indices),
+  };
+  const operations = parseNodesStats(input.nodesStatsText);
 
   return {
-    cluster: parseClusterStatus(input.clusterHealthText),
+    cluster,
     indices,
-    summary: {
-      totalIndices: indices.length,
-      systemIndices: indices.filter((index) => index.name.startsWith(".")).length,
-      visibleStoreBytes: sumKnownNumbers(indices, (index) => index.storeBytes),
-      visibleDocsCount: sumKnownNumbers(indices, (index) => index.docsCount),
-      healthCounts,
-      shardCounts: summarizeShardCounts(indices),
-    },
-    operations: parseNodesStats(input.nodesStatsText),
+    summary,
+    operations,
+    risks: buildRiskFindings({ cluster, indices, summary, operations }),
     fetchedAt: input.fetchedAt ?? new Date().toISOString(),
     partialFailures: [...(input.shardDiagnostics ?? []), ...(input.nodesStatsDiagnostics ?? [])],
   };

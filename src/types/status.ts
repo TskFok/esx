@@ -125,11 +125,22 @@ export type ServerOperationStatus = {
   nodes: NodeOperationStatus[];
 };
 
+export type ServerRiskSeverity = "critical" | "warning" | "info";
+
+export type ServerRiskFinding = {
+  id: string;
+  severity: ServerRiskSeverity;
+  title: string;
+  detail: string;
+  recommendation: string;
+};
+
 export type ServerStatusSnapshot = {
   cluster: ClusterStatus;
   indices: IndexStatus[];
   summary: ServerStatusSummary;
   operations: ServerOperationStatus;
+  risks: ServerRiskFinding[];
   fetchedAt: string;
   partialFailures: string[];
 };

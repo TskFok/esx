@@ -270,6 +270,84 @@ describe("server status parsing", () => {
       diskWatermark: "flood_stage",
     });
   });
+
+  it("builds risk findings from cluster, shard, node, and index signals", () => {
+    const status = buildServerStatus({
+      clusterHealthText: JSON.stringify({
+        cluster_name: "prod",
+        status: "red",
+        number_of_nodes: 2,
+        unassigned_shards: 3,
+      }),
+      indicesText: JSON.stringify([
+        {
+          health: "red",
+          status: "open",
+          index: "orders",
+          "docs.count": "100",
+          "docs.deleted": "80",
+          "store.size": "1024",
+        },
+      ]),
+      shardsText: JSON.stringify([
+        { index: "orders", state: "UNASSIGNED" },
+        { index: "orders", state: "UNASSIGNED" },
+      ]),
+      nodesStatsText: JSON.stringify({
+        nodes: {
+          node_a: {
+            name: "hot-1",
+            os: { cpu: { percent: 96 } },
+            jvm: {
+              mem: {
+                heap_used_percent: 91,
+                heap_used_in_bytes: 910,
+                heap_max_in_bytes: 1000,
+              },
+              gc: {
+                collectors: {
+                  old: { collection_count: 5, collection_time_in_millis: 6000 },
+                },
+              },
+            },
+            fs: {
+              total: {
+                total_in_bytes: 1000,
+                free_in_bytes: 30,
+                available_in_bytes: 20,
+              },
+            },
+            thread_pool: {
+              search: { active: 4, queue: 12, rejected: 3, completed: 100 },
+            },
+            breakers: {
+              request: {
+                estimated_size_in_bytes: 900,
+                limit_size_in_bytes: 1000,
+                tripped: 2,
+              },
+            },
+            indices: {},
+          },
+        },
+      }),
+    });
+
+    expect(status.risks.map((risk) => risk.id)).toEqual([
+      "cluster-red",
+      "unassigned-shards",
+      "disk-flood-stage",
+      "heap-critical",
+      "cpu-critical",
+      "thread-pool-rejections",
+      "breaker-tripped",
+      "deleted-docs-ratio",
+    ]);
+    expect(status.risks[0]).toMatchObject({
+      severity: "critical",
+      title: "集群处于 red 状态",
+    });
+  });
 });
 
 describe("server status index list helpers", () => {
