@@ -1,9 +1,13 @@
 import type {
   ClusterStatus,
+  DiskWatermark,
   IndexStatus,
+  NodeOperationStatus,
+  ServerOperationStatus,
   ServerHealth,
   ServerStatusSnapshot,
   ServerStatusSort,
+  ThreadPoolOperationStatus,
   ShardStateSummary,
 } from "../types/status";
 
@@ -11,7 +15,9 @@ type ServerStatusInput = {
   clusterHealthText: string;
   indicesText: string;
   shardsText?: string | null;
+  nodesStatsText?: string | null;
   shardDiagnostics?: string[];
+  nodesStatsDiagnostics?: string[];
   fetchedAt?: string;
 };
 
@@ -89,6 +95,132 @@ function parseNumberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function getRecord(record: Record<string, unknown>, key: string) {
+  return toRecord(record[key]);
+}
+
+function readNumber(record: Record<string, unknown> | null, key: string) {
+  return record ? parseNumberValue(record[key]) : null;
+}
+
+function addKnown(total: number, value: number | null) {
+  return total + (value ?? 0);
+}
+
+function averageKnown(values: Array<number | null>) {
+  const known = values.filter((value): value is number => value !== null);
+  if (known.length === 0) {
+    return null;
+  }
+
+  return roundMetric(known.reduce((total, value) => total + value, 0) / known.length);
+}
+
+function maxKnown(values: Array<number | null>) {
+  const known = values.filter((value): value is number => value !== null);
+  return known.length > 0 ? Math.max(...known) : null;
+}
+
+function roundMetric(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function averageDuration(totalTimeMs: number, totalCount: number) {
+  return totalCount > 0 ? roundMetric(totalTimeMs / totalCount) : null;
+}
+
+function classifyDiskWatermark(usedPercent: number | null): DiskWatermark {
+  if (usedPercent === null) {
+    return "unknown";
+  }
+  if (usedPercent >= 95) {
+    return "flood_stage";
+  }
+  if (usedPercent >= 90) {
+    return "high";
+  }
+  if (usedPercent >= 85) {
+    return "low";
+  }
+  return "normal";
+}
+
+function worstDiskWatermark(left: DiskWatermark, right: DiskWatermark): DiskWatermark {
+  const order: Record<DiskWatermark, number> = {
+    unknown: -1,
+    normal: 0,
+    low: 1,
+    high: 2,
+    flood_stage: 3,
+  };
+
+  return order[right] > order[left] ? right : left;
+}
+
+function emptyOperations(): ServerOperationStatus {
+  return {
+    nodeCount: 0,
+    avgCpuPercent: null,
+    maxCpuPercent: null,
+    avgHeapPercent: null,
+    maxHeapPercent: null,
+    heapUsedBytes: 0,
+    heapMaxBytes: 0,
+    diskTotalBytes: 0,
+    diskFreeBytes: 0,
+    diskAvailableBytes: 0,
+    diskUsedPercent: null,
+    diskWatermark: "unknown",
+    gc: {
+      collectionCount: 0,
+      collectionTimeMs: 0,
+    },
+    threadPools: {
+      active: 0,
+      queue: 0,
+      rejected: 0,
+      completed: 0,
+    },
+    topThreadPools: [],
+    breakers: {
+      estimatedBytes: 0,
+      limitBytes: 0,
+      tripped: 0,
+    },
+    segments: {
+      count: 0,
+      memoryBytes: 0,
+    },
+    merges: {
+      current: 0,
+      total: 0,
+      totalTimeMs: 0,
+    },
+    refresh: {
+      total: 0,
+      totalTimeMs: 0,
+      avgMs: null,
+    },
+    search: {
+      queryTotal: 0,
+      queryTimeMs: 0,
+      queryAvgMs: null,
+      fetchTotal: 0,
+      fetchTimeMs: 0,
+      fetchAvgMs: null,
+    },
+    indexing: {
+      indexTotal: 0,
+      indexTimeMs: 0,
+      indexAvgMs: null,
+      deleteTotal: 0,
+      deleteTimeMs: 0,
+      deleteAvgMs: null,
+    },
+    nodes: [],
+  };
+}
+
 function parseClusterStatus(clusterHealthText: string): ClusterStatus {
   const record = toRecord(parseJsonValue(clusterHealthText));
 
@@ -102,6 +234,214 @@ function parseClusterStatus(clusterHealthText: string): ClusterStatus {
     initializingShards: record ? parseNumberValue(record.initializing_shards) : null,
     unassignedShards: record ? parseNumberValue(record.unassigned_shards) : null,
   };
+}
+
+function summarizeGc(jvm: Record<string, unknown> | null) {
+  const collectors = getRecord(getRecord(jvm ?? {}, "gc") ?? {}, "collectors");
+  const summary = { collectionCount: 0, collectionTimeMs: 0 };
+  if (!collectors) {
+    return summary;
+  }
+
+  Object.values(collectors).forEach((entry) => {
+    const collector = toRecord(entry);
+    summary.collectionCount = addKnown(summary.collectionCount, readNumber(collector, "collection_count"));
+    summary.collectionTimeMs = addKnown(summary.collectionTimeMs, readNumber(collector, "collection_time_in_millis"));
+  });
+
+  return summary;
+}
+
+function summarizeThreadPools(threadPool: Record<string, unknown> | null) {
+  const totals = {
+    active: 0,
+    queue: 0,
+    rejected: 0,
+    completed: 0,
+  };
+  const byPool: Record<string, ThreadPoolOperationStatus> = {};
+  if (!threadPool) {
+    return { totals, byPool };
+  }
+
+  Object.entries(threadPool).forEach(([name, value]) => {
+    const pool = toRecord(value);
+    if (!pool) {
+      return;
+    }
+
+    const current = byPool[name] ??= {
+      name,
+      active: 0,
+      queue: 0,
+      rejected: 0,
+      completed: 0,
+    };
+    current.active += readNumber(pool, "active") ?? 0;
+    current.queue += readNumber(pool, "queue") ?? 0;
+    current.rejected += readNumber(pool, "rejected") ?? 0;
+    current.completed += readNumber(pool, "completed") ?? 0;
+    totals.active += current.active;
+    totals.queue += current.queue;
+    totals.rejected += current.rejected;
+    totals.completed += current.completed;
+  });
+
+  return { totals, byPool };
+}
+
+function summarizeBreakers(breakers: Record<string, unknown> | null) {
+  const summary = { estimatedBytes: 0, limitBytes: 0, tripped: 0 };
+  if (!breakers) {
+    return summary;
+  }
+
+  Object.values(breakers).forEach((entry) => {
+    const breaker = toRecord(entry);
+    summary.estimatedBytes = addKnown(summary.estimatedBytes, readNumber(breaker, "estimated_size_in_bytes"));
+    summary.limitBytes = addKnown(summary.limitBytes, readNumber(breaker, "limit_size_in_bytes"));
+    summary.tripped = addKnown(summary.tripped, readNumber(breaker, "tripped"));
+  });
+
+  return summary;
+}
+
+function summarizeNodeDisk(fs: Record<string, unknown> | null) {
+  const total = getRecord(fs ?? {}, "total");
+  const totalBytes = readNumber(total, "total_in_bytes");
+  const freeBytes = readNumber(total, "free_in_bytes");
+  const availableBytes = readNumber(total, "available_in_bytes");
+  const usedPercent = totalBytes !== null && totalBytes > 0 && freeBytes !== null
+    ? roundMetric(((totalBytes - freeBytes) / totalBytes) * 100)
+    : null;
+
+  return {
+    totalBytes,
+    freeBytes,
+    availableBytes,
+    usedPercent,
+    watermark: classifyDiskWatermark(usedPercent),
+  };
+}
+
+function parseNodesStats(nodesStatsText?: string | null): ServerOperationStatus {
+  const root = toRecord(nodesStatsText ? parseJsonValue(nodesStatsText) : null);
+  const nodes = root ? toRecord(root.nodes) : null;
+  if (!nodes) {
+    return emptyOperations();
+  }
+
+  const operations = emptyOperations();
+  const cpuPercents: Array<number | null> = [];
+  const heapPercents: Array<number | null> = [];
+  const threadPoolsByName: Record<string, ThreadPoolOperationStatus> = {};
+
+  Object.entries(nodes).forEach(([id, value]) => {
+    const node = toRecord(value);
+    if (!node) {
+      return;
+    }
+
+    const os = getRecord(node, "os");
+    const cpu = getRecord(os ?? {}, "cpu");
+    const jvm = getRecord(node, "jvm");
+    const mem = getRecord(jvm ?? {}, "mem");
+    const fs = getRecord(node, "fs");
+    const indices = getRecord(node, "indices");
+    const segments = getRecord(indices ?? {}, "segments");
+    const merges = getRecord(indices ?? {}, "merges");
+    const refresh = getRecord(indices ?? {}, "refresh");
+    const search = getRecord(indices ?? {}, "search");
+    const indexing = getRecord(indices ?? {}, "indexing");
+    const disk = summarizeNodeDisk(fs);
+    const cpuPercent = readNumber(cpu, "percent");
+    const heapPercent = readNumber(mem, "heap_used_percent");
+    const heapUsedBytes = readNumber(mem, "heap_used_in_bytes");
+    const heapMaxBytes = readNumber(mem, "heap_max_in_bytes");
+    const gc = summarizeGc(jvm);
+    const threadPools = summarizeThreadPools(getRecord(node, "thread_pool"));
+    const breakers = summarizeBreakers(getRecord(node, "breakers"));
+
+    cpuPercents.push(cpuPercent);
+    heapPercents.push(heapPercent);
+    operations.heapUsedBytes = addKnown(operations.heapUsedBytes, heapUsedBytes);
+    operations.heapMaxBytes = addKnown(operations.heapMaxBytes, heapMaxBytes);
+    operations.diskTotalBytes = addKnown(operations.diskTotalBytes, disk.totalBytes);
+    operations.diskFreeBytes = addKnown(operations.diskFreeBytes, disk.freeBytes);
+    operations.diskAvailableBytes = addKnown(operations.diskAvailableBytes, disk.availableBytes);
+    operations.diskWatermark = worstDiskWatermark(operations.diskWatermark, disk.watermark);
+    operations.gc.collectionCount += gc.collectionCount;
+    operations.gc.collectionTimeMs += gc.collectionTimeMs;
+    operations.threadPools.active += threadPools.totals.active;
+    operations.threadPools.queue += threadPools.totals.queue;
+    operations.threadPools.rejected += threadPools.totals.rejected;
+    operations.threadPools.completed += threadPools.totals.completed;
+    operations.breakers.estimatedBytes += breakers.estimatedBytes;
+    operations.breakers.limitBytes += breakers.limitBytes;
+    operations.breakers.tripped += breakers.tripped;
+    operations.segments.count = addKnown(operations.segments.count, readNumber(segments, "count"));
+    operations.segments.memoryBytes = addKnown(operations.segments.memoryBytes, readNumber(segments, "memory_in_bytes"));
+    operations.merges.current = addKnown(operations.merges.current, readNumber(merges, "current"));
+    operations.merges.total = addKnown(operations.merges.total, readNumber(merges, "total"));
+    operations.merges.totalTimeMs = addKnown(operations.merges.totalTimeMs, readNumber(merges, "total_time_in_millis"));
+    operations.refresh.total = addKnown(operations.refresh.total, readNumber(refresh, "total"));
+    operations.refresh.totalTimeMs = addKnown(operations.refresh.totalTimeMs, readNumber(refresh, "total_time_in_millis"));
+    operations.search.queryTotal = addKnown(operations.search.queryTotal, readNumber(search, "query_total"));
+    operations.search.queryTimeMs = addKnown(operations.search.queryTimeMs, readNumber(search, "query_time_in_millis"));
+    operations.search.fetchTotal = addKnown(operations.search.fetchTotal, readNumber(search, "fetch_total"));
+    operations.search.fetchTimeMs = addKnown(operations.search.fetchTimeMs, readNumber(search, "fetch_time_in_millis"));
+    operations.indexing.indexTotal = addKnown(operations.indexing.indexTotal, readNumber(indexing, "index_total"));
+    operations.indexing.indexTimeMs = addKnown(operations.indexing.indexTimeMs, readNumber(indexing, "index_time_in_millis"));
+    operations.indexing.deleteTotal = addKnown(operations.indexing.deleteTotal, readNumber(indexing, "delete_total"));
+    operations.indexing.deleteTimeMs = addKnown(operations.indexing.deleteTimeMs, readNumber(indexing, "delete_time_in_millis"));
+
+    Object.values(threadPools.byPool).forEach((pool) => {
+      const current = threadPoolsByName[pool.name] ??= { name: pool.name, active: 0, queue: 0, rejected: 0, completed: 0 };
+      current.active += pool.active;
+      current.queue += pool.queue;
+      current.rejected += pool.rejected;
+      current.completed += pool.completed;
+    });
+
+    operations.nodes.push({
+      id,
+      name: readString(node, "name") ?? id,
+      cpuPercent,
+      heapPercent,
+      heapUsedBytes,
+      heapMaxBytes,
+      diskUsedPercent: disk.usedPercent,
+      diskAvailableBytes: disk.availableBytes,
+      diskWatermark: disk.watermark,
+    } satisfies NodeOperationStatus);
+  });
+
+  operations.nodeCount = operations.nodes.length;
+  operations.avgCpuPercent = averageKnown(cpuPercents);
+  operations.maxCpuPercent = maxKnown(cpuPercents);
+  operations.avgHeapPercent = averageKnown(heapPercents);
+  operations.maxHeapPercent = maxKnown(heapPercents);
+  operations.diskUsedPercent = operations.diskTotalBytes > 0
+    ? roundMetric(((operations.diskTotalBytes - operations.diskFreeBytes) / operations.diskTotalBytes) * 100)
+    : null;
+  operations.refresh.avgMs = averageDuration(operations.refresh.totalTimeMs, operations.refresh.total);
+  operations.search.queryAvgMs = averageDuration(operations.search.queryTimeMs, operations.search.queryTotal);
+  operations.search.fetchAvgMs = averageDuration(operations.search.fetchTimeMs, operations.search.fetchTotal);
+  operations.indexing.indexAvgMs = averageDuration(operations.indexing.indexTimeMs, operations.indexing.indexTotal);
+  operations.indexing.deleteAvgMs = averageDuration(operations.indexing.deleteTimeMs, operations.indexing.deleteTotal);
+  operations.topThreadPools = Object.values(threadPoolsByName)
+    .sort((left, right) =>
+      (right.rejected - left.rejected) ||
+      (right.queue - left.queue) ||
+      (right.active - left.active) ||
+      left.name.localeCompare(right.name, "zh-CN"),
+    )
+    .slice(0, 6);
+  operations.nodes.sort((left, right) =>
+    compareNullableNumbers(right.diskUsedPercent, left.diskUsedPercent) || left.name.localeCompare(right.name, "zh-CN"),
+  );
+
+  return operations;
 }
 
 function buildShardSummaries(shardsText?: string | null) {
@@ -204,8 +544,9 @@ export function buildServerStatus(input: ServerStatusInput): ServerStatusSnapsho
       healthCounts,
       shardCounts: summarizeShardCounts(indices),
     },
+    operations: parseNodesStats(input.nodesStatsText),
     fetchedAt: input.fetchedAt ?? new Date().toISOString(),
-    partialFailures: input.shardDiagnostics ?? [],
+    partialFailures: [...(input.shardDiagnostics ?? []), ...(input.nodesStatsDiagnostics ?? [])],
   };
 }
 

@@ -608,11 +608,23 @@ export async function fetchServerStatus(
     sshTunnelOverride,
   );
 
+  const nodesStatsAttempt = await runServerStatusProbe(
+    connection,
+    credentials,
+    {
+      path: "/_nodes/stats/os,jvm,fs,thread_pool,breaker,indices",
+      label: "节点运维指标",
+    },
+    sshTunnelOverride,
+  );
+
   return buildServerStatus({
     clusterHealthText: clusterAttempt.bodyText,
     indicesText: indicesAttempt.bodyText,
     shardsText: shardsAttempt.snapshot.ok ? shardsAttempt.bodyText : null,
+    nodesStatsText: nodesStatsAttempt.snapshot.ok ? nodesStatsAttempt.bodyText : null,
     shardDiagnostics: shardsAttempt.snapshot.ok ? [] : buildServerStatusDiagnostics([shardsAttempt]),
+    nodesStatsDiagnostics: nodesStatsAttempt.snapshot.ok ? [] : buildServerStatusDiagnostics([nodesStatsAttempt]),
     fetchedAt: new Date().toISOString(),
   });
 }
