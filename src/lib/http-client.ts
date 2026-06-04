@@ -11,7 +11,7 @@ import { ensureTrailingSlashless } from "./utils";
 import { executeEsHttpRequest, executeSshHttpRequest, type TauriHttpResponse } from "./tauri";
 import type { ConnectionProfile, SshTunnelConfig } from "../types/connections";
 import type { ParsedConsoleRequest } from "./console-parser";
-import type { ResponseSnapshot } from "../types/requests";
+import type { ConnectionSearchClusterMetadata, ResponseSnapshot } from "../types/requests";
 import type { AdminExecutionResult, AdminOperation } from "../types/admin";
 import { flattenMappingFields, flattenMappingFieldsByIndex } from "./console-autocomplete";
 import { normalizeConnectionProfileSecurity } from "./connection-security";
@@ -247,6 +247,7 @@ type SearchMetadataResult = {
   fields: string[];
   fieldsByIndex: Record<string, string[]>;
   aliasToIndices: Record<string, string[]>;
+  cluster: ConnectionSearchClusterMetadata;
 };
 
 type SearchMetadataProbe = {
@@ -275,6 +276,132 @@ function deduplicateSorted(items: string[]) {
   return [...new Set(items.map((item) => item.trim()).filter(Boolean))].sort((left, right) =>
     left.localeCompare(right, "zh-CN"),
   );
+}
+
+function parseVersionNumber(versionNumber: unknown) {
+  if (typeof versionNumber !== "string" || !versionNumber.trim()) {
+    return { number: null, major: null, minor: null };
+  }
+
+  const trimmed = versionNumber.trim();
+  const match = trimmed.match(/^(\d+)(?:\.(\d+))?/);
+  return {
+    number: trimmed,
+    major: match ? Number.parseInt(match[1] ?? "", 10) : null,
+    minor: match?.[2] ? Number.parseInt(match[2], 10) : null,
+  };
+}
+
+function defaultSearchClusterMetadata(): ConnectionSearchClusterMetadata {
+  return {
+    product: "unknown",
+    version: { number: null, major: null, minor: null },
+    distribution: null,
+    buildFlavor: null,
+    license: { type: null, status: null, source: "unknown" },
+  };
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function parseSearchClusterInfo(bodyText: string): ConnectionSearchClusterMetadata {
+  const json = parseJsonRecord(bodyText);
+  if (!json || !json.version || typeof json.version !== "object" || Array.isArray(json.version)) {
+    return defaultSearchClusterMetadata();
+  }
+
+  const version = json.version as Record<string, unknown>;
+  const versionInfo = parseVersionNumber(version.number);
+  const distribution = stringOrNull(version.distribution);
+  const buildFlavor = stringOrNull(version.build_flavor);
+  const tagline = stringOrNull(json.tagline)?.toLowerCase() ?? "";
+  const normalizedDistribution = distribution?.toLowerCase() ?? "";
+  const product =
+    normalizedDistribution === "opensearch" || tagline.includes("opensearch")
+      ? "opensearch"
+      : "elasticsearch";
+
+  if (product === "opensearch") {
+    return {
+      product,
+      version: versionInfo,
+      distribution,
+      buildFlavor,
+      license: { type: "apache-2.0", status: "active", source: "root" },
+    };
+  }
+
+  if (buildFlavor?.toLowerCase() === "oss") {
+    return {
+      product,
+      version: versionInfo,
+      distribution,
+      buildFlavor,
+      license: { type: "oss", status: "active", source: "root" },
+    };
+  }
+
+  return {
+    product,
+    version: versionInfo,
+    distribution,
+    buildFlavor,
+    license: { type: null, status: null, source: "unknown" },
+  };
+}
+
+export type ElasticLicenseInfo = {
+  type: string | null;
+  status: string | null;
+};
+
+export function parseElasticLicenseInfo(bodyText: string): ElasticLicenseInfo | null {
+  const json = parseJsonRecord(bodyText);
+  if (!json || !json.license || typeof json.license !== "object" || Array.isArray(json.license)) {
+    return null;
+  }
+
+  const license = json.license as Record<string, unknown>;
+  return {
+    type: stringOrNull(license.type),
+    status: stringOrNull(license.status),
+  };
+}
+
+export function applyElasticLicenseInfo(
+  cluster: ConnectionSearchClusterMetadata,
+  license: ElasticLicenseInfo | null,
+): ConnectionSearchClusterMetadata {
+  if (cluster.product === "opensearch") {
+    return cluster;
+  }
+
+  if (cluster.license.source === "root" && cluster.license.type === "oss") {
+    return cluster;
+  }
+
+  if (!license) {
+    if (cluster.product !== "elasticsearch") {
+      return cluster;
+    }
+
+    return {
+      ...cluster,
+      license: { type: null, status: null, source: "unavailable" },
+    };
+  }
+
+  return {
+    ...cluster,
+    product: cluster.product === "unknown" ? "elasticsearch" : cluster.product,
+    license: {
+      type: license.type,
+      status: license.status,
+      source: "elastic-license",
+    },
+  };
 }
 
 function parseResolveIndexMetadata(bodyText: string) {
@@ -332,6 +459,7 @@ function parseResolveIndexMetadata(bodyText: string) {
     fields: [],
     fieldsByIndex: {},
     aliasToIndices,
+    cluster: defaultSearchClusterMetadata(),
   } satisfies SearchMetadataResult;
 }
 
@@ -379,6 +507,7 @@ function parseAliasesDocument(bodyText: string) {
     fields: [],
     fieldsByIndex: {},
     aliasToIndices,
+    cluster: defaultSearchClusterMetadata(),
   } satisfies SearchMetadataResult;
 }
 
@@ -738,6 +867,7 @@ export async function fetchConnectionSearchMetadata(
   const fields = new Set<string>();
   const fieldsByIndex: Record<string, string[]> = {};
   const aliasToIndices: Record<string, string[]> = {};
+  let cluster = defaultSearchClusterMetadata();
   const mergeAliasTargets = (entries: Record<string, string[]> | undefined) => {
     if (!entries) {
       return;
@@ -750,6 +880,38 @@ export async function fetchConnectionSearchMetadata(
   };
   const attempts: SearchMetadataAttempt[] = [];
   let successfulProbeCount = 0;
+
+  const rootAttempt = await runSearchMetadataProbe(
+    connection,
+    credentials,
+    {
+      path: "/",
+      label: "集群信息",
+    },
+    sshTunnelOverride,
+  );
+  attempts.push(rootAttempt);
+  if (rootAttempt.snapshot.ok) {
+    cluster = parseSearchClusterInfo(rootAttempt.bodyText);
+  }
+
+  if (cluster.product === "elasticsearch" || cluster.product === "unknown") {
+    const licenseAttempt = await runSearchMetadataProbe(
+      connection,
+      credentials,
+      {
+        path: "/_license",
+        label: "License 信息",
+      },
+      sshTunnelOverride,
+    );
+    attempts.push(licenseAttempt);
+    if (licenseAttempt.snapshot.ok) {
+      cluster = applyElasticLicenseInfo(cluster, parseElasticLicenseInfo(licenseAttempt.bodyText));
+    } else {
+      cluster = applyElasticLicenseInfo(cluster, null);
+    }
+  }
 
   const resolveAttempt = await runSearchMetadataProbe(
     connection,
@@ -860,6 +1022,7 @@ export async function fetchConnectionSearchMetadata(
     fields: deduplicateSorted([...fields]),
     fieldsByIndex,
     aliasToIndices,
+    cluster,
   } satisfies SearchMetadataResult;
 }
 

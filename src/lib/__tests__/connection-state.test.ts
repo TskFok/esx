@@ -69,6 +69,13 @@ describe("removeConnectionsFromStorage", () => {
         fields: ["message"],
         fieldsByIndex: {},
         aliasToIndices: {},
+        cluster: {
+          product: "unknown",
+          version: { number: null, major: null, minor: null },
+          distribution: null,
+          buildFlavor: null,
+          license: { type: null, status: null, source: "unknown" },
+        },
         fetchedAt: connection.createdAt,
         expiresAt: connection.createdAt,
       },

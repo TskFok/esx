@@ -67,6 +67,7 @@ import { redactSensitiveList, redactSensitiveText } from "../lib/log-redaction";
 import { buildSecretsMigrationHint } from "../lib/secrets-vault";
 import { appendStatusHistorySnapshot } from "../lib/status-diagnostics";
 import { normalizeBaseUrl } from "../lib/http-client";
+import { normalizeClusterMetadata } from "../lib/console-autocomplete";
 import type {
   ConnectionFormValues,
   ConnectionProfile,
@@ -330,6 +331,7 @@ function normalizeStoredSearchMetadata(
     ),
     fieldsByIndex: normalizeStringRecordOfLists(cache.fieldsByIndex),
     aliasToIndices: normalizeStringRecordOfLists(cache.aliasToIndices),
+    cluster: normalizeClusterMetadata(cache.cluster),
     fetchedAt: cache.fetchedAt,
     expiresAt: cache.expiresAt,
   } satisfies ConnectionSearchMetadata;
@@ -493,6 +495,7 @@ function buildSearchMetadataCache(
     fields: string[];
     fieldsByIndex?: Record<string, string[]>;
     aliasToIndices?: Record<string, string[]>;
+    cluster?: ConnectionSearchMetadata["cluster"];
   },
   timestamp = now(),
 ) {
@@ -503,6 +506,7 @@ function buildSearchMetadataCache(
     fields: metadata.fields,
     fieldsByIndex: metadata.fieldsByIndex ?? {},
     aliasToIndices: metadata.aliasToIndices ?? {},
+    cluster: normalizeClusterMetadata(metadata.cluster),
     fetchedAt: timestamp,
     expiresAt: new Date(new Date(timestamp).getTime() + SEARCH_METADATA_TTL_MS).toISOString(),
   } satisfies ConnectionSearchMetadata;

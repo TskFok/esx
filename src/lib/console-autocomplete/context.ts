@@ -1,10 +1,12 @@
 import type { ConnectionSearchMetadata, SavedRequest } from "../../types/requests";
+import { DEFAULT_CLUSTER_METADATA, normalizeClusterMetadata } from "./capabilities";
 
 export type ConsoleAutocompleteContext = {
   indexNames: string[];
   aliasNames: string[];
   historyTargetNames: string[];
   fieldNames: string[];
+  cluster: typeof DEFAULT_CLUSTER_METADATA;
 };
 
 function uniqueSorted(values: string[]) {
@@ -111,11 +113,13 @@ export function buildConsoleAutocompleteContext(
   const indexNames = uniqueSorted([...(metadata?.indices ?? [])]);
   const aliasNames = uniqueSorted([...(metadata?.aliases ?? [])]);
   const fieldNames = resolveFieldNames(currentTargets, metadata);
+  const cluster = normalizeClusterMetadata(metadata?.cluster);
 
   return {
     indexNames,
     aliasNames,
     fieldNames,
+    cluster,
     historyTargetNames: historyTargetNames.filter(
       (item) => !indexNames.includes(item) && !aliasNames.includes(item),
     ),

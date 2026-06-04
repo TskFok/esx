@@ -10,6 +10,8 @@ import {
   type RawSnippet,
 } from "./snippets";
 import type { JsonPathSegment } from "./json-path";
+import { filterAvailableSnippets } from "./capabilities";
+import type { ConsoleAutocompleteContext } from "./context";
 
 export const BOOL_ARRAY_KEYS = new Set(["must", "should", "filter", "must_not"]);
 
@@ -31,18 +33,21 @@ export const LEAF_QUERY_KEYS = new Set([
 
 export const FIELD_VALUE_KEYS = new Set(["field", "path"]);
 
-export function selectPropertySuggestions(path: JsonPathSegment[]): RawSnippet[] {
+export function selectPropertySuggestions(
+  path: JsonPathSegment[],
+  autocompleteContext?: Pick<ConsoleAutocompleteContext, "cluster"> | null,
+): RawSnippet[] {
   const last = path[path.length - 1];
   const secondLast = path[path.length - 2];
   const thirdLast = path[path.length - 3];
   const aggregationProperties = selectAggregationPropertySuggestions(path);
 
   if (path.length === 0) {
-    return [...ROOT_PROPERTY_SNIPPETS];
+    return filterAvailableSnippets(ROOT_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
   if (last === "query" && path.length === 1) {
-    return deduplicateByLabel([
+    return filterAvailableSnippets(deduplicateByLabel([
       ...QUERY_LEAF_PROPERTY_SNIPPETS,
       {
         label: "bool",
@@ -52,38 +57,38 @@ export function selectPropertySuggestions(path: JsonPathSegment[]): RawSnippet[]
         kind: "property" as const,
         sortText: "001-bool",
       },
-    ]);
+    ]), autocompleteContext);
   }
 
   if (last === "bool") {
-    return [...BOOL_PROPERTY_SNIPPETS];
+    return filterAvailableSnippets(BOOL_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
   if (typeof last === "number" && typeof secondLast === "string" && BOOL_ARRAY_KEYS.has(secondLast)) {
-    return [...QUERY_LEAF_PROPERTY_SNIPPETS];
+    return filterAvailableSnippets(QUERY_LEAF_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
   if (secondLast === "bool" && BOOL_ARRAY_KEYS.has(String(last))) {
-    return [...QUERY_LEAF_PROPERTY_SNIPPETS];
+    return filterAvailableSnippets(QUERY_LEAF_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
   if (aggregationProperties) {
-    return [...aggregationProperties];
+    return filterAvailableSnippets(aggregationProperties, autocompleteContext);
   }
 
   if (last === "aggs" || last === "aggregations") {
-    return [AGGS_CONTAINER_PROPERTY_SNIPPET];
+    return filterAvailableSnippets([AGGS_CONTAINER_PROPERTY_SNIPPET], autocompleteContext);
   }
 
   if (secondLast === "aggs" || secondLast === "aggregations") {
-    return [...AGG_TYPE_PROPERTY_SNIPPETS];
+    return filterAvailableSnippets(AGG_TYPE_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
   if (typeof thirdLast === "string" && (thirdLast === "aggs" || thirdLast === "aggregations")) {
-    return [...AGG_TYPE_PROPERTY_SNIPPETS];
+    return filterAvailableSnippets(AGG_TYPE_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
-  return [...ROOT_PROPERTY_SNIPPETS, ...QUERY_LEAF_PROPERTY_SNIPPETS];
+  return filterAvailableSnippets([...ROOT_PROPERTY_SNIPPETS, ...QUERY_LEAF_PROPERTY_SNIPPETS], autocompleteContext);
 }
 
 function selectAggregationPropertySuggestions(path: JsonPathSegment[]) {

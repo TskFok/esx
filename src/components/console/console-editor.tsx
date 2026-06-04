@@ -2,6 +2,7 @@ import Editor, { loader, type Monaco } from "@monaco-editor/react";
 import * as monacoEditor from "monaco-editor";
 import { useEffect, useMemo, useRef } from "react";
 import {
+  DEFAULT_CLUSTER_METADATA,
   type ConsoleAutocompleteContext,
   provideConsoleCompletionItems,
   validateConsoleContent,
@@ -14,6 +15,7 @@ const EMPTY_AUTOCOMPLETE_CONTEXT: ConsoleAutocompleteContext = {
   aliasNames: [],
   historyTargetNames: [],
   fieldNames: [],
+  cluster: DEFAULT_CLUSTER_METADATA,
 };
 
 const modelAutocompleteContext = new WeakMap<monacoEditor.editor.ITextModel, ConsoleAutocompleteContext>();

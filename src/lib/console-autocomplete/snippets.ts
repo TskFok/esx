@@ -3,6 +3,13 @@ export type SnippetKind =
   | "value"
   | "keyword";
 
+export type SnippetAvailability = {
+  products?: Array<"elasticsearch" | "opensearch">;
+  minMajor?: number;
+  maxMajor?: number;
+  licenseAtLeast?: "gold" | "platinum" | "enterprise";
+};
+
 export type RawSnippet = {
   label: string;
   detail: string;
@@ -10,6 +17,7 @@ export type RawSnippet = {
   insertText: string;
   kind: SnippetKind;
   sortText?: string;
+  availability?: SnippetAvailability;
 };
 
 export type ApiSegment = {
@@ -17,6 +25,7 @@ export type ApiSegment = {
   detail: string;
   documentation: string;
   insertText: string;
+  availability?: SnippetAvailability;
 };
 
 export const GLOBAL_API_SEGMENTS: ReadonlyArray<ApiSegment> = [
@@ -218,6 +227,15 @@ export const QUERY_LEAF_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
     insertText: '"query_string": {\n\t"query": "$0"\n}',
     kind: "property",
     sortText: "020-query_string",
+  },
+  {
+    label: "type",
+    detail: "类型查询",
+    documentation: "Elasticsearch 7 的类型查询兼容语法，Elasticsearch 8 起不再建议使用。",
+    insertText: '"type": {\n\t"value": "${1:_doc}"\n}',
+    kind: "property",
+    sortText: "021-type",
+    availability: { products: ["elasticsearch"], minMajor: 7, maxMajor: 7 },
   },
 ];
 

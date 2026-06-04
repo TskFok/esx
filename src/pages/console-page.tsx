@@ -82,7 +82,7 @@ import { formatShanghaiDateTime } from "../lib/time";
 import { formatBytes } from "../lib/utils";
 import { useAppState } from "../providers/app-state";
 import type { ConnectionProfile } from "../types/connections";
-import type { ConsoleDraft, ResponseSnapshot, SavedRequest } from "../types/requests";
+import type { ConnectionSearchMetadata, ConsoleDraft, ResponseSnapshot, SavedRequest } from "../types/requests";
 
 type RunPayload = {
   connection: ConnectionProfile;
@@ -131,6 +131,21 @@ function resolveDraftRequestName(preferredName: string, fallbackName: string | n
   } catch {
     return "未命名请求";
   }
+}
+
+function formatAutocompleteClusterLabel(metadata: ConnectionSearchMetadata | null) {
+  const cluster = metadata?.cluster;
+  if (!cluster || cluster.product === "unknown") {
+    return "集群版本未知";
+  }
+
+  const productLabel = cluster.product === "opensearch" ? "OpenSearch" : "Elasticsearch";
+  const versionLabel = cluster.version.number ?? "版本未知";
+  const licenseLabel = cluster.product === "elasticsearch" && cluster.license.type
+    ? ` · ${cluster.license.type}`
+    : "";
+
+  return `${productLabel} ${versionLabel}${licenseLabel}`;
 }
 
 function buildDuplicateRequestName(sourceName: string, existingNames: string[]) {
@@ -940,8 +955,8 @@ export function ConsolePage() {
   const hasMetadataAutoAttempted = Boolean(metadataAutoRefreshRef.current[selectedConnection.id]);
   const metadataStatus = connectionSearchMetadata
     ? new Date(connectionSearchMetadata.expiresAt).getTime() > Date.now()
-      ? `索引元数据已同步：${formatShanghaiDateTime(connectionSearchMetadata.fetchedAt)}`
-      : `索引元数据已过期：${formatShanghaiDateTime(connectionSearchMetadata.fetchedAt)}`
+      ? `索引元数据已同步：${formatShanghaiDateTime(connectionSearchMetadata.fetchedAt)} · ${formatAutocompleteClusterLabel(connectionSearchMetadata)}`
+      : `索引元数据已过期：${formatShanghaiDateTime(connectionSearchMetadata.fetchedAt)} · ${formatAutocompleteClusterLabel(connectionSearchMetadata)}`
     : metadataRefreshMutation.isPending
       ? "正在拉取索引 / alias 元数据..."
       : hasMetadataAutoAttempted

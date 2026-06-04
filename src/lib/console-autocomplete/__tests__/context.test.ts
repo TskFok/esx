@@ -48,6 +48,29 @@ describe("extractIndexNamesFromPath", () => {
 });
 
 describe("buildConsoleAutocompleteContext", () => {
+  it("includes cluster metadata when available", () => {
+    const context = buildConsoleAutocompleteContext([], "", {
+      connectionId: "conn",
+      indices: [],
+      aliases: [],
+      fields: [],
+      fieldsByIndex: {},
+      aliasToIndices: {},
+      cluster: {
+        product: "opensearch",
+        version: { number: "2.19.0", major: 2, minor: 19 },
+        distribution: "opensearch",
+        buildFlavor: null,
+        license: { type: "apache-2.0", status: "active", source: "root" },
+      },
+      fetchedAt: "",
+      expiresAt: "",
+    });
+
+    expect(context.cluster.product).toBe("opensearch");
+    expect(context.cluster.version.major).toBe(2);
+  });
+
   it("merges index/alias/field metadata", () => {
     const context = buildConsoleAutocompleteContext(
       [buildSavedRequest("/orders/_search")],
@@ -150,6 +173,16 @@ describe("buildConsoleAutocompleteContext", () => {
 
   it("handles missing metadata", () => {
     const context = buildConsoleAutocompleteContext([], "", null);
-    expect(context).toEqual({ indexNames: [], aliasNames: [], fieldNames: [], historyTargetNames: [] });
+    expect(context).toMatchObject({
+      indexNames: [],
+      aliasNames: [],
+      fieldNames: [],
+      historyTargetNames: [],
+      cluster: {
+        product: "unknown",
+        version: { number: null, major: null, minor: null },
+        license: { type: null, status: null, source: "unknown" },
+      },
+    });
   });
 });

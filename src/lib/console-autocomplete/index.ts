@@ -1,8 +1,6 @@
 import * as monacoEditor from "monaco-editor";
 import {
-  GLOBAL_API_SEGMENTS,
   HTTP_METHODS,
-  INDEX_API_SEGMENTS,
   type ApiSegment,
   type RawSnippet,
 } from "./snippets";
@@ -18,6 +16,10 @@ import {
   shouldSuggestFieldsForStringValue,
 } from "./suggestions";
 import type { ConsoleAutocompleteContext } from "./context";
+import {
+  selectApiSegments,
+  selectQueryParameterSnippets,
+} from "./capabilities";
 
 export { buildConsoleAutocompleteContext, extractIndexNamesFromPath } from "./context";
 export type { ConsoleAutocompleteContext } from "./context";
@@ -32,6 +34,12 @@ export {
   shouldSuggestFieldsForKey,
   shouldSuggestFieldsForStringValue,
 } from "./suggestions";
+export {
+  DEFAULT_CLUSTER_METADATA,
+  normalizeClusterMetadata,
+  selectApiSegments,
+  selectQueryParameterSnippets,
+} from "./capabilities";
 export * from "./snippets";
 
 function getMethodRange(
@@ -186,7 +194,7 @@ function buildJsonSuggestions(
       );
     }
 
-    const properties = selectPropertySuggestions(path);
+    const properties = selectPropertySuggestions(path, autocompleteContext);
     for (const snippet of properties) {
       suggestionsList.push(renderSnippet(monacoInstance, snippet, replaceRange, false));
     }
@@ -200,6 +208,35 @@ function buildJsonSuggestions(
   }
 
   return suggestionsList;
+}
+
+function getQueryParameterRange(
+  monacoInstance: typeof monacoEditor,
+  lineContent: string,
+  column: number,
+) {
+  const safeColumn = Math.max(1, column);
+  const cursorIndex = safeColumn - 1;
+  let start = cursorIndex;
+  let end = cursorIndex;
+
+  while (start > 0) {
+    const char = lineContent[start - 1] ?? "";
+    if (char === "?" || char === "&" || /\s/.test(char)) {
+      break;
+    }
+    start -= 1;
+  }
+
+  while (end < lineContent.length) {
+    const char = lineContent[end] ?? "";
+    if (char === "&" || /\s/.test(char)) {
+      break;
+    }
+    end += 1;
+  }
+
+  return new monacoInstance.Range(1, start + 1, 1, end + 1);
 }
 
 function buildMethodSuggestions(
@@ -216,6 +253,29 @@ function buildMethodSuggestions(
     insertText: method,
     range,
     sortText: `0${index}-${method}`,
+  }));
+}
+
+function buildQueryParameterSuggestions(
+  monacoInstance: typeof monacoEditor,
+  lineContent: string,
+  column: number,
+  autocompleteContext: ConsoleAutocompleteContext,
+): monacoEditor.languages.CompletionItem[] {
+  const range = getQueryParameterRange(monacoInstance, lineContent, column);
+  const parts = lineContent.trim().split(/\s+/);
+  const pathText = parts.slice(1).join(" ");
+  const pathWithoutQuery = pathText.split("?", 1)[0] ?? "";
+
+  return selectQueryParameterSnippets(pathWithoutQuery, autocompleteContext).map((snippet, index) => ({
+    label: snippet.label,
+    kind: monacoInstance.languages.CompletionItemKind.Keyword,
+    detail: snippet.detail,
+    documentation: snippet.documentation,
+    insertText: snippet.insertText,
+    insertTextRules: monacoInstance.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+    range,
+    sortText: snippet.sortText ?? `2${index.toString().padStart(3, "0")}-${snippet.label}`,
   }));
 }
 
@@ -265,7 +325,7 @@ function buildPathSuggestions(
   }));
 
   const apiSegments: ReadonlyArray<ApiSegment> =
-    segmentCount > 1 && firstSegment && !firstSegment.startsWith("_") ? INDEX_API_SEGMENTS : GLOBAL_API_SEGMENTS;
+    selectApiSegments(segmentCount > 1 && firstSegment && !firstSegment.startsWith("_") ? "index" : "global", autocompleteContext);
 
   const apiSuggestions = apiSegments.map((segment, index) => ({
     label: segment.label,
@@ -293,6 +353,10 @@ export function provideConsoleCompletionItems(
     const leading = lineContent.slice(0, position.column - 1);
     if (!/\s/.test(leading)) {
       return buildMethodSuggestions(monacoInstance, lineContent, position.column);
+    }
+
+    if (leading.includes("?")) {
+      return buildQueryParameterSuggestions(monacoInstance, lineContent, position.column, autocompleteContext);
     }
 
     return buildPathSuggestions(monacoInstance, lineContent, position.column, autocompleteContext);

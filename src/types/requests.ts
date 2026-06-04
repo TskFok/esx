@@ -38,6 +38,30 @@ export type ConsoleDraft = {
   response: ResponseSnapshot | null;
 };
 
+export type SearchClusterProduct = "elasticsearch" | "opensearch" | "unknown";
+
+export type SearchClusterLicenseSource = "elastic-license" | "root" | "unavailable" | "unknown";
+
+export type SearchClusterVersion = {
+  number: string | null;
+  major: number | null;
+  minor: number | null;
+};
+
+export type SearchClusterLicense = {
+  type: string | null;
+  status: string | null;
+  source: SearchClusterLicenseSource;
+};
+
+export type ConnectionSearchClusterMetadata = {
+  product: SearchClusterProduct;
+  version: SearchClusterVersion;
+  distribution: string | null;
+  buildFlavor: string | null;
+  license: SearchClusterLicense;
+};
+
 export type ConnectionSearchMetadata = {
   connectionId: string;
   indices: string[];
@@ -45,6 +69,7 @@ export type ConnectionSearchMetadata = {
   fields: string[];
   fieldsByIndex: Record<string, string[]>;
   aliasToIndices: Record<string, string[]>;
+  cluster: ConnectionSearchClusterMetadata;
   fetchedAt: string;
   expiresAt: string;
 };
