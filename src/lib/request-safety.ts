@@ -27,6 +27,9 @@ const READ_POST_PATH_PATTERNS = [
   /^\/_rank_eval(?:\/|$)/,
   /(^|\/)_search\/template(?:\/|$)/,
   /^\/_async_search(?:\/|$)/,
+  /(^|\/)_analyze(?:\/|$)/,
+  /^\/_ingest\/pipeline(?:\/[^/]+)?\/_simulate(?:\/|$)/,
+  /^\/_index_template\/_simulate(?:\/|$)/,
 ];
 
 function pathWithoutQuery(path: string) {
@@ -68,7 +71,15 @@ function isClusterAdmin(method: string, path: string) {
     /^\/_snapshot\//.test(normalized) && WRITE_METHODS.has(method) ||
     /^\/_tasks\/[^/]+\/_cancel(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method) ||
     /^\/_license(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method) ||
-    /^\/_watcher\//.test(normalized) && WRITE_METHODS.has(method)
+    /^\/_watcher\//.test(normalized) && WRITE_METHODS.has(method) ||
+    /^\/_aliases(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method) ||
+    /^\/_index_template(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method) ||
+    /^\/_component_template(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method) ||
+    /^\/_ingest\/pipeline(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method) ||
+    /\/_rollover(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method) ||
+    /\/_settings(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method) ||
+    /\/_open(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method) ||
+    /\/_(shrink|split)(?:\/|$)/.test(normalized) && WRITE_METHODS.has(method)
   );
 }
 

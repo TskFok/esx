@@ -4,6 +4,7 @@ import {
   CopyPlus,
   Download,
   GripVertical,
+  Hammer,
   PanelLeftClose,
   Pencil,
   Server,
@@ -25,6 +26,7 @@ export type ConsoleSidebarPanelProps = {
   onClose: () => void;
   onNavigateConnections: () => void;
   onNavigateStatus: () => void;
+  onNavigateAdmin: () => void;
   onNavigateLogs: () => void;
   onCreateRequest: () => void;
   onExportClick: () => void;
@@ -52,6 +54,7 @@ export function ConsoleSidebarPanel({
   onClose,
   onNavigateConnections,
   onNavigateStatus,
+  onNavigateAdmin,
   onNavigateLogs,
   onCreateRequest,
   onExportClick,
@@ -145,6 +148,15 @@ export function ConsoleSidebarPanel({
           >
             <Server className="mr-1 h-3.5 w-3.5" />
             状态
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+            onClick={onNavigateAdmin}
+          >
+            <Hammer className="mr-1 h-3.5 w-3.5" />
+            治理
           </Button>
           <Button
             variant="ghost"

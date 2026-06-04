@@ -6,6 +6,7 @@ import {
   Boxes,
   Database,
   Gauge,
+  Hammer,
   HardDrive,
   Loader2,
   RefreshCcw,
@@ -694,6 +695,10 @@ export function StatusPage() {
               <Button variant="outline" className="h-8 rounded-lg px-2.5 text-xs" onClick={() => navigate("/console")}>
                 <ArrowLeft className="mr-1 h-3.5 w-3.5" />
                 返回控制台
+              </Button>
+              <Button variant="outline" className="h-8 rounded-lg px-2.5 text-xs" onClick={() => navigate("/admin")}>
+                <Hammer className="mr-1 h-3.5 w-3.5" />
+                治理
               </Button>
               <Button variant="ghost" className="h-8 rounded-lg px-2 text-xs" onClick={() => navigate("/connections")}>
                 连接页

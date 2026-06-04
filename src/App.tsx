@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
+import { AdminPage } from "./pages/admin-page";
 import { ConnectionsPage } from "./pages/connections-page";
 import { ConsolePage } from "./pages/console-page";
 import { ErrorLogsPage } from "./pages/error-logs-page";
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="/" element={<RootRedirect />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/console" element={<ConsolePage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/status" element={<StatusPage />} />
           <Route path="/logs" element={<ErrorLogsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

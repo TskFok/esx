@@ -86,4 +86,39 @@ describe("classifyRequestSafety", () => {
     expect(result.requiresConfirmation).toBe(true);
     expect(result.auditOnSuccess).toBe(true);
   });
+
+  it("classifies index lifecycle management operations as high risk", () => {
+    expect(classify("POST /orders/_close")).toMatchObject({
+      level: "destructive",
+      requiresConfirmation: true,
+      auditOnSuccess: true,
+    });
+    expect(classify("POST /orders/_forcemerge?max_num_segments=1")).toMatchObject({
+      level: "destructive",
+      requiresConfirmation: true,
+      auditOnSuccess: true,
+    });
+    expect(classify("POST /orders-write/_rollover/orders-000002")).toMatchObject({
+      level: "clusterAdmin",
+      requiresConfirmation: true,
+      auditOnSuccess: true,
+    });
+  });
+
+  it("classifies template, pipeline, alias and shard topology mutations as cluster admin", () => {
+    for (const content of [
+      "PUT /_index_template/orders-template\n{}",
+      "PUT /_component_template/orders-component\n{}",
+      "PUT /_ingest/pipeline/orders-pipeline\n{}",
+      "POST /_aliases\n{\"actions\":[]}",
+      "PUT /orders/_shrink/orders-shrunk\n{}",
+      "PUT /orders/_split/orders-split\n{}",
+    ]) {
+      expect(classify(content)).toMatchObject({
+        level: "clusterAdmin",
+        requiresConfirmation: true,
+        auditOnSuccess: true,
+      });
+    }
+  });
 });

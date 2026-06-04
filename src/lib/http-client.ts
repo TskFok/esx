@@ -12,6 +12,7 @@ import { executeEsHttpRequest, executeSshHttpRequest, type TauriHttpResponse } f
 import type { ConnectionProfile, SshTunnelConfig } from "../types/connections";
 import type { ParsedConsoleRequest } from "./console-parser";
 import type { ResponseSnapshot } from "../types/requests";
+import type { AdminExecutionResult, AdminOperation } from "../types/admin";
 import { flattenMappingFields, flattenMappingFieldsByIndex } from "./console-autocomplete";
 import { normalizeConnectionProfileSecurity } from "./connection-security";
 
@@ -577,6 +578,38 @@ export async function executeConsoleRequest(
 ) {
   const result = await executeConsoleRequestRaw(connection, credentials, parsed, sshTunnelOverride);
   return buildSnapshot(result.response, result.durationMs, result.executedAt, options?.responsePreviewBytes);
+}
+
+export async function executeAdminOperation(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  operation: AdminOperation,
+  sshTunnelOverride?: SshTunnelConfig | null,
+): Promise<AdminExecutionResult> {
+  const result = await executeConsoleRequestRaw(
+    connection,
+    credentials,
+    {
+      method: operation.method,
+      path: operation.path,
+      bodyText: operation.bodyText,
+      bodyJson: null,
+      bodyKind: operation.bodyText ? "json" : "empty",
+      contentType: operation.bodyText ? "application/json" : null,
+    },
+    sshTunnelOverride,
+  );
+
+  return {
+    operation,
+    ok: result.response.ok,
+    status: result.response.status,
+    statusText: result.response.statusText,
+    durationMs: result.durationMs,
+    executedAt: result.executedAt,
+    bodyText: result.response.bodyText,
+    diagnostics: result.response.diagnostics ?? [],
+  };
 }
 
 export async function fetchServerStatus(

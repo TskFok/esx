@@ -8,6 +8,21 @@ describe("request templates", () => {
     expect(REQUEST_TEMPLATES.some((template) => template.id === "match-all-search")).toBe(true);
   });
 
+  it("includes admin governance and template system templates", () => {
+    expect(REQUEST_TEMPLATES.map((template) => template.id)).toEqual(
+      expect.arrayContaining([
+        "create-index",
+        "alias-switch",
+        "reindex-async",
+        "rollover-dry-run",
+        "index-template-put",
+        "component-template-put",
+        "ingest-pipeline-simulate",
+        "analyze-standard",
+      ]),
+    );
+  });
+
   it("finds template by id", () => {
     const template = getRequestTemplateById("cat-indices");
     expect(template?.content).toContain("/_cat/indices");

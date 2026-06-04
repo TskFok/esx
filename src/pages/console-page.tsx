@@ -1340,6 +1340,7 @@ export function ConsolePage() {
       onClose={closeSidebar}
       onNavigateConnections={() => navigate("/connections")}
       onNavigateStatus={() => navigate("/status")}
+      onNavigateAdmin={() => navigate("/admin")}
       onNavigateLogs={() => navigate("/logs")}
       onCreateRequest={handleCreateRequest}
       onExportClick={handleExportClick}
