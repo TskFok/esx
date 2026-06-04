@@ -729,44 +729,107 @@ fn perform_ssh_validation(payload: ValidateSshTunnelPayload) -> TunnelValidation
     }
 }
 
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
+fn build_remote_curl_command(payload: &ExecuteSshHttpRequestPayload) -> String {
+    let _ = payload;
+    "sh -s".into()
 }
 
-fn build_remote_curl_command(payload: &ExecuteSshHttpRequestPayload) -> String {
-    let mut command = format!(
-        "curl -sS --http1.1 -X {} -H {} -H {} -H {}",
-        shell_quote(&payload.method),
-        shell_quote("Accept: application/json, text/plain, */*"),
-        shell_quote("Connection: close"),
-        shell_quote(&format!(
-            "Authorization: {}",
-            build_authorization_header(
-                payload.auth.as_ref(),
-                &payload.username,
-                &payload.password,
-                payload.auth_secret.as_deref(),
-            )
-        )),
+fn curl_config_value(value: &str) -> String {
+    format!(
+        "\"{}\"",
+        value
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+    )
+}
+
+fn heredoc_delimiter(prefix: &str, content: &str) -> String {
+    let mut delimiter = prefix.to_string();
+    let mut index = 0_u32;
+    while content.lines().any(|line| line == delimiter) {
+        index += 1;
+        delimiter = format!("{prefix}_{index}");
+    }
+    delimiter
+}
+
+fn build_remote_curl_script(payload: &ExecuteSshHttpRequestPayload) -> String {
+    let authorization = format!(
+        "Authorization: {}",
+        build_authorization_header(
+            payload.auth.as_ref(),
+            &payload.username,
+            &payload.password,
+            payload.auth_secret.as_deref(),
+        )
     );
+    let mut config_lines = vec![
+        "silent".to_string(),
+        "show-error".to_string(),
+        "http1.1".to_string(),
+        format!("request = {}", curl_config_value(&payload.method)),
+        format!("header = {}", curl_config_value("Accept: application/json, text/plain, */*")),
+        format!("header = {}", curl_config_value("Connection: close")),
+        format!("header = {}", curl_config_value(&authorization)),
+        format!("url = {}", curl_config_value(&payload.url)),
+        format!("write-out = {}", curl_config_value("\n__ESX_STATUS__:%{http_code}\n")),
+    ];
 
     if payload.insecure_tls {
-        command.push_str(" -k");
+        config_lines.push("insecure".to_string());
     }
 
     if !payload.body_text.is_empty() {
-        command.push_str(&format!(
-            " -H {} --data-binary @-",
-            shell_quote(&format!("Content-Type: {}", payload.content_type.as_deref().unwrap_or("application/json")))
+        config_lines.push(format!(
+            "header = {}",
+            curl_config_value(&format!("Content-Type: {}", payload.content_type.as_deref().unwrap_or("application/json")))
         ));
     }
 
-    command.push(' ');
-    command.push_str(&shell_quote(&payload.url));
-    command.push_str(" -w ");
-    command.push_str(&shell_quote("\n__ESX_STATUS__:%{http_code}\n"));
+    let config_text = config_lines.join("\n");
+    let config_delimiter = heredoc_delimiter("__ESX_CURL_CONFIG__", &config_text);
+    let mut script = format!(
+        "set -eu\n\
+         config_file=$(mktemp)\n\
+         body_file=\n\
+         body_b64_file=\n\
+         cleanup() {{\n\
+         \trm -f \"$config_file\"\n\
+         \tif [ -n \"$body_file\" ]; then rm -f \"$body_file\"; fi\n\
+         \tif [ -n \"$body_b64_file\" ]; then rm -f \"$body_b64_file\"; fi\n\
+         }}\n\
+         trap cleanup EXIT HUP INT TERM\n\
+         cat > \"$config_file\" <<'{config_delimiter}'\n\
+         {config_text}\n\
+         {config_delimiter}\n"
+    );
 
-    command
+    if !payload.body_text.is_empty() {
+        let encoded_body = base64_encode(payload.body_text.as_bytes());
+        let body_delimiter = heredoc_delimiter("__ESX_BODY_B64__", &encoded_body);
+        script.push_str(&format!(
+            "body_file=$(mktemp)\n\
+             body_b64_file=$(mktemp)\n\
+             cat > \"$body_b64_file\" <<'{body_delimiter}'\n\
+             {encoded_body}\n\
+             {body_delimiter}\n\
+             if base64 -d \"$body_b64_file\" > \"$body_file\" 2>/dev/null; then\n\
+             \t:\n\
+             elif base64 -D \"$body_b64_file\" > \"$body_file\" 2>/dev/null; then\n\
+             \t:\n\
+             elif command -v openssl >/dev/null 2>&1 && openssl base64 -d -A -in \"$body_b64_file\" -out \"$body_file\" 2>/dev/null; then\n\
+             \t:\n\
+             else\n\
+             \techo '无法在 SSH 主机上解码请求体。' >&2\n\
+             \texit 97\n\
+             fi\n\
+             printf '%s\\n' \"data-binary = \\\"@$body_file\\\"\" >> \"$config_file\"\n"
+        ));
+    }
+
+    script.push_str("curl --config \"$config_file\"\n");
+    script
 }
 
 fn parse_remote_curl_output(stdout: &str) -> Result<(u16, String), String> {
@@ -1058,12 +1121,11 @@ fn perform_ssh_http_request(payload: ExecuteSshHttpRequestPayload) -> Result<Htt
         DiagnosticFailure::new(format!("无法在 SSH 主机上启动 curl：{error}"), diagnostics.clone())
     })?;
 
-    if !payload.body_text.is_empty() {
-        channel.write_all(payload.body_text.as_bytes()).map_err(|error| {
-            diagnostics.push(error.to_string());
-            DiagnosticFailure::new(format!("无法向远程 curl 写入请求体：{error}"), diagnostics.clone())
-        })?;
-    }
+    let script = build_remote_curl_script(&payload);
+    channel.write_all(script.as_bytes()).map_err(|error| {
+        diagnostics.push(error.to_string());
+        DiagnosticFailure::new(format!("无法向 SSH 主机写入远程 curl 脚本：{error}"), diagnostics.clone())
+    })?;
     let _ = channel.send_eof();
 
     let mut stdout = String::new();
@@ -1260,5 +1322,37 @@ mod tests {
         assert!(fingerprint_matches(&hex, &digest));
         assert!(fingerprint_matches(&colon_hex, &digest));
         assert!(!fingerprint_matches("SHA256:not-the-same", &digest));
+    }
+
+    #[test]
+    fn remote_curl_command_does_not_expose_authorization_secret() {
+        let payload = ExecuteSshHttpRequestPayload {
+            url: "https://es.example.com:9200/orders/_bulk".into(),
+            method: "POST".into(),
+            auth: Some(ConnectionAuthConfig {
+                auth_type: None,
+                r#type: Some(ConnectionAuthType::Basic),
+            }),
+            username: "elastic".into(),
+            password: "fallback".into(),
+            auth_secret: Some("elastic:secret".into()),
+            body_text: "{\"index\":{}}\n{\"id\":1}".into(),
+            content_type: Some("application/x-ndjson".into()),
+            insecure_tls: false,
+            ssh_tunnel: SshTunnelConfig {
+                host: "jump.example.com".into(),
+                port: 22,
+                username: "ops".into(),
+                auth_method: SshAuthMethod::Password,
+                private_key_path: String::new(),
+            },
+            ssh_secret: Some("ssh-password".into()),
+        };
+
+        let command = build_remote_curl_command(&payload);
+
+        assert_eq!(command, "sh -s");
+        assert!(!command.contains("Authorization"));
+        assert!(!command.contains("secret"));
     }
 }

@@ -29,7 +29,20 @@ describe("classifyRequestSafety", () => {
       level: "safe",
       blocked: false,
       requiresConfirmation: false,
+      auditOnSuccess: false,
     });
+  });
+
+  it("allows read-only connections to execute POST search requests", () => {
+    const result = classify("POST /orders/_search\n{\"query\":{\"match_all\":{}}}", {
+      ...baseConnection,
+      readonly: true,
+    });
+
+    expect(result.level).toBe("safe");
+    expect(result.blocked).toBe(false);
+    expect(result.requiresConfirmation).toBe(false);
+    expect(result.auditOnSuccess).toBe(false);
   });
 
   it("requires confirmation for production destructive wildcard deletes", () => {
@@ -38,7 +51,17 @@ describe("classifyRequestSafety", () => {
     expect(result.level).toBe("destructive");
     expect(result.requiresConfirmation).toBe(true);
     expect(result.blocked).toBe(false);
+    expect(result.auditOnSuccess).toBe(true);
     expect(result.reasons).toContain("DELETE 通配符或 _all 会删除大量索引。");
+  });
+
+  it("requires confirmation and audit for production bulk writes", () => {
+    const result = classify("POST /orders/_bulk\n{\"index\":{}}\n{\"id\":1}");
+
+    expect(result.level).toBe("write");
+    expect(result.requiresConfirmation).toBe(true);
+    expect(result.auditOnSuccess).toBe(true);
+    expect(result.reasons).toContain("生产环境写入请求需要确认。");
   });
 
   it("blocks writes on readonly connections", () => {
@@ -61,5 +84,6 @@ describe("classifyRequestSafety", () => {
 
     expect(result.level).toBe("clusterAdmin");
     expect(result.requiresConfirmation).toBe(true);
+    expect(result.auditOnSuccess).toBe(true);
   });
 });

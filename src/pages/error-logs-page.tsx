@@ -10,6 +10,7 @@ const scopeLabelMap = {
   "connection-save": "连接保存",
   "connection-test": "连接测试",
   "request-execution": "请求执行",
+  "request-audit": "操作审计",
   "status-read": "状态读取",
 } as const;
 
@@ -24,9 +25,9 @@ export function ErrorLogsPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[10px] uppercase tracking-[0.22em] text-emerald-600">诊断与排错</p>
-              <h1 className="mt-1 text-xl font-bold text-slate-900">错误日志</h1>
+              <h1 className="mt-1 text-xl font-bold text-slate-900">诊断与审计日志</h1>
               <p className="mt-2 max-w-3xl text-xs leading-5 text-slate-500 sm:text-sm">
-                仅在开启“收集错误日志”后，连接失败和请求失败才会被写入本地日志。日志会记录连接信息、请求上下文和底层诊断链路，便于定位 SSH 与 Elasticsearch 的问题。
+                开启“收集诊断日志”后，连接失败和请求失败会写入本地日志；写入、管理和破坏性请求成功执行时会始终记录审计，便于回溯生产操作。
               </p>
             </div>
 
@@ -52,9 +53,9 @@ export function ErrorLogsPage() {
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-cyan-100 bg-cyan-50/80 p-2.5">
             <div className="pr-2">
-              <p className="text-xs font-semibold text-cyan-950 sm:text-sm">收集错误日志</p>
+              <p className="text-xs font-semibold text-cyan-950 sm:text-sm">收集诊断日志</p>
               <p className="mt-0.5 text-xs leading-5 text-cyan-900 sm:text-sm">
-                关闭时不会新增任何日志；已存在的日志会保留，直到你手动清空。
+                关闭时不会新增失败诊断日志；审计日志仍会记录成功的写入或管理操作。
               </p>
             </div>
             <Switch checked={errorLoggingEnabled} onChange={(event) => setErrorLoggingEnabled(event.target.checked)} />
@@ -63,9 +64,9 @@ export function ErrorLogsPage() {
 
         {errorLogs.length === 0 ? (
           <Card className="p-5 text-center sm:p-6">
-            <p className="text-sm font-bold text-slate-900">当前还没有错误日志</p>
+            <p className="text-sm font-bold text-slate-900">当前还没有日志</p>
             <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
-              {errorLoggingEnabled ? "日志采集已开启，后续连接或请求失败时会记录在这里。" : "先开启日志采集，之后再复现问题。"}
+              {errorLoggingEnabled ? "诊断日志采集已开启，后续失败诊断和操作审计会记录在这里。" : "写入/管理操作审计会自动记录；如需失败诊断，请开启日志采集后复现问题。"}
             </p>
           </Card>
         ) : (

@@ -150,6 +150,16 @@ type AppStateContextValue = {
     connection?: ErrorLogConnectionContext;
     request?: ErrorLogRequestContext;
   }) => void;
+  recordAuditLog: (payload: {
+    scope: "request-audit";
+    title: string;
+    summary: string;
+    diagnostics?: string[];
+    status?: number | null;
+    rawResponse?: string;
+    connection?: ErrorLogConnectionContext;
+    request?: ErrorLogRequestContext;
+  }) => void;
   updateDraft: (connectionId: string, updater: (draft: ConsoleDraft) => ConsoleDraft) => void;
   createBlankDraft: (connectionId: string) => void;
   selectSavedRequest: (requestId: string) => void;
@@ -208,8 +218,47 @@ const AppStateContext = createContext<AppStateContextValue | null>(null);
 const MAX_ERROR_LOGS = 200;
 const SEARCH_METADATA_TTL_MS = 5 * 60 * 1000;
 
+type LogPayload = {
+  scope: ErrorLogEntry["scope"];
+  title: string;
+  summary: string;
+  diagnostics?: string[];
+  status?: number | null;
+  rawResponse?: string;
+  connection?: ErrorLogConnectionContext;
+  request?: ErrorLogRequestContext;
+};
+
 function now() {
   return new Date().toISOString();
+}
+
+function buildLocalLogEntry(payload: LogPayload, responsePreviewBytes: number) {
+  return {
+    id: crypto.randomUUID(),
+    createdAt: now(),
+    scope: payload.scope,
+    title: payload.title,
+    summary: payload.summary,
+    diagnostics: redactSensitiveList(payload.diagnostics ?? []).map((item) =>
+      createTextPreview(item, responsePreviewBytes).text
+    ),
+    status: payload.status ?? null,
+    rawResponse: payload.rawResponse
+      ? createTextPreview(redactSensitiveText(payload.rawResponse), responsePreviewBytes).text
+      : undefined,
+    connection: payload.connection,
+    request: payload.request
+      ? {
+          ...payload.request,
+          content: payload.request.content ? redactSensitiveText(payload.request.content) : undefined,
+        }
+      : undefined,
+  } satisfies ErrorLogEntry;
+}
+
+function appendLocalLogEntry(logs: ErrorLogEntry[], entry: ErrorLogEntry) {
+  return [entry, ...logs].slice(0, MAX_ERROR_LOGS);
 }
 
 function normalizeStoredConnection(connection: ConnectionProfile) {
@@ -657,31 +706,23 @@ export function AppStateProvider({ children }: PropsWithChildren) {
             return current;
           }
 
-          const entry = {
-            id: crypto.randomUUID(),
-            createdAt: now(),
-            scope: payload.scope,
-            title: payload.title,
-            summary: payload.summary,
-            diagnostics: redactSensitiveList(payload.diagnostics ?? []).map((item) =>
-              createTextPreview(item, current.settings.responsePreviewBytes).text
-            ),
-            status: payload.status ?? null,
-            rawResponse: payload.rawResponse
-              ? createTextPreview(redactSensitiveText(payload.rawResponse), current.settings.responsePreviewBytes).text
-              : undefined,
-            connection: payload.connection,
-            request: payload.request
-              ? {
-                  ...payload.request,
-                  content: payload.request.content ? redactSensitiveText(payload.request.content) : undefined,
-                }
-              : undefined,
-          } satisfies ErrorLogEntry;
-
           return {
             ...current,
-            errorLogs: [entry, ...current.errorLogs].slice(0, MAX_ERROR_LOGS),
+            errorLogs: appendLocalLogEntry(
+              current.errorLogs,
+              buildLocalLogEntry(payload, current.settings.responsePreviewBytes),
+            ),
+          };
+        });
+      },
+      recordAuditLog(payload) {
+        setState((current) => {
+          return {
+            ...current,
+            errorLogs: appendLocalLogEntry(
+              current.errorLogs,
+              buildLocalLogEntry(payload, current.settings.responsePreviewBytes),
+            ),
           };
         });
       },

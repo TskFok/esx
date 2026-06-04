@@ -82,7 +82,7 @@ import { formatShanghaiDateTime } from "../lib/time";
 import { formatBytes } from "../lib/utils";
 import { useAppState } from "../providers/app-state";
 import type { ConnectionProfile } from "../types/connections";
-import type { ResponseSnapshot, SavedRequest } from "../types/requests";
+import type { ConsoleDraft, ResponseSnapshot, SavedRequest } from "../types/requests";
 
 type RunPayload = {
   connection: ConnectionProfile;
@@ -92,6 +92,28 @@ type RunPayload = {
 };
 
 const DRAFT_SAVE_DEBOUNCE_MS = 600;
+const EMPTY_CONNECTION: ConnectionProfile = {
+  id: "__missing_connection__",
+  name: "",
+  baseUrl: "",
+  username: "",
+  auth: { type: "basic" },
+  tls: { mode: "default" },
+  environment: "dev",
+  readonly: true,
+  insecureTls: false,
+  sshProfileId: null,
+  createdAt: new Date(0).toISOString(),
+  updatedAt: new Date(0).toISOString(),
+  lastUsedAt: new Date(0).toISOString(),
+};
+const EMPTY_DRAFT: ConsoleDraft = {
+  connectionId: EMPTY_CONNECTION.id,
+  name: "",
+  content: "",
+  activeSavedRequestId: null,
+  response: null,
+};
 
 function resolveDraftRequestName(preferredName: string, fallbackName: string | null | undefined, content: string) {
   const manualName = preferredName.trim() || fallbackName?.trim();
@@ -137,6 +159,54 @@ function buildUntitledRequestName(existingNames: string[]) {
   return candidate;
 }
 
+const safetyLevelLabels = {
+  write: "写入",
+  clusterAdmin: "集群管理",
+  destructive: "破坏性",
+} as const;
+
+function buildSuccessfulRequestAudit(content: string, connection: ConnectionProfile) {
+  try {
+    const entries = parseConsoleRequests(content).flatMap((request, index) => {
+      const safety = classifyRequestSafety(request, connection);
+      if (!safety.auditOnSuccess || safety.level === "safe") {
+        return [];
+      }
+      const auditLevel = safety.level as keyof typeof safetyLevelLabels;
+
+      return [{
+        index: index + 1,
+        method: request.method,
+        path: request.path,
+        level: auditLevel,
+        reasons: safety.reasons,
+      }];
+    });
+
+    if (entries.length === 0) {
+      return null;
+    }
+
+    const highestLevel = entries.some((entry) => entry.level === "destructive")
+      ? "destructive"
+      : entries.some((entry) => entry.level === "clusterAdmin")
+        ? "clusterAdmin"
+        : "write";
+    const targets = entries.map((entry) => `${entry.method} ${entry.path}`).join("，");
+
+    return {
+      title: `${safetyLevelLabels[highestLevel]}请求执行成功`,
+      summary: `成功执行 ${entries.length} 条需要审计的请求：${targets}`,
+      diagnostics: entries.map((entry) => {
+        const reason = entry.reasons.length ? `；${entry.reasons.join(" ")}` : "";
+        return `第 ${entry.index} 条 ${safetyLevelLabels[entry.level]}请求：${entry.method} ${entry.path}${reason}`;
+      }),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function ConsolePage() {
   const navigate = useNavigate();
   const {
@@ -162,6 +232,7 @@ export function ConsolePage() {
     getSshSecret,
     getSshProfileForConnection,
     recordErrorLog,
+    recordAuditLog,
     aiSettings,
     aiApiKeyConfigured,
     aiAnalysisHistory,
@@ -557,6 +628,19 @@ export function ConsolePage() {
         return;
       }
 
+      const audit = buildSuccessfulRequestAudit(payload.content, payload.connection);
+      if (audit) {
+        recordAuditLog({
+          scope: "request-audit",
+          title: audit.title,
+          summary: audit.summary,
+          diagnostics: audit.diagnostics,
+          status: response.status,
+          connection: buildConnectionLogContextFromProfile(payload.connection, getSshProfileForConnection(payload.connection)),
+          request: buildRequestLogContext(payload.content),
+        });
+      }
+
       if (saveErrorMessage) {
         toast.error(`请求已完成，但${saveErrorMessage}`);
         return;
@@ -590,18 +674,13 @@ export function ConsolePage() {
     ? requestsForCurrentConnection.find((item) => item.id === draft.activeSavedRequestId) ?? null
     : null;
   const response = draft?.response ?? null;
+  const selectedConnection = activeConnection ?? EMPTY_CONNECTION;
+  const activeDraftState = draft ?? EMPTY_DRAFT;
+  const draftKey = `${selectedConnection.id}:${activeDraftState.activeSavedRequestId ?? "__draft__"}`;
 
   useEffect(() => {
     setResponsePreviewInputKb(String(Math.round(responsePreviewBytes / 1024)));
   }, [responsePreviewBytes]);
-
-  if (!activeConnection || !draft) {
-    return <Navigate to="/connections" replace />;
-  }
-
-  const selectedConnection = activeConnection;
-  const activeDraftState = draft;
-  const draftKey = `${selectedConnection.id}:${activeDraftState.activeSavedRequestId ?? "__draft__"}`;
   const [editorContent, setEditorContent] = useState(activeDraftState.content);
   const editorContentRef = useRef(activeDraftState.content);
   const latestDraftContentRef = useRef(activeDraftState.content);
@@ -621,6 +700,9 @@ export function ConsolePage() {
   }, []);
 
   const flushEditorContent = useCallback(() => {
+    if (!activeConnection) {
+      return;
+    }
     clearDraftSaveTimer();
     const nextContent = editorContentRef.current;
     if (nextContent === latestDraftContentRef.current) {
@@ -633,7 +715,7 @@ export function ConsolePage() {
       ...currentDraftState,
       content: nextContent,
     }));
-  }, [clearDraftSaveTimer, selectedConnection.id, updateDraft]);
+  }, [activeConnection, clearDraftSaveTimer, selectedConnection.id, updateDraft]);
 
   const updateEditorContent = useCallback(
     (value: string) => {
@@ -750,7 +832,12 @@ export function ConsolePage() {
   }
 
   const metadataRefreshMutation = useMutation({
-    mutationFn: async (payload: { force: boolean }) => refreshSearchMetadata(selectedConnection, payload),
+    mutationFn: async (payload: { force: boolean }) => {
+      if (!activeConnection) {
+        throw new Error("当前没有可用连接。");
+      }
+      return refreshSearchMetadata(activeConnection, payload);
+    },
     onError(error, payload) {
       if (!payload.force) {
         return;
@@ -761,6 +848,9 @@ export function ConsolePage() {
   });
 
   useEffect(() => {
+    if (!activeConnection) {
+      return;
+    }
     if (metadataRefreshMutation.isPending) {
       return;
     }
@@ -776,15 +866,15 @@ export function ConsolePage() {
 
     metadataAutoRefreshRef.current[selectedConnection.id] = refreshKey;
     void metadataRefreshMutation.mutateAsync({ force: false }).catch(() => undefined);
-  }, [connectionSearchMetadata?.expiresAt, metadataRefreshMutation, selectedConnection.id, selectedConnection.updatedAt]);
+  }, [activeConnection, connectionSearchMetadata?.expiresAt, metadataRefreshMutation, selectedConnection.id, selectedConnection.updatedAt]);
 
   const indexFieldsAttemptedRef = useRef<Record<string, Set<string>>>({});
   useEffect(() => {
-    if (!connectionSearchMetadata) {
+    if (!activeConnection || !connectionSearchMetadata) {
       return;
     }
     indexFieldsAttemptedRef.current[selectedConnection.id] = new Set<string>();
-  }, [connectionSearchMetadata?.fetchedAt, selectedConnection.id]);
+  }, [activeConnection, connectionSearchMetadata?.fetchedAt, selectedConnection.id]);
 
   const currentPathIndexNamesKey = useMemo(() => {
     const firstLine = editorContent.split(/\r?\n/, 1)[0]?.trim() ?? "";
@@ -800,7 +890,7 @@ export function ConsolePage() {
   );
 
   useEffect(() => {
-    if (currentPathIndexNames.length === 0 || !connectionSearchMetadata) {
+    if (!activeConnection || currentPathIndexNames.length === 0 || !connectionSearchMetadata) {
       return;
     }
     const connectionId = selectedConnection.id;
@@ -829,11 +919,16 @@ export function ConsolePage() {
       });
     });
   }, [
+    activeConnection,
     currentPathIndexNames,
     ensureIndexFields,
     connectionSearchMetadata,
     selectedConnection,
   ]);
+
+  if (!activeConnection || !draft) {
+    return <Navigate to="/connections" replace />;
+  }
 
   function handleRefreshSearchMetadata() {
     indexFieldsAttemptedRef.current[selectedConnection.id] = new Set<string>();
