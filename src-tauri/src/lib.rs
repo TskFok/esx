@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use ssh2::Session;
 use tauri_plugin_prevent_default::Flags;
 
-const KEYRING_SERVICE: &str = "com.ushopal.esx";
+const KEYRING_SERVICE: &str = "com.tskfok.esx";
 const VAULT_ACCOUNT: &str = "secrets-vault";
 const AI_CONFIG_SCOPE: &str = "__ai_analysis__";
 const AI_API_KEY_ACCOUNT: &str = "api-key";

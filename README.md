@@ -321,5 +321,5 @@ POST /my-index/_search
 ## 当前版本
 
 - 应用名：`ESX`
-- Bundle ID：`com.ushopal.esx`
+- Bundle ID：`com.tskfok.esx`
 - 当前版本：`0.1.0`
