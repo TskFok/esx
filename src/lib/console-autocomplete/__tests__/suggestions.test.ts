@@ -13,7 +13,7 @@ function labelsOf(list: readonly { label: string }[]) {
 describe("selectPropertySuggestions", () => {
   it("suggests root keys at top-level", () => {
     const labels = labelsOf(selectPropertySuggestions([]));
-    expect(labels).toEqual(expect.arrayContaining(["query", "size", "aggs", "sort", "_source"]));
+    expect(labels).toEqual(expect.arrayContaining(["query", "size", "aggs", "sort", "search_after", "_source"]));
   });
 
   it("suggests only bool subkeys under bool", () => {

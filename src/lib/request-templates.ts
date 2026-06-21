@@ -43,6 +43,13 @@ export const REQUEST_TEMPLATES: RequestTemplate[] = [
     tags: ["查询"],
   },
   {
+    id: "search-after-pagination",
+    name: "search_after 分页",
+    description: "使用 sort 和上一页最后一条 hit.sort 值继续深分页",
+    content: 'POST /my-index/_search\n{\n  "query": {\n    "match_all": {}\n  },\n  "size": 10,\n  "sort": [\n    { "created_at": "asc" },\n    { "id.keyword": "asc" }\n  ],\n  "search_after": [\n    "2026-01-01T00:00:00.000Z",\n    "last-doc-id"\n  ]\n}',
+    tags: ["查询"],
+  },
+  {
     id: "index-mapping",
     name: "索引 Mapping",
     description: "查看索引字段 mapping 结构",

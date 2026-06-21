@@ -98,6 +98,14 @@ export const ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
     sortText: "013-sort",
   },
   {
+    label: "search_after",
+    detail: "深分页游标",
+    documentation: "配合 sort 使用上一页最后一条 hit.sort 值继续分页。",
+    insertText: '"search_after": [\n\t$0\n]',
+    kind: "property",
+    sortText: "014-search_after",
+  },
+  {
     label: "aggs",
     detail: "聚合入口",
     documentation: "聚合配置入口。",

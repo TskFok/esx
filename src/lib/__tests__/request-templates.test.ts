@@ -15,12 +15,19 @@ describe("request templates", () => {
         "alias-switch",
         "reindex-async",
         "rollover-dry-run",
+        "search-after-pagination",
         "index-template-put",
         "component-template-put",
         "ingest-pipeline-simulate",
         "analyze-standard",
       ]),
     );
+  });
+
+  it("includes a search_after pagination template", () => {
+    const template = getRequestTemplateById("search-after-pagination");
+    expect(template?.content).toContain('"sort"');
+    expect(template?.content).toContain('"search_after"');
   });
 
   it("finds template by id", () => {

@@ -34,9 +34,14 @@ describe("snippet templates", () => {
     expect(snippet.insertText).toContain('"bool"');
   });
 
-  it("root snippets include query/aggs/size/sort", () => {
+  it("root snippets include query/aggs/size/sort/search_after", () => {
     const labels = ROOT_PROPERTY_SNIPPETS.map((item) => item.label);
-    expect(labels).toEqual(expect.arrayContaining(["query", "aggs", "size", "sort", "from", "_source"]));
+    expect(labels).toEqual(expect.arrayContaining(["query", "aggs", "size", "sort", "search_after", "from", "_source"]));
+  });
+
+  it("search_after snippet inserts an array value", () => {
+    const snippet = bySnippetLabel(ROOT_PROPERTY_SNIPPETS, "search_after");
+    expect(snippet.insertText).toBe('"search_after": [\n\t$0\n]');
   });
 
   it("agg type snippets contain common aggregations", () => {
