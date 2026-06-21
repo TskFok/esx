@@ -95,4 +95,52 @@ describe("analyzeRequestContentLocally", () => {
       expect(result.meaning).toContain("列出索引");
     }
   });
+
+  it("describes expanded query DSL types", () => {
+    const result = analyzeRequestContentLocally(`POST /orders/_search
+{
+  "query": {
+    "constant_score": {
+      "filter": {
+        "geo_distance": {
+          "distance": "10km",
+          "location": "40,-70"
+        }
+      }
+    }
+  }
+}`);
+
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.details.join("；")).toContain("常量评分查询");
+      expect(result.details.join("；")).toContain("地理距离查询");
+    }
+  });
+
+  it("describes expanded aggregation types", () => {
+    const result = analyzeRequestContentLocally(`POST /orders/_search
+{
+  "aggs": {
+    "nested_items": {
+      "nested": {
+        "path": "items"
+      }
+    },
+    "price_stats": {
+      "extended_stats": {
+        "field": "price"
+      }
+    }
+  }
+}`);
+
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.details).toEqual(expect.arrayContaining([
+        "聚合「nested_items」：嵌套聚合",
+        "聚合「price_stats」：扩展统计聚合",
+      ]));
+    }
+  });
 });

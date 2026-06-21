@@ -47,7 +47,18 @@ function modelFor(content: string) {
       if (range.startLineNumber === range.endLineNumber) {
         return (lines[range.startLineNumber - 1] ?? "").slice(range.startColumn - 1, range.endColumn - 1);
       }
-      return content;
+      const selected: string[] = [];
+      for (let lineNumber = range.startLineNumber; lineNumber <= range.endLineNumber; lineNumber += 1) {
+        const line = lines[lineNumber - 1] ?? "";
+        if (lineNumber === range.startLineNumber) {
+          selected.push(line.slice(range.startColumn - 1));
+        } else if (lineNumber === range.endLineNumber) {
+          selected.push(line.slice(0, range.endColumn - 1));
+        } else {
+          selected.push(line);
+        }
+      }
+      return selected.join("\n");
     },
   } as never;
 }
@@ -96,6 +107,17 @@ function completionLabels(content: string, searchMetadata: ConnectionSearchMetad
   return suggestions.map((item) => String(item.label));
 }
 
+function completionLabelsAt(content: string, lineNumber: number, column: number, searchMetadata: ConnectionSearchMetadata) {
+  const context = buildConsoleAutocompleteContext([], content, searchMetadata);
+  const suggestions = provideConsoleCompletionItems(
+    fakeMonaco,
+    modelFor(content),
+    { lineNumber, column } as never,
+    context,
+  );
+  return suggestions.map((item) => String(item.label));
+}
+
 describe("provideConsoleCompletionItems", () => {
   it("suggests search query parameters after question mark", () => {
     const labels = completionLabels("GET /_search?", metadata({}));
@@ -120,5 +142,19 @@ describe("provideConsoleCompletionItems", () => {
 
     expect(es7Labels).toContain("include_type_name");
     expect(es8Labels).not.toContain("include_type_name");
+  });
+
+  it("suggests expanded root search body properties in JSON body", () => {
+    const content = "POST /orders/_search\n{\n  \n}";
+    const labels = completionLabelsAt(content, 3, 3, metadata({}));
+
+    expect(labels).toEqual(expect.arrayContaining(["post_filter", "runtime_mappings", "knn", "profile"]));
+  });
+
+  it("suggests expanded query DSL in JSON body query contexts", () => {
+    const content = "POST /orders/_search\n{\n  \"query\": {\n    \n  }\n}";
+    const labels = completionLabelsAt(content, 4, 5, metadata({}));
+
+    expect(labels).toEqual(expect.arrayContaining(["multi_match", "constant_score", "geo_distance", "script_score"]));
   });
 });

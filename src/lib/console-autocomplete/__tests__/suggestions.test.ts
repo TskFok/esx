@@ -76,6 +76,39 @@ describe("selectPropertySuggestions", () => {
       expect.arrayContaining(["field", "precision_threshold"]),
     );
   });
+
+  it("suggests expanded query DSL inside query and post_filter contexts", () => {
+    expect(labelsOf(selectPropertySuggestions(["query"]))).toEqual(
+      expect.arrayContaining(["multi_match", "constant_score", "geo_distance", "script_score"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["post_filter"]))).toEqual(
+      expect.arrayContaining(["term", "range", "bool", "geo_bounding_box"]),
+    );
+  });
+
+  it("suggests query DSL inside compound query child contexts", () => {
+    expect(labelsOf(selectPropertySuggestions(["query", "constant_score", "filter"]))).toEqual(
+      expect.arrayContaining(["term", "range", "bool", "nested"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["query", "function_score", "query"]))).toEqual(
+      expect.arrayContaining(["match", "bool", "script_score"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["query", "script_score", "query"]))).toEqual(
+      expect.arrayContaining(["match", "bool", "constant_score"]),
+    );
+  });
+
+  it("suggests query DSL inside joining and vector filter contexts", () => {
+    expect(labelsOf(selectPropertySuggestions(["query", "nested", "query"]))).toEqual(
+      expect.arrayContaining(["match", "term", "bool"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["query", "has_child", "query"]))).toEqual(
+      expect.arrayContaining(["match", "term", "bool"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["knn", "filter"]))).toEqual(
+      expect.arrayContaining(["term", "range", "bool"]),
+    );
+  });
 });
 
 describe("selectValueSuggestions", () => {
@@ -110,5 +143,12 @@ describe("shouldSuggestFieldsForStringValue", () => {
 
   it("returns false otherwise", () => {
     expect(shouldSuggestFieldsForStringValue(["query", "match_all"])).toBe(false);
+  });
+
+  it("returns true for expanded field array and vector field values", () => {
+    expect(shouldSuggestFieldsForKey(["query", "multi_match"])).toBe(false);
+    expect(shouldSuggestFieldsForStringValue(["query", "multi_match", "fields", 0])).toBe(true);
+    expect(shouldSuggestFieldsForStringValue(["query", "geo_distance", "distance"])).toBe(false);
+    expect(shouldSuggestFieldsForStringValue(["knn", "field"])).toBe(true);
   });
 });

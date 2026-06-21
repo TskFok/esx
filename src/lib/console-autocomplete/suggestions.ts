@@ -15,23 +15,62 @@ import type { ConsoleAutocompleteContext } from "./context";
 
 export const BOOL_ARRAY_KEYS = new Set(["must", "should", "filter", "must_not"]);
 
-export const LEAF_QUERY_KEYS = new Set([
+export const FIELD_OBJECT_QUERY_KEYS = new Set([
   "match",
+  "match_bool_prefix",
   "match_phrase",
   "match_phrase_prefix",
   "term",
   "terms",
+  "terms_set",
   "range",
-  "exists",
   "wildcard",
   "prefix",
   "regexp",
   "fuzzy",
   "span_term",
-  "multi_match",
+  "geo_distance",
+  "geo_bounding_box",
+  "geo_polygon",
+  "geo_shape",
+  "shape",
 ]);
 
 export const FIELD_VALUE_KEYS = new Set(["field", "path"]);
+export const FIELD_ARRAY_VALUE_KEYS = new Set(["fields", "docvalue_fields", "stored_fields"]);
+const QUERY_CONTAINER_KEYS = new Set(["query", "post_filter"]);
+const QUERY_CHILD_KEYS = new Set([
+  "filter",
+  "query",
+  "positive",
+  "negative",
+  "organic",
+  "include",
+  "exclude",
+  "big",
+  "little",
+  "match",
+]);
+const QUERY_ARRAY_KEYS = new Set(["queries"]);
+
+function isQuerySuggestionContext(path: JsonPathSegment[]) {
+  const last = path[path.length - 1];
+  const secondLast = path[path.length - 2];
+
+  if (typeof last === "string" && QUERY_CONTAINER_KEYS.has(last)) {
+    return true;
+  }
+
+  if (typeof last === "number" && typeof secondLast === "string" && QUERY_ARRAY_KEYS.has(secondLast)) {
+    return true;
+  }
+
+  if (typeof last === "string" && QUERY_CHILD_KEYS.has(last)) {
+    return true;
+  }
+
+  return false;
+}
 
 export function selectPropertySuggestions(
   path: JsonPathSegment[],
@@ -44,20 +83,6 @@ export function selectPropertySuggestions(
 
   if (path.length === 0) {
     return filterAvailableSnippets(ROOT_PROPERTY_SNIPPETS, autocompleteContext);
-  }
-
-  if (last === "query" && path.length === 1) {
-    return filterAvailableSnippets(deduplicateByLabel([
-      ...QUERY_LEAF_PROPERTY_SNIPPETS,
-      {
-        label: "bool",
-        detail: "布尔查询",
-        documentation: "布尔查询，支持 must / should / filter / must_not。",
-        insertText: '"bool": {\n\t$0\n}',
-        kind: "property" as const,
-        sortText: "001-bool",
-      },
-    ]), autocompleteContext);
   }
 
   if (last === "bool") {
@@ -74,6 +99,10 @@ export function selectPropertySuggestions(
 
   if (aggregationProperties) {
     return filterAvailableSnippets(aggregationProperties, autocompleteContext);
+  }
+
+  if (isQuerySuggestionContext(path)) {
+    return filterAvailableSnippets(QUERY_LEAF_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
   if (last === "aggs" || last === "aggregations") {
@@ -125,11 +154,11 @@ export function shouldSuggestFieldsForKey(path: JsonPathSegment[]) {
   const last = path[path.length - 1];
   const secondLast = path[path.length - 2];
 
-  if (typeof last === "string" && LEAF_QUERY_KEYS.has(last)) {
+  if (typeof last === "string" && FIELD_OBJECT_QUERY_KEYS.has(last)) {
     return true;
   }
 
-  if (typeof secondLast === "string" && LEAF_QUERY_KEYS.has(secondLast) && typeof last === "string") {
+  if (typeof secondLast === "string" && FIELD_OBJECT_QUERY_KEYS.has(secondLast) && typeof last === "string") {
     return true;
   }
 
@@ -150,9 +179,15 @@ export function shouldSuggestFieldsForKey(path: JsonPathSegment[]) {
 
 export function shouldSuggestFieldsForStringValue(path: JsonPathSegment[]) {
   const last = path[path.length - 1];
-  return typeof last === "string" && FIELD_VALUE_KEYS.has(last);
-}
+  const secondLast = path[path.length - 2];
 
-function deduplicateByLabel<T extends { label: string }>(list: T[]): T[] {
-  return list.filter((item, index, array) => array.findIndex((other) => other.label === item.label) === index);
+  if (typeof last === "string" && FIELD_VALUE_KEYS.has(last)) {
+    return true;
+  }
+
+  if (typeof last === "number" && typeof secondLast === "string" && FIELD_ARRAY_VALUE_KEYS.has(secondLast)) {
+    return true;
+  }
+
+  return false;
 }
