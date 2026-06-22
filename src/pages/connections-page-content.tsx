@@ -8,13 +8,15 @@ import {
   PlugZap,
   ShieldAlert,
   Trash2,
+  Upload,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { ConnectionExportDialog } from "../components/connections/connection-export-dialog";
+import { ConnectionImportDialog } from "../components/connections/connection-import-dialog";
 import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
@@ -40,8 +42,11 @@ import {
 } from "../lib/errors";
 import {
   buildConnectionExportFilename,
+  decryptConnectionExportFile,
   encryptConnectionExportPayload,
+  isEncryptedConnectionExportFile,
   serializeEncryptedConnectionExportFile,
+  type ConnectionExportPayload,
 } from "../lib/connection-import-export";
 import { testConnection } from "../lib/http-client";
 import { downloadExportContent } from "../lib/request-import-export";
@@ -102,6 +107,7 @@ export function ConnectionsPage() {
     deleteSshProfile,
     setCurrentConnection,
     exportConnections,
+    importConnections,
     getPassword,
     getSshSecret,
     getSshProfileForConnection,
@@ -121,6 +127,16 @@ export function ConnectionsPage() {
   const [deletingSshProfile, setDeletingSshProfile] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importParsing, setImportParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [pendingImport, setPendingImport] = useState<{
+    fileName: string;
+    rawJson: unknown;
+    payload: ConnectionExportPayload | null;
+  } | null>(null);
 
   const sortedConnections = useMemo(
     () => [...connections].sort(compareConnections),
@@ -459,6 +475,64 @@ export function ConnectionsPage() {
     }
   }
 
+  async function handleImportFileSelected(file: File) {
+    try {
+      const rawJson = JSON.parse(await file.text());
+      if (!isEncryptedConnectionExportFile(rawJson)) {
+        throw new Error("不支持的连接导入文件。");
+      }
+
+      setPendingImport({
+        fileName: file.name,
+        rawJson,
+        payload: null,
+      });
+      setImportError(null);
+      setImportDialogOpen(true);
+    } catch (error) {
+      toast.error(extractUnknownErrorMessage(error, "无法读取导入文件"));
+    }
+  }
+
+  async function handleParseImportFile(password: string) {
+    if (!pendingImport) {
+      return;
+    }
+
+    setImportParsing(true);
+    setImportError(null);
+    try {
+      if (!isEncryptedConnectionExportFile(pendingImport.rawJson)) {
+        throw new Error("不支持的连接导入文件。");
+      }
+      const payload = await decryptConnectionExportFile(pendingImport.rawJson, password);
+      setPendingImport((current) => (current ? { ...current, payload } : current));
+    } catch (error) {
+      setImportError(extractUnknownErrorMessage(error, "导入文件解析失败"));
+    } finally {
+      setImportParsing(false);
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!pendingImport?.payload) {
+      return;
+    }
+
+    setImporting(true);
+    setImportError(null);
+    try {
+      const result = await importConnections(pendingImport.payload);
+      setImportDialogOpen(false);
+      setPendingImport(null);
+      toast.success(`已导入 ${result.connectionsImported} 条连接和 ${result.sshProfilesImported} 条 SSH 通道。`);
+    } catch (error) {
+      setImportError(extractUnknownErrorMessage(error, "导入连接失败"));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   const sshFormIncomplete =
     !sshFormValues.sshHost.trim() ||
     !sshFormValues.sshPort.trim() ||
@@ -535,6 +609,27 @@ export function ConnectionsPage() {
                   <Download className="mr-1 h-3.5 w-3.5" />
                   导出
                 </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 rounded-lg px-2.5 text-xs"
+                  onClick={() => importInputRef.current?.click()}
+                >
+                  <Upload className="mr-1 h-3.5 w-3.5" />
+                  导入
+                </Button>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) {
+                      void handleImportFileSelected(file);
+                    }
+                  }}
+                />
                 <Button className="h-8 rounded-lg px-2.5 text-xs" onClick={openCreateConnectionDialog}>
                   <CirclePlus className="mr-1 h-3.5 w-3.5" />
                   新建连接
@@ -1172,6 +1267,24 @@ export function ConnectionsPage() {
           }
         }}
         onConfirm={handleConfirmExport}
+      />
+
+      <ConnectionImportDialog
+        open={importDialogOpen}
+        fileName={pendingImport?.fileName ?? ""}
+        payload={pendingImport?.payload ?? null}
+        errorMessage={importError}
+        parsing={importParsing}
+        importing={importing}
+        onClose={() => {
+          if (!importParsing && !importing) {
+            setImportDialogOpen(false);
+            setPendingImport(null);
+            setImportError(null);
+          }
+        }}
+        onParse={handleParseImportFile}
+        onConfirm={handleConfirmImport}
       />
 
       <Dialog
