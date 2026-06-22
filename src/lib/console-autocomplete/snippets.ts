@@ -856,9 +856,7 @@ export const AGG_PROPERTY_SNIPPETS_BY_TYPE: Readonly<Record<string, ReadonlyArra
     propertySnippet("size", "返回数量", "设置 top_metrics 返回数量。", '"size": ${1:1}', "003-size"),
   ],
   median_absolute_deviation: METRIC_AGG_PROPERTY_SNIPPETS,
-  filter: [
-    propertySnippet("filter", "过滤查询", "filter 聚合使用的 Query DSL。", '"filter": {\n\t$0\n}', "001-filter"),
-  ],
+  filter: QUERY_LEAF_PROPERTY_SNIPPETS,
   nested: [
     propertySnippet("path", "嵌套路径", "nested 聚合路径。", '"path": "$0"', "001-path"),
   ],

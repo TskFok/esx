@@ -109,6 +109,13 @@ describe("selectPropertySuggestions", () => {
       expect.arrayContaining(["term", "range", "bool"]),
     );
   });
+
+  it("suggests query DSL inside filter aggregation bodies", () => {
+    const labels = labelsOf(selectPropertySuggestions(["aggs", "paid_orders", "filter"]));
+
+    expect(labels).toEqual(expect.arrayContaining(["term", "range", "bool"]));
+    expect(labels).not.toEqual(["filter"]);
+  });
 });
 
 describe("selectValueSuggestions", () => {
