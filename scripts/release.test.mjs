@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseReleaseArgs } from "./release.mjs";
+import { parseReleaseArgs } from "./lib/release-args.mjs";
 
 describe("parseReleaseArgs", () => {
   it("默认 patch 升版", () => {
