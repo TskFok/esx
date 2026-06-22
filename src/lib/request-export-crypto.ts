@@ -16,8 +16,22 @@ export type EncryptedRequestExportFile = EncryptedJsonExportFile & {
   kind: "requests";
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function withRequestKind(file: unknown): unknown {
+  if (!isRecord(file) || "kind" in file) {
+    return file;
+  }
+  return {
+    ...file,
+    kind: "requests",
+  };
+}
+
 export function isEncryptedRequestExportFile(value: unknown): value is EncryptedRequestExportFile {
-  return isEncryptedJsonFile(value, "requests");
+  return isEncryptedJsonFile(value, "requests") || isEncryptedJsonFile(withRequestKind(value), "requests");
 }
 
 export async function encryptRequestExportPayload(
@@ -37,7 +51,7 @@ export async function decryptRequestExportFile(
   password: string,
 ): Promise<RequestExportPayload> {
   const decrypted = await decryptJsonPayload<unknown>({
-    file,
+    file: withRequestKind(file),
     kind: "requests",
     password,
     invalidKindMessage: "不支持的导入文件版本。",

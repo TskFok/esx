@@ -43,6 +43,17 @@ describe("request export crypto", () => {
     await expect(decryptRequestExportFile(encrypted, "wrong-password")).rejects.toThrow("密码错误或文件已损坏。");
   });
 
+  it("decrypts legacy encrypted request export files without kind", async () => {
+    const payload = buildRequestExportPayload("生产集群", [createRequest("健康检查")]);
+    const encrypted = await encryptRequestExportPayload(payload, "test-password");
+    const { kind: _kind, ...legacyEncrypted } = encrypted;
+
+    expect(isEncryptedRequestExportFile(legacyEncrypted)).toBe(true);
+
+    const decrypted = await decryptRequestExportFile(legacyEncrypted as typeof encrypted, "test-password");
+    expect(decrypted.connectionName).toBe("生产集群");
+  });
+
   it("builds encrypted export filename", () => {
     expect(buildEncryptedExportFilename("生产集群", new Date("2026-05-27T08:00:00.000Z"))).toBe(
       "esx-requests-生产集群-2026-05-27.encrypted.json",

@@ -69,6 +69,22 @@ describe("connection import export", () => {
     expect(parsed.sshProfiles[0]?.secret).toBe("ssh-secret");
   });
 
+  it("exports unused ssh profiles for full connection management backup", async () => {
+    const payload = await buildConnectionExportPayload({
+      connections: [createConnection({ sshProfileId: null })],
+      sshProfiles: [
+        createSshProfile(),
+        createSshProfile({ id: "ssh-unused", name: "备用跳板机" }),
+      ],
+      getConnectionSecret: async () => "elastic:secret",
+      getSshSecret: async (profile) => `${profile.id}-secret`,
+      exportedAt: timestamp,
+    });
+
+    expect(payload.sshProfiles.map((profile) => profile.id)).toEqual(["ssh-1", "ssh-unused"]);
+    expect(payload.sshProfiles.map((profile) => profile.secret)).toEqual(["ssh-1-secret", "ssh-unused-secret"]);
+  });
+
   it("rejects invalid connection entries", () => {
     expect(() =>
       parseConnectionImportPayload({

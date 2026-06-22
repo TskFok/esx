@@ -185,9 +185,6 @@ export async function buildConnectionExportPayload(input: {
   getSshSecret: (profile: SshProfile) => Promise<string | null>;
   exportedAt?: string;
 }): Promise<ConnectionExportPayload> {
-  const sshProfileIds = new Set(input.connections.map((connection) => connection.sshProfileId).filter(Boolean));
-  const exportedSshProfiles = input.sshProfiles.filter((profile) => sshProfileIds.has(profile.id));
-
   const connections = await Promise.all(
     input.connections.map(async (connection) => {
       const normalized = normalizeConnectionProfileSecurity(connection);
@@ -214,7 +211,7 @@ export async function buildConnectionExportPayload(input: {
   );
 
   const sshProfiles = await Promise.all(
-    exportedSshProfiles.map(async (profile) => ({
+    input.sshProfiles.map(async (profile) => ({
       id: profile.id,
       name: profile.name,
       tunnel: profile.tunnel,

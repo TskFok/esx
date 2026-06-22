@@ -1257,9 +1257,7 @@ export function ConnectionsPage() {
       <ConnectionExportDialog
         open={exportDialogOpen}
         connectionCount={sortedConnections.length}
-        sshProfileCount={
-          new Set(sortedConnections.map((connection) => connection.sshProfileId).filter(Boolean)).size
-        }
+        sshProfileCount={sortedSshProfiles.length}
         exporting={exporting}
         onClose={() => {
           if (!exporting) {
