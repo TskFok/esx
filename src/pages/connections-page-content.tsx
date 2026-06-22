@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import {
   CheckCircle2,
   CirclePlus,
+  Download,
   Loader2,
   Pencil,
   PlugZap,
@@ -13,6 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
+import { ConnectionExportDialog } from "../components/connections/connection-export-dialog";
 import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
@@ -36,7 +38,13 @@ import {
   extractUnknownErrorDiagnostics,
   extractUnknownErrorMessage,
 } from "../lib/errors";
+import {
+  buildConnectionExportFilename,
+  encryptConnectionExportPayload,
+  serializeEncryptedConnectionExportFile,
+} from "../lib/connection-import-export";
 import { testConnection } from "../lib/http-client";
+import { downloadExportContent } from "../lib/request-import-export";
 import { formatShanghaiDateTime } from "../lib/time";
 import { validateSshTunnel } from "../lib/tauri";
 import { useAppState } from "../providers/app-state";
@@ -93,6 +101,7 @@ export function ConnectionsPage() {
     deleteConnection,
     deleteSshProfile,
     setCurrentConnection,
+    exportConnections,
     getPassword,
     getSshSecret,
     getSshProfileForConnection,
@@ -110,6 +119,8 @@ export function ConnectionsPage() {
   const [deletingConnection, setDeletingConnection] = useState(false);
   const [pendingDeleteSshProfile, setPendingDeleteSshProfile] = useState<SshProfile | null>(null);
   const [deletingSshProfile, setDeletingSshProfile] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const sortedConnections = useMemo(
     () => [...connections].sort(compareConnections),
@@ -430,6 +441,24 @@ export function ConnectionsPage() {
     navigate("/console");
   }
 
+  async function handleConfirmExport(payload: { password: string }) {
+    setExporting(true);
+    try {
+      const exportPayload = await exportConnections();
+      const encrypted = await encryptConnectionExportPayload(exportPayload, payload.password);
+      downloadExportContent(
+        serializeEncryptedConnectionExportFile(encrypted),
+        buildConnectionExportFilename(),
+      );
+      setExportDialogOpen(false);
+      toast.success(`已导出 ${exportPayload.connections.length} 条连接。`);
+    } catch (error) {
+      toast.error(extractUnknownErrorMessage(error, "导出连接失败"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const sshFormIncomplete =
     !sshFormValues.sshHost.trim() ||
     !sshFormValues.sshPort.trim() ||
@@ -496,6 +525,15 @@ export function ConnectionsPage() {
               <div className="flex flex-wrap gap-1">
                 <Button variant="outline" className="h-8 rounded-lg px-2.5 text-xs" onClick={() => navigate("/logs")}>
                   错误日志
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-8 rounded-lg px-2.5 text-xs"
+                  onClick={() => setExportDialogOpen(true)}
+                  disabled={sortedConnections.length === 0}
+                >
+                  <Download className="mr-1 h-3.5 w-3.5" />
+                  导出
                 </Button>
                 <Button className="h-8 rounded-lg px-2.5 text-xs" onClick={openCreateConnectionDialog}>
                   <CirclePlus className="mr-1 h-3.5 w-3.5" />
@@ -1120,6 +1158,21 @@ export function ConnectionsPage() {
           )}
         </div>
       </Dialog>
+
+      <ConnectionExportDialog
+        open={exportDialogOpen}
+        connectionCount={sortedConnections.length}
+        sshProfileCount={
+          new Set(sortedConnections.map((connection) => connection.sshProfileId).filter(Boolean)).size
+        }
+        exporting={exporting}
+        onClose={() => {
+          if (!exporting) {
+            setExportDialogOpen(false);
+          }
+        }}
+        onConfirm={handleConfirmExport}
+      />
 
       <Dialog
         open={pendingDeleteConnection != null}
