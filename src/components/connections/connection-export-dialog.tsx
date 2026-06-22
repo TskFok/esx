@@ -31,7 +31,16 @@ export function ConnectionExportDialog({
   }, [open]);
 
   const passwordsMatch = password.trim() && password === confirmPassword;
-  const canConfirm = connectionCount > 0 && Boolean(passwordsMatch) && !exporting;
+  const hasValidExportPassword = connectionCount > 0 && Boolean(passwordsMatch);
+  const canConfirm = hasValidExportPassword && !exporting;
+
+  function handleConfirm() {
+    if (!canConfirm) {
+      return;
+    }
+
+    onConfirm({ password: password.trim() });
+  }
 
   return (
     <Dialog
@@ -45,7 +54,11 @@ export function ConnectionExportDialog({
           <Button variant="outline" onClick={onClose} disabled={exporting}>
             取消
           </Button>
-          <Button onClick={() => onConfirm({ password: password.trim() })} disabled={!canConfirm}>
+          <Button
+            onClick={handleConfirm}
+            disabled={!hasValidExportPassword}
+            aria-disabled={exporting || undefined}
+          >
             {exporting ? "导出中..." : "导出"}
           </Button>
         </>

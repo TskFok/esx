@@ -1056,6 +1056,8 @@ git commit -m "接入连接导入导出状态入口"
 - Create: `src/components/connections/connection-export-dialog.tsx`
 - Modify: `src/pages/connections-page-content.tsx`
 
+> 注意：进行中状态如果需要保持主按钮视觉，不要把确认按钮设置为原生 `disabled`。当前 `Button` 的 `disabled:opacity-60` 会让“导出中...”变成禁用态样式。应拆分表单无效和提交中状态，用 `aria-disabled` 加点击处理 guard 防重复提交。
+
 - [ ] **Step 1: Create `ConnectionExportDialog`**
 
 Create `src/components/connections/connection-export-dialog.tsx`:

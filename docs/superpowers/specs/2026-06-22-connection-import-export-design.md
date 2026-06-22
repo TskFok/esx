@@ -187,7 +187,7 @@ type EncryptedConnectionExportFile = {
 
 - 按钮使用现有 `Button`、`Dialog`、`Input` 和 lucide 图标。
 - 弹窗字段使用明确 label，不只依赖 placeholder。
-- 导入和导出期间禁用确认按钮并显示进行中状态。
+- 导入和导出期间确认按钮需要显示进行中状态并防止重复提交；如果需要保持主按钮视觉，不要使用原生 `disabled` 表示忙碌状态，改用 `aria-disabled` 和点击处理中的状态 guard。
 - 错误展示在相关弹窗内，同时保留 toast 反馈。
 - 文件选择 input 接受 `application/json,.json`。
 - 不使用 emoji 作为结构图标。
