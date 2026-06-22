@@ -11,7 +11,8 @@
     "build:dmg": "node ./scripts/tauri-wrapper.mjs build",
     "clean": "rm -rf build dist node_modules/.vite src-tauri/target",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release": "node ./scripts/release.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
