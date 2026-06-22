@@ -68,6 +68,11 @@ import { buildSecretsMigrationHint } from "../lib/secrets-vault";
 import { appendStatusHistorySnapshot } from "../lib/status-diagnostics";
 import { normalizeBaseUrl } from "../lib/http-client";
 import { normalizeClusterMetadata } from "../lib/console-autocomplete";
+import {
+  buildConnectionExportPayload,
+  buildConnectionImportPlan,
+  type ConnectionExportPayload,
+} from "../lib/connection-import-export";
 import type {
   ConnectionFormValues,
   ConnectionProfile,
@@ -213,6 +218,11 @@ type AppStateContextValue = {
   getPassword: (connection: ConnectionProfile) => Promise<string | null>;
   getSshSecret: (sshProfile: SshProfile | null) => Promise<string | null>;
   getSshProfileForConnection: (connection: ConnectionProfile) => SshProfile | null;
+  exportConnections: () => Promise<ConnectionExportPayload>;
+  importConnections: (payload: ConnectionExportPayload) => Promise<{
+    connectionsImported: number;
+    sshProfilesImported: number;
+  }>;
 };
 
 const AppStateContext = createContext<AppStateContextValue | null>(null);
@@ -1267,6 +1277,45 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           return null;
         }
         return getConnectionSshSecret(sshProfile.id);
+      },
+      async exportConnections() {
+        return buildConnectionExportPayload({
+          connections: state.connections,
+          sshProfiles: state.sshProfiles,
+          getConnectionSecret: async (connection) =>
+            getConnectionSecret(connection.id, getAuthSecretKey(connection.auth, connection.username)),
+          getSshSecret: async (profile) => getConnectionSshSecret(profile.id),
+        });
+      },
+      async importConnections(payload) {
+        const importPlan = buildConnectionImportPlan(payload);
+
+        await Promise.all([
+          ...importPlan.connectionSecrets.map((secretPlan) =>
+            saveConnectionSecret(
+              secretPlan.connectionId,
+              getAuthSecretKey(secretPlan.auth, secretPlan.username),
+              secretPlan.secret,
+            ),
+          ),
+          ...importPlan.sshSecrets.map((secretPlan) =>
+            saveConnectionSshSecret(secretPlan.profileId, secretPlan.secret),
+          ),
+        ]);
+
+        setState((current) =>
+          normalizeState({
+            ...current,
+            connections: [...importPlan.connections, ...current.connections],
+            sshProfiles: [...importPlan.sshProfiles, ...current.sshProfiles],
+            currentConnectionId: importPlan.connections[0]?.id ?? current.currentConnectionId,
+          }),
+        );
+
+        return {
+          connectionsImported: importPlan.connections.length,
+          sshProfilesImported: importPlan.sshProfiles.length,
+        };
       },
     }),
     [aiApiKeyConfigured, currentConnection, currentDraft, ready, requestsForCurrentConnection, state],
