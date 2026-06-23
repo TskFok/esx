@@ -34,6 +34,7 @@ src-tauri/gen/
 # Editor directories and files
 .vscode/
 .idea/
+.cursor/
 .DS_Store
 *.suo
 *.ntvs*
