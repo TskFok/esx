@@ -9,7 +9,7 @@ import {
   parseConventionalCommit,
   parseGitLogOutput,
   resolveTagRange,
-} from "./changelog.mjs";
+} from "./changelog-lib.mjs";
 
 describe("parseConventionalCommit", () => {
   it("解析标准 conventional commit", () => {
