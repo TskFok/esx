@@ -167,7 +167,7 @@ export function runRelease(options) {
     ? currentVersion
     : bumpVersion(currentVersion, options.bumpLevel);
   const tag = formatTag(nextVersion);
-  const commitMessage = `发布 ${tag}`;
+  const commitMessage = `chore: 发布 ${tag}`;
 
   if (options.current) {
     retagCurrentVersion(tag, { dryRun: options.dryRun });

@@ -1,0 +1,45 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+version-resolver:
+  major:
+    labels:
+      - major
+  minor:
+    labels:
+      - minor
+  patch:
+    labels:
+      - patch
+categories:
+  - title: 新功能
+    labels:
+      - feature
+      - feat
+  - title: 修 bug
+    labels:
+      - fix
+      - bug
+  - title: 重构
+    labels:
+      - refactor
+  - title: 日常维护
+    labels:
+      - chore
+  - title: GitHub Actions / 部署配置
+    labels:
+      - ci
+  - title: 依赖 / 构建变更
+    labels:
+      - build
+  - title: 文档
+    labels:
+      - documentation
+      - docs
+  - title: 测试
+    labels:
+      - test
+change-template: "- $TITLE @$AUTHOR (#$NUMBER)"
+template: |
+  ## 变更摘要
+
+  $CHANGES

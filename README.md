@@ -311,6 +311,10 @@ POST /my-index/_search
 └── build/                        # 构建输出目录（忽略提交）
 ```
 
+## 提交与发布
+
+日常提交遵循 Conventional Commits：`feat:`、`fix:` 等英文 type 前缀 + 中文描述。发布时在 `master` 执行 `pnpm release`，GitHub Actions 会按 type 分组生成 Release Notes。详见 [docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md)。
+
 ## 本地开发建议
 
 - 前端结构和请求执行逻辑已经做了分层，新增功能时优先补充 `src/lib` 和 `src/providers` 的边界，而不是把逻辑直接堆进页面组件。
