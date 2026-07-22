@@ -214,7 +214,7 @@ function buildJsonSuggestions(
 
     const properties = path.length === 0
       ? filterAvailableSnippets(rootPropertySnippets, autocompleteContext)
-      : selectPropertySuggestions(path, autocompleteContext);
+      : selectPropertySuggestions(path, autocompleteContext, cursorInfo.objectFrames);
     for (const snippet of properties) {
       suggestionsList.push(renderSnippet(monacoInstance, snippet, replaceRange, false));
     }

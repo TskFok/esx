@@ -362,4 +362,80 @@ describe("provideConsoleCompletionItems", () => {
 
     expect(labels).toEqual(expect.arrayContaining(["query", "aggs", "from", "size", "sort"]));
   });
+
+  it("size 值位置只提示数值，不提示 Query DSL 和 null", () => {
+    const labels = completionLabels('POST /orders/_search\n{"size": <cursor>}');
+
+    expect(labels).toContain("0");
+    expect(labels).not.toEqual(expect.arrayContaining(["bool", "match", "term", "null"]));
+  });
+
+  it("profile 值位置只提示布尔值", () => {
+    const labels = completionLabels('POST /orders/_search\n{"profile": <cursor>}');
+
+    expect(labels).toEqual(expect.arrayContaining(["true", "false"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["bool", "match", "null", "0"]));
+  });
+
+  it("未知对象不回退到 Search 根属性或 Query DSL", () => {
+    expect(completionLabels('POST /orders/_search\n{"unknown":{ <cursor>}}')).toEqual([]);
+  });
+
+  it("term 字段参数对象只提示 term 参数且不重复 mapping 字段", () => {
+    const labels = completionLabels(
+      'POST /orders/_search\n{"query":{"term":{"status":{ <cursor>}}}}',
+      metadataWithFields(["status", "created_at"]),
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["value", "boost", "case_insensitive"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["status", "created_at", "bool", "query"]));
+  });
+
+  it("range 字段参数对象只提示 range 参数且不重复 mapping 字段", () => {
+    const labels = completionLabels(
+      'POST /orders/_search\n{"query":{"range":{"created_at":{ <cursor>}}}}',
+      metadataWithFields(["status", "created_at"]),
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["gt", "gte", "lt", "lte", "format", "time_zone", "boost"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["status", "created_at", "bool", "query"]));
+  });
+
+  it("match 字段参数对象提示长格式参数", () => {
+    const labels = completionLabels(
+      'POST /orders/_search\n{"query":{"match":{"title":{ <cursor>}}}}',
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["query", "analyzer", "operator", "fuzziness", "boost"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["title", "bool", "aggs"]));
+  });
+
+  it("span_near clauses 只提示 Span 查询", () => {
+    const labels = completionLabels(
+      'POST /orders/_search\n{"query":{"span_near":{"clauses":[{ <cursor>}]}}}',
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["span_term", "span_first", "span_multi"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["match", "knn", "semantic"]));
+  });
+
+  it("子聚合不提示 global", () => {
+    const labels = completionLabels(
+      'POST /orders/_search\n{"aggs":{"by_status":{"terms":{"field":"status"},"aggs":{"child":{ <cursor>}}}}}',
+    );
+
+    expect(labels).not.toContain("global");
+    expect(labels).toEqual(expect.arrayContaining(["terms", "filter"]));
+  });
+
+  it("reverse_nested 只在 nested 子聚合中出现", () => {
+    const topLevel = completionLabels('POST /orders/_search\n{"aggs":{"x":{ <cursor>}}}');
+    const nestedChild = completionLabels(
+      'POST /orders/_search\n{"aggs":{"n":{"nested":{"path":"items"},"aggs":{"back":{ <cursor>}}}}}',
+    );
+
+    expect(topLevel).not.toContain("reverse_nested");
+    expect(topLevel).toEqual(expect.arrayContaining(["global", "terms"]));
+    expect(nestedChild).toContain("reverse_nested");
+  });
 });

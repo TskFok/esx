@@ -1,5 +1,10 @@
 export type JsonPathSegment = string | number;
 
+export type JsonObjectFrame = {
+  currentKey: string | null;
+  seenKeys: string[];
+};
+
 export type JsonCursorInfo = {
   path: JsonPathSegment[];
   insideString: boolean;
@@ -8,6 +13,7 @@ export type JsonCursorInfo = {
   expectingValue: boolean;
   previousMeaningfulChar: string;
   bodyStartIndex: number;
+  objectFrames: JsonObjectFrame[];
 };
 
 const WHITESPACE = /\s/;
@@ -66,6 +72,7 @@ type Frame = {
   key: string | null;
   index: number;
   stage: "key" | "value";
+  seenKeys: Set<string>;
 };
 
 export function analyzeJsonCursor(prefix: string): JsonCursorInfo {
@@ -116,6 +123,7 @@ export function analyzeJsonCursor(prefix: string): JsonCursorInfo {
         if (frame && frame.kind === "object" && stringIsKey) {
           frame.key = stringBuffer;
           frame.stage = "key";
+          frame.seenKeys.add(stringBuffer);
         }
         lastMeaningfulChar = '"';
         stringBuffer = "";
@@ -141,13 +149,13 @@ export function analyzeJsonCursor(prefix: string): JsonCursorInfo {
     }
 
     if (char === "{") {
-      stack.push({ kind: "object", key: null, index: 0, stage: "key" });
+      stack.push({ kind: "object", key: null, index: 0, stage: "key", seenKeys: new Set() });
       lastMeaningfulChar = char;
       continue;
     }
 
     if (char === "[") {
-      stack.push({ kind: "array", key: null, index: 0, stage: "value" });
+      stack.push({ kind: "array", key: null, index: 0, stage: "value", seenKeys: new Set() });
       lastMeaningfulChar = char;
       continue;
     }
@@ -199,6 +207,9 @@ export function analyzeJsonCursor(prefix: string): JsonCursorInfo {
 
   const previousMeaningfulChar = insideString ? '"' : lastMeaningfulChar;
   const insideStringAsKey = insideString && stringIsKey;
+  const objectFrames = stack
+    .filter((item) => item.kind === "object")
+    .map((item) => ({ currentKey: item.key, seenKeys: [...item.seenKeys] }));
 
   void pendingKey;
 
@@ -210,5 +221,6 @@ export function analyzeJsonCursor(prefix: string): JsonCursorInfo {
     expectingValue,
     previousMeaningfulChar,
     bodyStartIndex,
+    objectFrames,
   };
 }

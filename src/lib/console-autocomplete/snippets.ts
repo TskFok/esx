@@ -56,6 +56,84 @@ function propertySnippet(
   };
 }
 
+function caseInsensitivePropertySnippets(sortText: string): RawSnippet[] {
+  return [
+    propertySnippet(
+      "case_insensitive",
+      "忽略大小写",
+      "对 ASCII 字符执行大小写不敏感匹配。",
+      '"case_insensitive": ${1:true}',
+      sortText,
+      { products: ["elasticsearch"], minVersion: [7, 10] },
+    ),
+    propertySnippet(
+      "case_insensitive",
+      "忽略大小写",
+      "对 ASCII 字符执行大小写不敏感匹配。",
+      '"case_insensitive": ${1:true}',
+      sortText,
+      { products: ["opensearch"], minMajor: 1 },
+    ),
+  ];
+}
+
+export const TERM_VALUE_PROPERTY_SNIPPETS: RawSnippet[] = [
+  propertySnippet("value", "精确值", "指定 term 查询值。", '"value": "${1:value}"', "000-value"),
+  propertySnippet("boost", "权重", "设置 term 查询权重。", '"boost": ${1:1.0}', "001-boost"),
+  ...caseInsensitivePropertySnippets("002-case-insensitive"),
+];
+
+export const RANGE_VALUE_PROPERTY_SNIPPETS: RawSnippet[] = [
+  propertySnippet("gt", "大于", "匹配大于给定值的文档。", '"gt": "${1:value}"', "000-gt"),
+  propertySnippet("gte", "大于等于", "匹配大于等于给定值的文档。", '"gte": "${1:value}"', "001-gte"),
+  propertySnippet("lt", "小于", "匹配小于给定值的文档。", '"lt": "${1:value}"', "002-lt"),
+  propertySnippet("lte", "小于等于", "匹配小于等于给定值的文档。", '"lte": "${1:value}"', "003-lte"),
+  propertySnippet("format", "日期格式", "指定日期值格式。", '"format": "${1:strict_date_optional_time}"', "004-format"),
+  propertySnippet("time_zone", "时区", "指定日期范围查询时区。", '"time_zone": "${1:+00:00}"', "005-time-zone"),
+  propertySnippet("boost", "权重", "设置 range 查询权重。", '"boost": ${1:1.0}', "006-boost"),
+];
+
+export const FIELD_QUERY_VALUE_PROPERTY_SNIPPETS_BY_TYPE: Readonly<
+  Record<string, ReadonlyArray<RawSnippet>>
+> = {
+  match: [
+    propertySnippet("query", "查询值", "指定 match 查询文本。", '"query": "${1:value}"', "000-query"),
+    propertySnippet("analyzer", "分析器", "指定查询分析器。", '"analyzer": "${1:standard}"', "001-analyzer"),
+    propertySnippet("operator", "布尔运算符", "指定分词之间的运算符。", '"operator": "${1|or,and|}"', "002-operator"),
+    propertySnippet("fuzziness", "模糊度", "指定允许的编辑距离。", '"fuzziness": "${1:AUTO}"', "003-fuzziness"),
+    propertySnippet("boost", "权重", "设置查询权重。", '"boost": ${1:1.0}', "004-boost"),
+  ],
+  prefix: [
+    propertySnippet("value", "前缀值", "指定前缀。", '"value": "${1:value}"', "000-value"),
+    propertySnippet("rewrite", "重写方式", "指定 multi-term rewrite。", '"rewrite": "${1:constant_score}"', "001-rewrite"),
+    ...caseInsensitivePropertySnippets("002-case-insensitive"),
+    propertySnippet("boost", "权重", "设置查询权重。", '"boost": ${1:1.0}', "003-boost"),
+  ],
+  wildcard: [
+    propertySnippet("value", "通配表达式", "指定通配符模式。", '"value": "${1:value*}"', "000-value"),
+    propertySnippet("rewrite", "重写方式", "指定 multi-term rewrite。", '"rewrite": "${1:constant_score}"', "001-rewrite"),
+    ...caseInsensitivePropertySnippets("002-case-insensitive"),
+    propertySnippet("boost", "权重", "设置查询权重。", '"boost": ${1:1.0}', "003-boost"),
+  ],
+  regexp: [
+    propertySnippet("value", "正则表达式", "指定正则模式。", '"value": "${1:pattern}"', "000-value"),
+    propertySnippet("flags", "正则标志", "指定可选正则语法。", '"flags": "${1:ALL}"', "001-flags"),
+    propertySnippet("max_determinized_states", "最大状态数", "限制自动机状态数。", '"max_determinized_states": ${1:10000}', "002-max-states"),
+    propertySnippet("rewrite", "重写方式", "指定 multi-term rewrite。", '"rewrite": "${1:constant_score}"', "003-rewrite"),
+    ...caseInsensitivePropertySnippets("004-case-insensitive"),
+    propertySnippet("boost", "权重", "设置查询权重。", '"boost": ${1:1.0}', "005-boost"),
+  ],
+  fuzzy: [
+    propertySnippet("value", "模糊查询值", "指定模糊查询文本。", '"value": "${1:value}"', "000-value"),
+    propertySnippet("fuzziness", "模糊度", "指定允许的编辑距离。", '"fuzziness": "${1:AUTO}"', "001-fuzziness"),
+    propertySnippet("prefix_length", "固定前缀长度", "指定不参与模糊匹配的前缀长度。", '"prefix_length": ${1:0}', "002-prefix-length"),
+    propertySnippet("max_expansions", "最大扩展数", "限制模糊词项扩展数。", '"max_expansions": ${1:50}', "003-max-expansions"),
+    propertySnippet("transpositions", "允许换位", "允许相邻字符换位。", '"transpositions": ${1:true}', "004-transpositions"),
+    propertySnippet("rewrite", "重写方式", "指定 multi-term rewrite。", '"rewrite": "${1:constant_score}"', "005-rewrite"),
+    propertySnippet("boost", "权重", "设置查询权重。", '"boost": ${1:1.0}', "006-boost"),
+  ],
+};
+
 function queryValueSnippet(snippet: RawSnippet): RawSnippet {
   return {
     ...snippet,
@@ -371,6 +449,8 @@ const SPAN_QUERY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   propertySnippet("span_field_masking", "Span field masking", "让不同字段的 span 查询可组合。", '"span_field_masking": {\n\t"query": {\n\t\t$1\n\t},\n\t"field": "$0"\n}', "088-span_field_masking"),
 ];
 
+export const SPAN_QUERY_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = SPAN_QUERY_SNIPPETS;
+
 const SPECIALIZED_QUERY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   propertySnippet("script", "脚本查询", "用脚本判断文档是否匹配。", '"script": {\n\t"script": {\n\t\t"source": "$0"\n\t}\n}', "090-script"),
   propertySnippet("script_score", "脚本评分", "用脚本修改查询评分。", '"script_score": {\n\t"query": {\n\t\t$1\n\t},\n\t"script": {\n\t\t"source": "$0"\n\t}\n}', "091-script_score"),
@@ -431,6 +511,10 @@ export const QUERY_LEAF_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
     { products: ["elasticsearch"], minMajor: 7, maxMajor: 7 },
   ),
 ];
+
+export const MULTI_TERM_QUERY_PROPERTY_SNIPPETS = QUERY_LEAF_PROPERTY_SNIPPETS.filter((snippet) =>
+  ["fuzzy", "prefix", "range", "regexp", "wildcard"].includes(snippet.label)
+);
 
 export const BOOL_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   {

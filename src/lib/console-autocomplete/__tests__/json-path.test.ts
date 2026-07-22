@@ -86,4 +86,17 @@ describe("analyzeJsonCursor", () => {
     const info = analyzeJsonCursor(prefix);
     expect(info.path).toEqual(["query", "bool", "must", 1]);
   });
+
+  it("reports object frames from outermost to innermost with completed sibling keys", () => {
+    const prefix = `${HEADER}{"aggs":{"n":{"nested":{"path":"items"},"aggs":{"back":{ `;
+    const info = analyzeJsonCursor(prefix);
+
+    expect(info.objectFrames).toEqual([
+      { currentKey: "aggs", seenKeys: ["aggs"] },
+      { currentKey: "n", seenKeys: ["n"] },
+      { currentKey: "aggs", seenKeys: ["nested", "aggs"] },
+      { currentKey: "back", seenKeys: ["back"] },
+      { currentKey: null, seenKeys: [] },
+    ]);
+  });
 });
