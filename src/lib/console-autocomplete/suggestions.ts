@@ -43,66 +43,113 @@ export const FIELD_OBJECT_QUERY_KEYS = new Set([
 
 export const FIELD_VALUE_KEYS = new Set(["field", "path"]);
 export const FIELD_ARRAY_VALUE_KEYS = new Set(["fields", "docvalue_fields", "stored_fields"]);
-const QUERY_CONTAINER_KEYS = new Set(["query", "post_filter"]);
-const QUERY_CHILD_KEYS = new Set([
-  "filter",
-  "must",
-  "must_not",
-  "should",
-  "query",
-  "positive",
-  "negative",
-  "organic",
-  "include",
-  "exclude",
-  "big",
-  "little",
-  "match",
-]);
-const QUERY_ARRAY_KEYS = new Set(["queries"]);
+const QUERY_CHILD_KEYS_BY_PARENT: Readonly<Record<string, ReadonlySet<string>>> = {
+  boosting: new Set(["positive", "negative"]),
+  constant_score: new Set(["filter"]),
+  function_score: new Set(["query"]),
+  has_child: new Set(["query"]),
+  has_parent: new Set(["query"]),
+  knn: new Set(["filter"]),
+  nested: new Set(["query"]),
+  pinned: new Set(["organic"]),
+  script_score: new Set(["query"]),
+};
+const SPAN_CHILD_KEYS = new Set(["match", "include", "exclude", "big", "little", "query"]);
+const SPAN_CLAUSE_ARRAY_PARENTS = new Set(["span_near", "span_or"]);
+const MULTI_TERM_QUERY_LABELS = new Set(["fuzzy", "prefix", "range", "regexp", "wildcard"]);
 
-function isQuerySuggestionContext(path: JsonPathSegment[]) {
+function isQuerySuggestionContext(path: JsonPathSegment[]): boolean {
   const last = path[path.length - 1];
   const secondLast = path[path.length - 2];
+  const thirdLast = path[path.length - 3];
 
-  if (typeof last === "string" && QUERY_CONTAINER_KEYS.has(last)) {
+  if (path.length === 1 && (last === "query" || last === "post_filter")) {
     return true;
   }
 
-  if (typeof last === "number" && typeof secondLast === "string" && QUERY_ARRAY_KEYS.has(secondLast)) {
-    return true;
+  if (typeof last === "string" && secondLast === "bool" && BOOL_ARRAY_KEYS.has(last)) {
+    return isQuerySuggestionContext(path.slice(0, -2));
   }
 
-  if (typeof last === "string" && QUERY_CHILD_KEYS.has(last)) {
+  if (typeof last === "number" && typeof secondLast === "string" && BOOL_ARRAY_KEYS.has(secondLast)) {
+    return thirdLast === "bool" && isQuerySuggestionContext(path.slice(0, -3));
+  }
+
+  if (typeof last === "string" && typeof secondLast === "string") {
+    const allowedChildren = QUERY_CHILD_KEYS_BY_PARENT[secondLast];
+    if (allowedChildren?.has(last)) {
+      return (secondLast === "knn" && path.length === 2) ||
+        isQuerySuggestionContext(path.slice(0, -2));
+    }
+  }
+
+  if (typeof last === "number" && secondLast === "queries" && thirdLast === "dis_max") {
+    return isQuerySuggestionContext(path.slice(0, -3));
+  }
+
+  if (last === "filter" && isAggregationDefinitionPath(path.slice(0, -1))) {
     return true;
   }
 
   return false;
 }
 
-function isSpanChildContext(path: JsonPathSegment[]) {
+function isSpanChildContext(path: JsonPathSegment[]): boolean {
   const last = path[path.length - 1];
   const secondLast = path[path.length - 2];
   const thirdLast = path[path.length - 3];
+  let spanQueryIndex = -1;
 
-  if (typeof last === "number" && secondLast === "clauses" && thirdLast === "span_near") {
-    return true;
+  if (
+    typeof last === "number" &&
+    secondLast === "clauses" &&
+    typeof thirdLast === "string" &&
+    SPAN_CLAUSE_ARRAY_PARENTS.has(thirdLast)
+  ) {
+    spanQueryIndex = path.length - 3;
+  } else if (
+    typeof last === "string" &&
+    SPAN_CHILD_KEYS.has(last) &&
+    typeof secondLast === "string" &&
+    secondLast.startsWith("span_")
+  ) {
+    spanQueryIndex = path.length - 2;
   }
 
-  return ["match", "include", "exclude", "big", "little", "query"].includes(String(last)) &&
-    path.some((segment) => typeof segment === "string" && segment.startsWith("span_"));
+  if (spanQueryIndex < 0) return false;
+  const parentPath = path.slice(0, spanQueryIndex);
+  return isQuerySuggestionContext(parentPath) || isSpanChildContext(parentPath);
 }
 
-function selectFieldQueryValuePropertySuggestions(path: JsonPathSegment[]) {
+function isFieldQueryValueObjectContext(path: JsonPathSegment[]) {
   const queryType = path[path.length - 2];
   const field = path[path.length - 1];
 
-  if (typeof queryType !== "string" || typeof field !== "string") {
-    return null;
-  }
+  return typeof queryType === "string" &&
+    FIELD_OBJECT_QUERY_KEYS.has(queryType) &&
+    typeof field === "string" &&
+    (isQuerySuggestionContext(path.slice(0, -2)) || isSpanChildContext(path.slice(0, -2)));
+}
+
+function selectFieldQueryValuePropertySuggestions(path: JsonPathSegment[]) {
+  if (!isFieldQueryValueObjectContext(path)) return null;
+  const queryType = path[path.length - 2];
+
   if (queryType === "term") return TERM_VALUE_PROPERTY_SNIPPETS;
   if (queryType === "range") return RANGE_VALUE_PROPERTY_SNIPPETS;
-  return FIELD_QUERY_VALUE_PROPERTY_SNIPPETS_BY_TYPE[queryType] ?? null;
+  return typeof queryType === "string"
+    ? FIELD_QUERY_VALUE_PROPERTY_SNIPPETS_BY_TYPE[queryType] ?? null
+    : null;
+}
+
+function isAggregationContainerPath(path: JsonPathSegment[]): boolean {
+  const last = path[path.length - 1];
+  if (last !== "aggs" && last !== "aggregations") return false;
+  return path.length === 1 || isAggregationDefinitionPath(path.slice(0, -1));
+}
+
+function isAggregationDefinitionPath(path: JsonPathSegment[]): boolean {
+  return path.length >= 2 && isAggregationContainerPath(path.slice(0, -1));
 }
 
 function selectAggregationTypeSuggestions(
@@ -126,7 +173,6 @@ export function selectPropertySuggestions(
 ): RawSnippet[] {
   const last = path[path.length - 1];
   const secondLast = path[path.length - 2];
-  const thirdLast = path[path.length - 3];
   const aggregationProperties = selectAggregationPropertySuggestions(path);
   const fieldQueryProperties = selectFieldQueryValuePropertySuggestions(path);
 
@@ -134,12 +180,12 @@ export function selectPropertySuggestions(
     return filterAvailableSnippets(ROOT_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
-  if (last === "bool") {
-    return filterAvailableSnippets(BOOL_PROPERTY_SNIPPETS, autocompleteContext);
-  }
-
   if (fieldQueryProperties) {
     return filterAvailableSnippets(fieldQueryProperties, autocompleteContext);
+  }
+
+  if (last === "bool" && isQuerySuggestionContext(path.slice(0, -1))) {
+    return filterAvailableSnippets(BOOL_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
   if (isSpanChildContext(path)) {
@@ -147,14 +193,6 @@ export function selectPropertySuggestions(
       ? MULTI_TERM_QUERY_PROPERTY_SNIPPETS
       : SPAN_QUERY_PROPERTY_SNIPPETS;
     return filterAvailableSnippets(snippets, autocompleteContext);
-  }
-
-  if (typeof last === "number" && typeof secondLast === "string" && BOOL_ARRAY_KEYS.has(secondLast)) {
-    return filterAvailableSnippets(QUERY_LEAF_PROPERTY_SNIPPETS, autocompleteContext);
-  }
-
-  if (secondLast === "bool" && BOOL_ARRAY_KEYS.has(String(last))) {
-    return filterAvailableSnippets(QUERY_LEAF_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
   if (aggregationProperties) {
@@ -165,18 +203,11 @@ export function selectPropertySuggestions(
     return filterAvailableSnippets(QUERY_LEAF_PROPERTY_SNIPPETS, autocompleteContext);
   }
 
-  if (last === "aggs" || last === "aggregations") {
+  if (isAggregationContainerPath(path)) {
     return filterAvailableSnippets([AGGS_CONTAINER_PROPERTY_SNIPPET], autocompleteContext);
   }
 
-  if (secondLast === "aggs" || secondLast === "aggregations") {
-    return filterAvailableSnippets(
-      selectAggregationTypeSuggestions(path, objectFrames),
-      autocompleteContext,
-    );
-  }
-
-  if (typeof thirdLast === "string" && (thirdLast === "aggs" || thirdLast === "aggregations")) {
+  if (isAggregationDefinitionPath(path)) {
     return filterAvailableSnippets(
       selectAggregationTypeSuggestions(path, objectFrames),
       autocompleteContext,
@@ -188,9 +219,8 @@ export function selectPropertySuggestions(
 
 function selectAggregationPropertySuggestions(path: JsonPathSegment[]) {
   const last = path[path.length - 1];
-  const thirdLast = path[path.length - 3];
 
-  if (typeof last !== "string" || (thirdLast !== "aggs" && thirdLast !== "aggregations")) {
+  if (typeof last !== "string" || !isAggregationDefinitionPath(path.slice(0, -1))) {
     return null;
   }
 
@@ -232,6 +262,12 @@ const TRACK_TOTAL_HITS_VALUE_SNIPPETS: RawSnippet[] = [
     sortText: "002-track-total-hits",
   },
 ];
+const MULTI_TERM_QUERY_VALUE_SNIPPETS = QUERY_LEAF_VALUE_SNIPPETS.filter((snippet) =>
+  MULTI_TERM_QUERY_LABELS.has(snippet.label)
+);
+const SPAN_QUERY_VALUE_SNIPPETS = QUERY_LEAF_VALUE_SNIPPETS.filter((snippet) =>
+  snippet.label.startsWith("span_")
+);
 
 export function selectValueSuggestions(path: JsonPathSegment[]): RawSnippet[] {
   const last = path[path.length - 1];
@@ -240,10 +276,12 @@ export function selectValueSuggestions(path: JsonPathSegment[]): RawSnippet[] {
   if (last === "track_total_hits") return TRACK_TOTAL_HITS_VALUE_SNIPPETS;
   if (typeof last === "string" && NUMBER_VALUE_KEYS.has(last)) return NUMBER_VALUE_SNIPPETS;
   if (typeof last === "string" && BOOLEAN_VALUE_KEYS.has(last)) return BOOLEAN_VALUE_SNIPPETS;
-  if (last === "query" || (typeof last === "string" && QUERY_CHILD_KEYS.has(last))) {
-    return [...QUERY_LEAF_VALUE_SNIPPETS];
+  if (isSpanChildContext(path)) {
+    return last === "match" && secondLast === "span_multi"
+      ? [...MULTI_TERM_QUERY_VALUE_SNIPPETS]
+      : [...SPAN_QUERY_VALUE_SNIPPETS];
   }
-  if (typeof last === "number" && typeof secondLast === "string" && BOOL_ARRAY_KEYS.has(secondLast)) {
+  if (isQuerySuggestionContext(path)) {
     return [...QUERY_LEAF_VALUE_SNIPPETS];
   }
   return [];
@@ -253,7 +291,15 @@ export function shouldSuggestFieldsForKey(path: JsonPathSegment[]) {
   const last = path[path.length - 1];
   const secondLast = path[path.length - 2];
 
-  if (typeof last === "string" && FIELD_OBJECT_QUERY_KEYS.has(last)) {
+  if (isFieldQueryValueObjectContext(path)) {
+    return false;
+  }
+
+  if (
+    typeof last === "string" &&
+    FIELD_OBJECT_QUERY_KEYS.has(last) &&
+    (isQuerySuggestionContext(path.slice(0, -1)) || isSpanChildContext(path.slice(0, -1)))
+  ) {
     return true;
   }
 

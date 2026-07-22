@@ -185,6 +185,53 @@ describe("selectPropertySuggestions", () => {
     expect(spanMultiMatch).not.toEqual(expect.arrayContaining(["match", "term", "bool"]));
   });
 
+  it("restricts span_or clauses to the Span query family", () => {
+    const labels = labelsOf(selectPropertySuggestions(["query", "span_or", "clauses", 0]));
+
+    expect(labels).toEqual(expect.arrayContaining(["span_term", "span_first", "span_multi"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["match", "term", "bool"]));
+  });
+
+  it("does not infer Query DSL from an unknown filter or term path", () => {
+    expect(selectPropertySuggestions(["unknown", "filter"])).toEqual([]);
+    expect(selectPropertySuggestions(["unknown", "term", "status"])).toEqual([]);
+  });
+
+  it("does not infer a filter aggregation below an invalid aggregation container", () => {
+    expect(selectPropertySuggestions(["unknown", "aggs", "x", "filter"])).toEqual([]);
+    expect(selectValueSuggestions(["unknown", "aggs", "x", "filter"])).toEqual([]);
+  });
+
+  it("does not reinterpret an unknown aggregation type as an aggregation definition", () => {
+    expect(selectPropertySuggestions(["aggs", "x", "mystery"])).toEqual([]);
+  });
+
+  it("keeps dedicated field-query parameters when field names collide with DSL names", () => {
+    const context = elasticsearchContext(8, 12);
+
+    expect(labelsOf(selectPropertySuggestions(["query", "term", "bool"], context))).toEqual([
+      "value",
+      "boost",
+      "case_insensitive",
+    ]);
+    expect(labelsOf(selectPropertySuggestions(["query", "range", "range"], context))).toEqual([
+      "gt",
+      "gte",
+      "lt",
+      "lte",
+      "format",
+      "time_zone",
+      "boost",
+    ]);
+    expect(labelsOf(selectPropertySuggestions(["query", "match", "term"], context))).toEqual([
+      "query",
+      "analyzer",
+      "operator",
+      "fuzziness",
+      "boost",
+    ]);
+  });
+
   it("restricts aggregation types by level and nested ancestry", () => {
     const topLevel = labelsOf(selectPropertySuggestions(["aggs", "x"]));
     const child = labelsOf(selectPropertySuggestions(["aggs", "x", "aggs", "child"]));
@@ -219,6 +266,29 @@ describe("selectValueSuggestions", () => {
     expect(labelsOf(selectValueSuggestions(["profile"]))).toEqual(["true", "false"]);
     expect(labelsOf(selectValueSuggestions(["track_total_hits"]))).toEqual(["true", "false", "10000"]);
   });
+
+  it("returns no Query DSL values for an unknown filter path", () => {
+    expect(selectValueSuggestions(["unknown", "filter"])).toEqual([]);
+  });
+
+  it("returns Query DSL values for explicit post_filter and dis_max queries paths", () => {
+    expect(labelsOf(selectValueSuggestions(["post_filter"]))).toEqual(
+      expect.arrayContaining(["bool", "match", "term", "range"]),
+    );
+    expect(labelsOf(selectValueSuggestions(["query", "dis_max", "queries", 0]))).toEqual(
+      expect.arrayContaining(["bool", "match", "term", "range"]),
+    );
+  });
+
+  it("returns only multi-term query values for span_multi.match", () => {
+    expect(labelsOf(selectValueSuggestions(["query", "span_multi", "match"])).sort()).toEqual([
+      "fuzzy",
+      "prefix",
+      "range",
+      "regexp",
+      "wildcard",
+    ]);
+  });
 });
 
 describe("shouldSuggestFieldsForKey", () => {
@@ -230,6 +300,16 @@ describe("shouldSuggestFieldsForKey", () => {
   it("does not repeat mapping fields inside a field query parameter object", () => {
     expect(shouldSuggestFieldsForKey(["query", "term", "status"])).toBe(false);
     expect(shouldSuggestFieldsForKey(["query", "range", "created_at"])).toBe(false);
+  });
+
+  it("does not repeat mapping fields when a concrete field name collides with a DSL name", () => {
+    expect(shouldSuggestFieldsForKey(["query", "term", "term"])).toBe(false);
+    expect(shouldSuggestFieldsForKey(["query", "range", "range"])).toBe(false);
+    expect(shouldSuggestFieldsForKey(["query", "match", "bool"])).toBe(false);
+  });
+
+  it("does not suggest mapping fields for a query-like key below an unknown object", () => {
+    expect(shouldSuggestFieldsForKey(["unknown", "term"])).toBe(false);
   });
 
   it("returns false for top-level and for highlight container", () => {

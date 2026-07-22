@@ -419,6 +419,47 @@ describe("provideConsoleCompletionItems", () => {
     expect(labels).not.toEqual(expect.arrayContaining(["match", "knn", "semantic"]));
   });
 
+  it("span_or clauses 只提示 Span 查询", () => {
+    const labels = completionLabels(
+      'POST /orders/_search\n{"query":{"span_or":{"clauses":[{ <cursor>}]}}}',
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["span_term", "span_first", "span_multi"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["match", "knn", "semantic"]));
+  });
+
+  it("span_multi match 值位置只提示 multi-term 查询", () => {
+    const labels = completionLabels(
+      'POST /orders/_search\n{"query":{"span_multi":{"match": <cursor>}}}',
+    );
+
+    expect(labels.sort()).toEqual(["fuzzy", "prefix", "range", "regexp", "wildcard"]);
+  });
+
+  it("DSL 同名字段进入参数对象后不再提示 mapping 字段或 bool 子键", () => {
+    const labels = completionLabels(
+      'POST /orders/_search\n{"query":{"term":{"bool":{ <cursor>}}}}',
+      metadataWithFields(["term", "range", "bool"]),
+    );
+
+    expect(labels).toEqual(["value", "boost", "case_insensitive"]);
+  });
+
+  it("未知 filter 和 term 路径不触发 Query DSL 或 term 参数", () => {
+    expect(completionLabels(
+      'POST /orders/_search\n{"unknown":{"filter": <cursor>}}',
+    )).toEqual([]);
+    expect(completionLabels(
+      'POST /orders/_search\n{"unknown":{"term":{"status":{ <cursor>}}}}',
+    )).toEqual([]);
+  });
+
+  it("未知聚合类型对象不回退到聚合类型候选", () => {
+    expect(completionLabels(
+      'POST /orders/_search\n{"aggs":{"x":{"mystery":{ <cursor>}}}}',
+    )).toEqual([]);
+  });
+
   it("子聚合不提示 global", () => {
     const labels = completionLabels(
       'POST /orders/_search\n{"aggs":{"by_status":{"terms":{"field":"status"},"aggs":{"child":{ <cursor>}}}}}',
