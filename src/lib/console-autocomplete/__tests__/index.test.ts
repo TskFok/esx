@@ -209,6 +209,10 @@ describe("provideConsoleCompletionItems", () => {
     ]);
   });
 
+  it("does not suggest query parameters after trailing whitespace", () => {
+    expect(completionLabels("GET /orders/_search?pretty=true ")).toEqual([]);
+  });
+
   it("replaces only the current parameter name or value", () => {
     const nameSuggestion = completionSuggestions("GET /orders/_search?size=10&fr<cursor>om=20")
       .find((item) => item.label === "from");

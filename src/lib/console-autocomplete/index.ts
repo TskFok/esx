@@ -230,6 +230,7 @@ function analyzeQueryParameterCursor(
   const ampersandIndex = lineContent.lastIndexOf("&", cursorIndex - 1);
   const currentStart = Math.max(questionIndex, ampersandIndex) + 1;
   const current = lineContent.slice(currentStart, cursorIndex);
+  if (/\s/.test(current)) return null;
   const equalsOffset = current.indexOf("=");
   const completed = lineContent.slice(questionIndex + 1, currentStart);
   const usedKeys = completed
