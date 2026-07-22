@@ -1,3 +1,5 @@
+import type { ConsoleEndpoint } from "./request-context";
+
 export type SnippetKind =
   | "property"
   | "value"
@@ -20,6 +22,10 @@ export type RawSnippet = {
   kind: SnippetKind;
   sortText?: string;
   availability?: SnippetAvailability;
+};
+
+export type QueryParameterSnippet = RawSnippet & {
+  endpoints: Array<ConsoleEndpoint | "common">;
 };
 
 export type ApiSegment = {

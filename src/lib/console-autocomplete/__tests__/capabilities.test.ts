@@ -3,6 +3,7 @@ import {
   DEFAULT_CLUSTER_METADATA,
   selectApiSegments,
   selectQueryParameterSnippets,
+  selectQueryParameterValueSnippets,
 } from "../capabilities";
 import { selectPropertySuggestions } from "../suggestions";
 import type { ConsoleAutocompleteContext } from "../context";
@@ -108,12 +109,32 @@ describe("selectQueryParameterSnippets", () => {
       version: { number: "8.12.1", major: 8, minor: 12 },
     });
 
-    expect(labelsOf(selectQueryParameterSnippets("/_search", es8))).toEqual(
+    expect(labelsOf(selectQueryParameterSnippets("search", es8))).toEqual(
       expect.arrayContaining(["pretty", "size", "allow_partial_search_results"]),
     );
-    expect(labelsOf(selectQueryParameterSnippets("/_cat/indices", es8))).toEqual(
+    expect(labelsOf(selectQueryParameterSnippets("cat", es8))).toEqual(
       expect.arrayContaining(["format", "h", "s", "v"]),
     );
+  });
+
+  it("returns only Scroll query parameters for the Scroll endpoint", () => {
+    const labels = labelsOf(selectQueryParameterSnippets("scroll", context({})));
+
+    expect(labels).toEqual(expect.arrayContaining(["scroll", "scroll_id", "rest_total_hits_as_int"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["from", "size", "sort", "search_type"]));
+  });
+
+  it("does not return already used query parameters", () => {
+    const labels = labelsOf(selectQueryParameterSnippets("search", context({}), ["size"]));
+
+    expect(labels).not.toContain("size");
+    expect(labels).toContain("from");
+  });
+
+  it("returns conservative results for endpoints without a whitelist", () => {
+    expect(selectQueryParameterSnippets("unknown", context({}))).toEqual([]);
+    expect(selectQueryParameterSnippets("root", context({}))).toEqual([]);
+    expect(selectQueryParameterSnippets("create-index", context({}))).toEqual([]);
   });
 
   it("filters versioned mapping query parameters", () => {
@@ -126,8 +147,21 @@ describe("selectQueryParameterSnippets", () => {
       version: { number: "8.12.1", major: 8, minor: 12 },
     });
 
-    expect(labelsOf(selectQueryParameterSnippets("/orders/_mapping", es7))).toContain("include_type_name");
-    expect(labelsOf(selectQueryParameterSnippets("/orders/_mapping", es8))).not.toContain("include_type_name");
+    expect(labelsOf(selectQueryParameterSnippets("mapping", es7))).toContain("include_type_name");
+    expect(labelsOf(selectQueryParameterSnippets("mapping", es8))).not.toContain("include_type_name");
+  });
+
+  it("returns only known values allowed by the endpoint", () => {
+    expect(labelsOf(selectQueryParameterValueSnippets("search", "pretty", context({})))).toEqual([
+      "true",
+      "false",
+    ]);
+    expect(labelsOf(selectQueryParameterValueSnippets("search", "search_type", context({})))).toEqual([
+      "query_then_fetch",
+      "dfs_query_then_fetch",
+    ]);
+    expect(selectQueryParameterValueSnippets("scroll", "search_type", context({}))).toEqual([]);
+    expect(selectQueryParameterValueSnippets("search", "size", context({}))).toEqual([]);
   });
 });
 

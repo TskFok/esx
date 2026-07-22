@@ -19,6 +19,7 @@ import type { ConsoleAutocompleteContext } from "./context";
 import {
   selectApiSegments,
   selectQueryParameterSnippets,
+  selectQueryParameterValueSnippets,
 } from "./capabilities";
 
 export { buildConsoleAutocompleteContext, extractIndexNamesFromPath } from "./context";
@@ -39,6 +40,7 @@ export {
   normalizeClusterMetadata,
   selectApiSegments,
   selectQueryParameterSnippets,
+  selectQueryParameterValueSnippets,
 } from "./capabilities";
 export * from "./snippets";
 
@@ -210,33 +212,60 @@ function buildJsonSuggestions(
   return suggestionsList;
 }
 
-function getQueryParameterRange(
-  monacoInstance: typeof monacoEditor,
+type QueryParameterCursor = {
+  mode: "name" | "value";
+  key: string;
+  usedKeys: string[];
+  startColumn: number;
+  endColumn: number;
+};
+
+function analyzeQueryParameterCursor(
   lineContent: string,
   column: number,
-) {
-  const safeColumn = Math.max(1, column);
-  const cursorIndex = safeColumn - 1;
-  let start = cursorIndex;
-  let end = cursorIndex;
+): QueryParameterCursor | null {
+  const cursorIndex = Math.max(0, column - 1);
+  const questionIndex = lineContent.lastIndexOf("?", cursorIndex);
+  if (questionIndex < 0) return null;
+  const ampersandIndex = lineContent.lastIndexOf("&", cursorIndex - 1);
+  const currentStart = Math.max(questionIndex, ampersandIndex) + 1;
+  const current = lineContent.slice(currentStart, cursorIndex);
+  const equalsOffset = current.indexOf("=");
+  const completed = lineContent.slice(questionIndex + 1, currentStart);
+  const usedKeys = completed
+    .split("&")
+    .map((part) => part.split("=", 1)[0]?.trim() ?? "")
+    .filter(Boolean);
+  let endIndex = cursorIndex;
 
-  while (start > 0) {
-    const char = lineContent[start - 1] ?? "";
-    if (char === "?" || char === "&" || /\s/.test(char)) {
-      break;
+  if (equalsOffset >= 0) {
+    while (endIndex < lineContent.length && lineContent[endIndex] !== "&" && !/\s/.test(lineContent[endIndex] ?? "")) {
+      endIndex += 1;
     }
-    start -= 1;
+    return {
+      mode: "value",
+      key: current.slice(0, equalsOffset).trim(),
+      usedKeys,
+      startColumn: currentStart + equalsOffset + 2,
+      endColumn: endIndex + 1,
+    };
   }
 
-  while (end < lineContent.length) {
-    const char = lineContent[end] ?? "";
-    if (char === "&" || /\s/.test(char)) {
-      break;
-    }
-    end += 1;
+  while (
+    endIndex < lineContent.length &&
+    lineContent[endIndex] !== "=" &&
+    lineContent[endIndex] !== "&" &&
+    !/\s/.test(lineContent[endIndex] ?? "")
+  ) {
+    endIndex += 1;
   }
-
-  return new monacoInstance.Range(1, start + 1, 1, end + 1);
+  return {
+    mode: "name",
+    key: current,
+    usedKeys,
+    startColumn: currentStart + 1,
+    endColumn: endIndex + 1,
+  };
 }
 
 function buildMethodSuggestions(
@@ -262,12 +291,22 @@ function buildQueryParameterSuggestions(
   column: number,
   autocompleteContext: ConsoleAutocompleteContext,
 ): monacoEditor.languages.CompletionItem[] {
-  const range = getQueryParameterRange(monacoInstance, lineContent, column);
-  const parts = lineContent.trim().split(/\s+/);
-  const pathText = parts.slice(1).join(" ");
-  const pathWithoutQuery = pathText.split("?", 1)[0] ?? "";
+  const cursor = analyzeQueryParameterCursor(lineContent, column);
+  if (!cursor) return [];
+  const snippets = cursor.mode === "value"
+    ? selectQueryParameterValueSnippets(
+        autocompleteContext.request.endpoint,
+        cursor.key,
+        autocompleteContext,
+      )
+    : selectQueryParameterSnippets(
+        autocompleteContext.request.endpoint,
+        autocompleteContext,
+        cursor.usedKeys,
+      );
+  const range = new monacoInstance.Range(1, cursor.startColumn, 1, cursor.endColumn);
 
-  return selectQueryParameterSnippets(pathWithoutQuery, autocompleteContext).map((snippet, index) => ({
+  return snippets.map((snippet, index) => ({
     label: snippet.label,
     kind: monacoInstance.languages.CompletionItemKind.Keyword,
     detail: snippet.detail,

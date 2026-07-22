@@ -108,6 +108,10 @@ function completionLabelsAt(content: string, lineNumber: number, column: number,
 }
 
 function completionLabels(content: string, searchMetadata = metadata({})) {
+  return completionSuggestions(content, searchMetadata).map((item) => String(item.label));
+}
+
+function completionSuggestions(content: string, searchMetadata = metadata({})) {
   const marker = "<cursor>";
   const markerOffset = content.indexOf(marker);
   const normalized = markerOffset >= 0 ? content.replace(marker, "") : content;
@@ -116,7 +120,13 @@ function completionLabels(content: string, searchMetadata = metadata({})) {
   const lines = beforeCursor.split(/\r?\n/);
   const lineNumber = lines.length;
   const column = (lines[lineNumber - 1]?.length ?? 0) + 1;
-  return completionLabelsAt(normalized, lineNumber, column, searchMetadata);
+  const context = buildConsoleAutocompleteContext([], normalized, searchMetadata);
+  return provideConsoleCompletionItems(
+    fakeMonaco,
+    modelFor(normalized),
+    { lineNumber, column } as never,
+    context,
+  );
 }
 
 describe("provideConsoleCompletionItems", () => {
@@ -169,6 +179,54 @@ describe("provideConsoleCompletionItems", () => {
 
     expect(es7Labels).toContain("include_type_name");
     expect(es8Labels).not.toContain("include_type_name");
+  });
+
+  it("only suggests Scroll query parameters on the Scroll endpoint", () => {
+    const labels = completionLabels("POST /_search/scroll?");
+
+    expect(labels).toEqual(expect.arrayContaining(["scroll", "scroll_id", "rest_total_hits_as_int"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["from", "size", "sort", "search_type"]));
+  });
+
+  it("does not suggest an already used query parameter", () => {
+    const labels = completionLabels("GET /orders/_search?size=10&");
+
+    expect(labels).not.toContain("size");
+    expect(labels).toContain("from");
+  });
+
+  it("suggests parameter values instead of names after an equals sign", () => {
+    const labels = completionLabels("GET /orders/_search?pretty=");
+
+    expect(labels).toEqual(expect.arrayContaining(["true", "false"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["from", "size", "pretty"]));
+  });
+
+  it("suggests only legal enum values", () => {
+    expect(completionLabels("GET /orders/_search?search_type=")).toEqual([
+      "query_then_fetch",
+      "dfs_query_then_fetch",
+    ]);
+  });
+
+  it("replaces only the current parameter name or value", () => {
+    const nameSuggestion = completionSuggestions("GET /orders/_search?size=10&fr<cursor>om=20")
+      .find((item) => item.label === "from");
+    const valueSuggestion = completionSuggestions("GET /orders/_search?pretty=tr<cursor>ue&size=10")
+      .find((item) => item.label === "true");
+
+    expect(nameSuggestion?.range).toEqual({
+      startLineNumber: 1,
+      startColumn: 29,
+      endLineNumber: 1,
+      endColumn: 33,
+    });
+    expect(valueSuggestion?.range).toEqual({
+      startLineNumber: 1,
+      startColumn: 28,
+      endLineNumber: 1,
+      endColumn: 32,
+    });
   });
 
   it("suggests expanded root search body properties in JSON body", () => {

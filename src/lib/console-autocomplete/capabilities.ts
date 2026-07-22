@@ -7,9 +7,11 @@ import {
   GLOBAL_API_SEGMENTS,
   INDEX_API_SEGMENTS,
   type ApiSegment,
+  type QueryParameterSnippet,
   type RawSnippet,
   type SnippetAvailability,
 } from "./snippets";
+import type { ConsoleEndpoint } from "./request-context";
 
 export const DEFAULT_CLUSTER_METADATA: ConnectionSearchClusterMetadata = {
   product: "unknown",
@@ -30,12 +32,6 @@ export const DEFAULT_CLUSTER_METADATA: ConnectionSearchClusterMetadata = {
 type CompletionCapabilityContext = {
   cluster?: ConnectionSearchClusterMetadata;
 };
-
-type QueryParameterSnippet = RawSnippet & {
-  endpoints?: EndpointKind[];
-};
-
-type EndpointKind = "common" | "search" | "cat" | "mapping" | "settings" | "tasks" | "snapshot" | "bulk" | "msearch";
 
 const LICENSE_ORDER = ["oss", "basic", "gold", "platinum", "enterprise", "trial"] as const;
 
@@ -348,13 +344,31 @@ const ENDPOINT_QUERY_PARAMETERS: ReadonlyArray<QueryParameterSnippet> = [
     endpoints: ["search"],
   },
   {
+    label: "sort",
+    detail: "搜索排序",
+    documentation: "指定 Search API 的排序字段和方向。",
+    insertText: "sort=$0",
+    kind: "keyword",
+    sortText: "013-sort",
+    endpoints: ["search"],
+  },
+  {
+    label: "search_type",
+    detail: "搜索类型",
+    documentation: "指定分布式搜索执行方式。",
+    insertText: "search_type=${1:query_then_fetch}",
+    kind: "keyword",
+    sortText: "014-search_type",
+    endpoints: ["search"],
+  },
+  {
     label: "routing",
     detail: "路由值",
     documentation: "限制请求只访问指定 routing 的分片。",
     insertText: "routing=$0",
     kind: "keyword",
-    sortText: "013-routing",
-    endpoints: ["search", "bulk", "msearch"],
+    sortText: "015-routing",
+    endpoints: ["search", "count", "bulk", "msearch"],
   },
   {
     label: "format",
@@ -399,7 +413,7 @@ const ENDPOINT_QUERY_PARAMETERS: ReadonlyArray<QueryParameterSnippet> = [
     insertText: "ignore_unavailable=${1:true}",
     kind: "keyword",
     sortText: "010-ignore_unavailable",
-    endpoints: ["mapping", "settings", "search"],
+    endpoints: ["mapping", "settings", "search", "count"],
   },
   {
     label: "expand_wildcards",
@@ -408,7 +422,7 @@ const ENDPOINT_QUERY_PARAMETERS: ReadonlyArray<QueryParameterSnippet> = [
     insertText: "expand_wildcards=${1:open}",
     kind: "keyword",
     sortText: "011-expand_wildcards",
-    endpoints: ["mapping", "settings", "search"],
+    endpoints: ["mapping", "settings", "search", "count"],
   },
   {
     label: "include_type_name",
@@ -485,45 +499,102 @@ const ENDPOINT_QUERY_PARAMETERS: ReadonlyArray<QueryParameterSnippet> = [
   },
 ];
 
-function endpointKindsForPath(path: string) {
-  const normalized = path.trim().split("?", 1)[0]?.replace(/^\/+/, "") ?? "";
-  const parts = normalized.split("/").filter(Boolean);
-  const joined = `/${parts.join("/")}`;
-  const kinds = new Set<EndpointKind>(["common"]);
+const SCROLL_QUERY_PARAMETER_SNIPPETS: QueryParameterSnippet[] = [
+  {
+    label: "scroll",
+    detail: "保留滚动上下文",
+    documentation: "延长 Scroll 搜索上下文的有效期。",
+    insertText: "scroll=${1:1m}",
+    kind: "keyword",
+    endpoints: ["scroll"],
+  },
+  {
+    label: "scroll_id",
+    detail: "Scroll ID",
+    documentation: "指定需要继续读取的 Scroll 上下文。",
+    insertText: "scroll_id=${1:id}",
+    kind: "keyword",
+    endpoints: ["scroll"],
+  },
+  {
+    label: "rest_total_hits_as_int",
+    detail: "整数命中总数",
+    documentation: "以整数形式返回 hits.total。",
+    insertText: "rest_total_hits_as_int=${1:true}",
+    kind: "keyword",
+    endpoints: ["scroll"],
+  },
+];
 
-  if (parts[0] === "_cat") {
-    kinds.add("cat");
-  }
-  if (parts.includes("_search") || parts[0] === "_search") {
-    kinds.add("search");
-  }
-  if (parts.includes("_mapping") || parts[0] === "_mapping") {
-    kinds.add("mapping");
-  }
-  if (parts.includes("_settings") || parts[0] === "_settings") {
-    kinds.add("settings");
-  }
-  if (parts[0] === "_tasks") {
-    kinds.add("tasks");
-  }
-  if (parts[0] === "_snapshot") {
-    kinds.add("snapshot");
-  }
-  if (parts.includes("_bulk") || joined.endsWith("/_bulk")) {
-    kinds.add("bulk");
-  }
-  if (parts.includes("_msearch") || joined.endsWith("/_msearch")) {
-    kinds.add("msearch");
-  }
+const QUERY_PARAMETER_ENDPOINTS = new Set<ConsoleEndpoint>([
+  "search",
+  "scroll",
+  "count",
+  "bulk",
+  "msearch",
+  "mapping",
+  "settings",
+  "tasks",
+  "snapshot",
+  "cat",
+]);
 
-  return kinds;
-}
+const BOOLEAN_QUERY_PARAMETER_KEYS = new Set([
+  "pretty",
+  "human",
+  "error_trace",
+  "rest_total_hits_as_int",
+  "allow_partial_search_results",
+]);
 
-export function selectQueryParameterSnippets(path: string, context?: CompletionCapabilityContext | null): RawSnippet[] {
-  const kinds = endpointKindsForPath(path);
-  const snippets = [...COMMON_QUERY_PARAMETERS, ...ENDPOINT_QUERY_PARAMETERS].filter((snippet) =>
-    snippet.endpoints?.some((endpoint) => kinds.has(endpoint)),
+const BOOLEAN_QUERY_PARAMETER_VALUES: RawSnippet[] = [
+  { label: "true", detail: "启用", documentation: "使用 true。", insertText: "true", kind: "keyword" },
+  { label: "false", detail: "禁用", documentation: "使用 false。", insertText: "false", kind: "keyword" },
+];
+
+const SEARCH_TYPE_VALUES: RawSnippet[] = [
+  {
+    label: "query_then_fetch",
+    detail: "默认搜索类型",
+    documentation: "先查询再拉取。",
+    insertText: "query_then_fetch",
+    kind: "keyword",
+  },
+  {
+    label: "dfs_query_then_fetch",
+    detail: "全局词频搜索",
+    documentation: "先收集全局词频再查询。",
+    insertText: "dfs_query_then_fetch",
+    kind: "keyword",
+  },
+];
+
+export function selectQueryParameterSnippets(
+  endpoint: ConsoleEndpoint,
+  context?: CompletionCapabilityContext | null,
+  usedKeys: readonly string[] = [],
+): QueryParameterSnippet[] {
+  if (!QUERY_PARAMETER_ENDPOINTS.has(endpoint)) return [];
+  const used = new Set(usedKeys);
+  const snippets = filterAvailableSnippets(
+    [...COMMON_QUERY_PARAMETERS, ...ENDPOINT_QUERY_PARAMETERS, ...SCROLL_QUERY_PARAMETER_SNIPPETS],
+    context,
+  ).filter((snippet) =>
+    !used.has(snippet.label) &&
+    (snippet.endpoints.includes("common") || snippet.endpoints.includes(endpoint)),
   );
 
-  return deduplicateByLabel(filterAvailableSnippets(snippets, context));
+  return deduplicateByLabel(snippets);
+}
+
+export function selectQueryParameterValueSnippets(
+  endpoint: ConsoleEndpoint,
+  key: string,
+  context?: CompletionCapabilityContext | null,
+): RawSnippet[] {
+  const allowed = selectQueryParameterSnippets(endpoint, context).some((item) => item.label === key);
+  if (!allowed) return [];
+  if (BOOLEAN_QUERY_PARAMETER_KEYS.has(key)) return BOOLEAN_QUERY_PARAMETER_VALUES;
+  if (key === "search_type") return SEARCH_TYPE_VALUES;
+  return [];
 }
