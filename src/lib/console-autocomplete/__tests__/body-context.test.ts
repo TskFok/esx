@@ -20,4 +20,25 @@ describe("analyzeBodyCompletion", () => {
   ])("无效 NDJSON 使用 unknown 保守状态", (content) => {
     expect(analyzeBodyCompletion(content, parseConsoleRequestContext(content)).kind).toBe("unknown");
   });
+
+  it.each([
+    "POST /_msearch\n42\n",
+    "POST /_msearch\nnull\n",
+    "POST /_msearch\n[]\n",
+  ])("MSearch 非对象行使用 unknown 保守状态", (content) => {
+    expect(analyzeBodyCompletion(content, parseConsoleRequestContext(content)).kind).toBe("unknown");
+  });
+
+  it.each([
+    'POST /_bulk\n{"index":null}\n',
+    'POST /_bulk\n{"index":[]}\n',
+  ])("Bulk 动作 metadata 非对象时使用 unknown 保守状态", (content) => {
+    expect(analyzeBodyCompletion(content, parseConsoleRequestContext(content)).kind).toBe("unknown");
+  });
+
+  it("Bulk 动作行包含多个顶层 key 时使用 unknown 保守状态", () => {
+    const content = 'POST /_bulk\n{"delete":{},"index":{}}\n';
+
+    expect(analyzeBodyCompletion(content, parseConsoleRequestContext(content)).kind).toBe("unknown");
+  });
 });

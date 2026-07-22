@@ -28,6 +28,10 @@ const JSON_BODY_KIND: Partial<Record<ConsoleBodyMode, BodyCompletionKind>> = {
   "document-json": "document-json",
 };
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 export function analyzeBodyCompletion(
   content: string,
   request: ConsoleRequestContext,
@@ -40,10 +44,14 @@ export function analyzeBodyCompletion(
   if (jsonKind) return { kind: jsonKind, currentLine };
 
   if (request.bodyMode === "msearch-ndjson") {
-    try {
-      completedLines.forEach((line) => JSON.parse(line));
-    } catch {
-      return { kind: "unknown", currentLine };
+    for (const line of completedLines) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        return { kind: "unknown", currentLine };
+      }
+      if (!isJsonObject(parsed)) return { kind: "unknown", currentLine };
     }
     return {
       kind: completedLines.length % 2 === 0 ? "msearch-header" : "msearch-body",
@@ -61,14 +69,17 @@ export function analyzeBodyCompletion(
     } catch {
       return { kind: "unknown", currentLine };
     }
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (!isJsonObject(parsed)) {
       return { kind: "unknown", currentLine };
     }
     if (kind !== "bulk-action") {
       kind = "bulk-action";
       continue;
     }
-    const action = Object.keys(parsed)[0];
+    const actionKeys = Object.keys(parsed);
+    if (actionKeys.length !== 1) return { kind: "unknown", currentLine };
+    const action = actionKeys[0];
+    if (!isJsonObject(parsed[action!])) return { kind: "unknown", currentLine };
     if (action === "delete") kind = "bulk-action";
     else if (action === "update") kind = "bulk-update";
     else if (action === "index" || action === "create") kind = "bulk-source";

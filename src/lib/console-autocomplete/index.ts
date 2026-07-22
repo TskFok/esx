@@ -185,6 +185,7 @@ function buildJsonSuggestions(
   const path = cursorInfo.path;
   const suggestionsList: monacoEditor.languages.CompletionItem[] = [];
   const allowFields = allowRootFieldKeys && path.length === 0;
+  if (allowRootFieldKeys && path.length > 0) return [];
 
   if (cursorInfo.insideString || insideStringFallback) {
     if (cursorInfo.insideStringAsKey) {

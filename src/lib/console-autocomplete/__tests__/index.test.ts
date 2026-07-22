@@ -259,14 +259,14 @@ describe("provideConsoleCompletionItems", () => {
     const labels = completionLabels("PUT /orders\n{\n  <cursor>\n}");
 
     expect(labels).toEqual(expect.arrayContaining(["settings", "mappings", "aliases"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["query", "from", "size", "sort"]));
+    ["query", "from", "size", "sort"].forEach((label) => expect(labels).not.toContain(label));
   });
 
   it("Count 根对象只提示 Count 支持的属性", () => {
     const labels = completionLabels("POST /orders/_count\n{\n  <cursor>\n}");
 
     expect(labels).toEqual(expect.arrayContaining(["query", "runtime_mappings"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["aggs", "from", "size", "sort"]));
+    ["aggs", "from", "size", "sort"].forEach((label) => expect(labels).not.toContain(label));
   });
 
   it("Update 根对象提示更新属性而非 Search 属性", () => {
@@ -281,7 +281,7 @@ describe("provideConsoleCompletionItems", () => {
       "detect_noop",
       "_source",
     ]));
-    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+    ["query", "aggs", "size"].forEach((label) => expect(labels).not.toContain(label));
   });
 
   it("Document 根对象只提示 mapping 字段", () => {
@@ -291,11 +291,15 @@ describe("provideConsoleCompletionItems", () => {
     );
 
     expect(labels).toEqual(expect.arrayContaining(["title", "price"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+    ["query", "aggs", "size"].forEach((label) => expect(labels).not.toContain(label));
   });
 
   it("Document 缺少 mapping metadata 时不猜测属性", () => {
     expect(completionLabels("POST /orders/_doc\n{\n  <cursor>\n}")).toEqual([]);
+  });
+
+  it("Document 嵌套对象缺少 mapping metadata 时不泄漏通用候选", () => {
+    expect(completionLabels('POST /orders/_doc\n{\n  "metadata": {\n    <cursor>\n  }\n}')).toEqual([]);
   });
 
   it("Bulk 动作行提示动作对象", () => {
@@ -311,7 +315,17 @@ describe("provideConsoleCompletionItems", () => {
     );
 
     expect(labels).toEqual(expect.arrayContaining(["title", "price"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+    ["query", "aggs", "size"].forEach((label) => expect(labels).not.toContain(label));
+  });
+
+  it("Bulk source 嵌套对象不泄漏通用候选", () => {
+    const labels = completionLabels(
+      'POST /_bulk\n{"index":{"_index":"orders"}}\n{"metadata":{<cursor>',
+      metadataWithFields(["title", "price"]),
+    );
+
+    expect(labels).toEqual([]);
+    ["query", "match", "aggs", "size"].forEach((label) => expect(labels).not.toContain(label));
   });
 
   it("Bulk update 动作后提示 Update 属性", () => {
@@ -320,7 +334,7 @@ describe("provideConsoleCompletionItems", () => {
     );
 
     expect(labels).toEqual(expect.arrayContaining(["doc", "upsert", "script"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+    ["query", "aggs", "size"].forEach((label) => expect(labels).not.toContain(label));
   });
 
   it("MSearch header 提示标头候选", () => {
@@ -334,7 +348,7 @@ describe("provideConsoleCompletionItems", () => {
       "request_cache",
       "empty header",
     ]));
-    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+    ["query", "aggs", "size"].forEach((label) => expect(labels).not.toContain(label));
   });
 
   it("MSearch 标头后进入 Search 请求体", () => {
