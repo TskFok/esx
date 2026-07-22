@@ -35,7 +35,7 @@ function context(overrides: Partial<ConnectionSearchClusterMetadata>): ConsoleAu
     historyTargetNames: [],
     fieldNames: [],
     cluster: cluster(overrides),
-    request: parseConsoleRequestContext(""),
+    request: parseConsoleRequestContext("GET /"),
   };
 }
 
@@ -130,5 +130,62 @@ describe("DSL capability filtering", () => {
     expect(es7Labels).toContain("type");
     expect(es8Labels).not.toContain("type");
     expect(unknownLabels).not.toContain("type");
+  });
+
+  it("Elasticsearch 8.11 does not suggest query knn, semantic, or sparse_vector", () => {
+    const snippets = selectPropertySuggestions(["query"], context({
+      product: "elasticsearch",
+      version: { number: "8.11.3", major: 8, minor: 11 },
+    }));
+
+    expect(labelsOf(snippets)).not.toContain("knn");
+    expect(labelsOf(snippets)).not.toContain("semantic");
+    expect(labelsOf(snippets)).not.toContain("sparse_vector");
+  });
+
+  it("Elasticsearch 8.12 starts suggesting query knn", () => {
+    expect(labelsOf(selectPropertySuggestions(["query"], context({
+      product: "elasticsearch",
+      version: { number: "8.12.0", major: 8, minor: 12 },
+    })))).toContain("knn");
+  });
+
+  it("Elasticsearch 8.15 starts suggesting semantic and sparse_vector", () => {
+    const result = labelsOf(selectPropertySuggestions(["query"], context({
+      product: "elasticsearch",
+      version: { number: "8.15.0", major: 8, minor: 15 },
+    })));
+
+    expect(result).toEqual(expect.arrayContaining(["semantic", "sparse_vector"]));
+  });
+
+  it("Elasticsearch 8.14 still hides semantic and sparse_vector", () => {
+    const result = labelsOf(selectPropertySuggestions(["query"], context({
+      product: "elasticsearch",
+      version: { number: "8.14.3", major: 8, minor: 14 },
+    })));
+
+    expect(result).not.toEqual(expect.arrayContaining(["semantic", "sparse_vector"]));
+  });
+
+  it("unknown versions hide strongly version-constrained candidates", () => {
+    const result = labelsOf(selectPropertySuggestions(["query"], context({
+      product: "elasticsearch",
+      version: { number: null, major: null, minor: null },
+    })));
+
+    expect(result).not.toEqual(expect.arrayContaining(["knn", "semantic", "sparse_vector"]));
+  });
+
+  it("OpenSearch knn uses a dynamic field and vector parameter", () => {
+    const knn = selectPropertySuggestions(["query"], context({
+      product: "opensearch",
+      version: { number: "2.14.0", major: 2, minor: 14 },
+    }))
+      .find((snippet) => snippet.label === "knn");
+
+    expect(knn?.insertText).toContain('"${1:field}"');
+    expect(knn?.insertText).toContain('"vector"');
+    expect(knn?.insertText).not.toContain('"query_vector"');
   });
 });

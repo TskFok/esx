@@ -81,6 +81,13 @@ function resolveCluster(context?: CompletionCapabilityContext | null) {
   return normalizeClusterMetadata(context?.cluster);
 }
 
+function compareVersion(
+  left: readonly [number, number],
+  right: readonly [number, number],
+) {
+  return left[0] === right[0] ? left[1] - right[1] : left[0] - right[0];
+}
+
 function licenseSatisfies(cluster: ConnectionSearchClusterMetadata, required: NonNullable<SnippetAvailability["licenseAtLeast"]>) {
   if (cluster.product !== "elasticsearch") {
     return false;
@@ -125,6 +132,21 @@ export function isAvailableForCluster(
   }
 
   if (availability.maxMajor !== undefined && (cluster.version.major ?? Number.MAX_SAFE_INTEGER) > availability.maxMajor) {
+    return false;
+  }
+
+  const currentVersion = cluster.version.major === null
+    ? null
+    : [cluster.version.major, cluster.version.minor ?? 0] as const;
+  if ((availability.minVersion || availability.maxVersion) && !currentVersion) {
+    return false;
+  }
+
+  if (availability.minVersion && compareVersion(currentVersion!, availability.minVersion) < 0) {
+    return false;
+  }
+
+  if (availability.maxVersion && compareVersion(currentVersion!, availability.maxVersion) > 0) {
     return false;
   }
 

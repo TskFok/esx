@@ -7,6 +7,8 @@ export type SnippetAvailability = {
   products?: Array<"elasticsearch" | "opensearch">;
   minMajor?: number;
   maxMajor?: number;
+  minVersion?: readonly [major: number, minor: number];
+  maxVersion?: readonly [major: number, minor: number];
   licenseAtLeast?: "gold" | "platinum" | "enterprise";
 };
 
@@ -222,10 +224,11 @@ export const ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   ),
   propertySnippet(
     "knn",
-    "向量搜索",
-    "在搜索请求体中执行 kNN 向量检索。",
+    "Elasticsearch 向量搜索",
+    "在 Elasticsearch 搜索请求体中执行 kNN 向量检索。",
     '"knn": {\n\t"field": "$1",\n\t"query_vector": [\n\t\t$2\n\t],\n\t"k": ${3:10},\n\t"num_candidates": ${4:100}\n}',
     "049-knn",
+    { products: ["elasticsearch"], minMajor: 8 },
   ),
 ];
 
@@ -297,9 +300,38 @@ const SPECIALIZED_QUERY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   propertySnippet("rank_feature", "排名特征查询", "按 rank_feature 字段提升文档。", '"rank_feature": {\n\t"field": "$0"\n}', "094-rank_feature"),
   propertySnippet("pinned", "置顶查询", "将指定文档固定在结果顶部。", '"pinned": {\n\t"ids": [\n\t\t"$1"\n\t],\n\t"organic": {\n\t\t$0\n\t}\n}', "095-pinned"),
   propertySnippet("wrapper", "Wrapper 查询", "使用 base64 编码查询。", '"wrapper": {\n\t"query": "$0"\n}', "096-wrapper"),
-  propertySnippet("knn", "kNN 查询", "执行向量相似度查询。", '"knn": {\n\t"field": "$1",\n\t"query_vector": [\n\t\t$2\n\t],\n\t"k": ${3:10},\n\t"num_candidates": ${4:100}\n}', "097-knn"),
-  propertySnippet("semantic", "语义查询", "对 semantic_text 字段执行语义查询。", '"semantic": {\n\t"field": "$1",\n\t"query": "$0"\n}', "098-semantic"),
-  propertySnippet("sparse_vector", "稀疏向量查询", "执行 sparse_vector 查询。", '"sparse_vector": {\n\t"field": "$1",\n\t"inference_id": "$2",\n\t"query": "$0"\n}', "099-sparse_vector"),
+  propertySnippet(
+    "knn",
+    "Elasticsearch kNN 查询",
+    "执行 Elasticsearch 向量相似度查询。",
+    '"knn": {\n\t"field": "${1:field}",\n\t"query_vector": [${2:0.0}],\n\t"k": ${3:10},\n\t"num_candidates": ${4:100}\n}',
+    "097-knn-elasticsearch",
+    { products: ["elasticsearch"], minVersion: [8, 12] },
+  ),
+  propertySnippet(
+    "knn",
+    "OpenSearch k-NN 查询",
+    "执行 OpenSearch k-NN 向量相似度查询。",
+    '"knn": {\n\t"${1:field}": {\n\t\t"vector": [${2:0.0}],\n\t\t"k": ${3:10}\n\t}\n}',
+    "097-knn-opensearch",
+    { products: ["opensearch"], minMajor: 1 },
+  ),
+  propertySnippet(
+    "semantic",
+    "语义查询",
+    "对 semantic_text 字段执行语义查询。",
+    '"semantic": {\n\t"field": "$1",\n\t"query": "$0"\n}',
+    "098-semantic",
+    { products: ["elasticsearch"], minVersion: [8, 15] },
+  ),
+  propertySnippet(
+    "sparse_vector",
+    "稀疏向量查询",
+    "执行 sparse_vector 查询。",
+    '"sparse_vector": {\n\t"field": "$1",\n\t"inference_id": "$2",\n\t"query": "$0"\n}',
+    "099-sparse_vector",
+    { products: ["elasticsearch"], minVersion: [8, 15] },
+  ),
 ];
 
 export const QUERY_LEAF_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
