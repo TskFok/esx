@@ -96,6 +96,14 @@ function metadata(overrides: Partial<ConnectionSearchMetadata["cluster"]>): Conn
   };
 }
 
+function metadataWithFields(fields: string[]) {
+  return {
+    ...metadata({}),
+    fields,
+    fieldsByIndex: { orders: fields },
+  };
+}
+
 function completionLabelsAt(content: string, lineNumber: number, column: number, searchMetadata: ConnectionSearchMetadata) {
   const context = buildConsoleAutocompleteContext([], content, searchMetadata);
   const suggestions = provideConsoleCompletionItems(
@@ -245,5 +253,99 @@ describe("provideConsoleCompletionItems", () => {
     const labels = completionLabelsAt(content, 4, 5, metadata({}));
 
     expect(labels).toEqual(expect.arrayContaining(["multi_match", "constant_score", "geo_distance", "script_score"]));
+  });
+
+  it("Create Index 根对象不提示 Search 属性", () => {
+    const labels = completionLabels("PUT /orders\n{\n  <cursor>\n}");
+
+    expect(labels).toEqual(expect.arrayContaining(["settings", "mappings", "aliases"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["query", "from", "size", "sort"]));
+  });
+
+  it("Count 根对象只提示 Count 支持的属性", () => {
+    const labels = completionLabels("POST /orders/_count\n{\n  <cursor>\n}");
+
+    expect(labels).toEqual(expect.arrayContaining(["query", "runtime_mappings"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["aggs", "from", "size", "sort"]));
+  });
+
+  it("Update 根对象提示更新属性而非 Search 属性", () => {
+    const labels = completionLabels("POST /orders/_update/42\n{\n  <cursor>\n}");
+
+    expect(labels).toEqual(expect.arrayContaining([
+      "doc",
+      "script",
+      "upsert",
+      "doc_as_upsert",
+      "scripted_upsert",
+      "detect_noop",
+      "_source",
+    ]));
+    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+  });
+
+  it("Document 根对象只提示 mapping 字段", () => {
+    const labels = completionLabels(
+      "POST /orders/_doc\n{\n  <cursor>\n}",
+      metadataWithFields(["title", "price"]),
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["title", "price"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+  });
+
+  it("Document 缺少 mapping metadata 时不猜测属性", () => {
+    expect(completionLabels("POST /orders/_doc\n{\n  <cursor>\n}")).toEqual([]);
+  });
+
+  it("Bulk 动作行提示动作对象", () => {
+    expect(completionLabels("POST /_bulk\n<cursor>")).toEqual(
+      expect.arrayContaining(["index", "create", "update", "delete"]),
+    );
+  });
+
+  it("Bulk index 动作后提示文档字段而非 Search 根属性", () => {
+    const labels = completionLabels(
+      'POST /_bulk\n{"index":{"_index":"orders"}}\n<cursor>',
+      metadataWithFields(["title", "price"]),
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["title", "price"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+  });
+
+  it("Bulk update 动作后提示 Update 属性", () => {
+    const labels = completionLabels(
+      'POST /_bulk\n{"update":{"_index":"orders","_id":"42"}}\n<cursor>',
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["doc", "upsert", "script"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+  });
+
+  it("MSearch header 提示标头候选", () => {
+    const labels = completionLabels("POST /_msearch\n<cursor>");
+
+    expect(labels).toEqual(expect.arrayContaining([
+      "index",
+      "routing",
+      "preference",
+      "search_type",
+      "request_cache",
+      "empty header",
+    ]));
+    expect(labels).not.toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+  });
+
+  it("MSearch 标头后进入 Search 请求体", () => {
+    const labels = completionLabels('POST /_msearch\n{"index":"orders"}\n<cursor>');
+
+    expect(labels).toEqual(expect.arrayContaining(["query", "aggs", "size"]));
+  });
+
+  it("Search 根候选不退化", () => {
+    const labels = completionLabels("POST /orders/_search\n{\n  <cursor>\n}");
+
+    expect(labels).toEqual(expect.arrayContaining(["query", "aggs", "from", "size", "sort"]));
   });
 });

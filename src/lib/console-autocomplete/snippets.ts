@@ -247,6 +247,70 @@ export const ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   ),
 ];
 
+export const CREATE_INDEX_ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
+  propertySnippet("settings", "索引设置", "配置索引 settings。", '"settings": {\n\t$0\n}', "000-settings"),
+  propertySnippet("mappings", "索引映射", "配置索引 mappings。", '"mappings": {\n\t$0\n}', "001-mappings"),
+  propertySnippet("aliases", "索引别名", "配置索引 aliases。", '"aliases": {\n\t$0\n}', "002-aliases"),
+];
+
+export const COUNT_ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
+  propertySnippet("query", "计数查询", "配置 Count API 查询。", '"query": {\n\t$0\n}', "000-query"),
+  propertySnippet(
+    "runtime_mappings",
+    "运行时映射",
+    "配置 Count API 运行时字段。",
+    '"runtime_mappings": {\n\t$0\n}',
+    "001-runtime-mappings",
+  ),
+];
+
+export const SCROLL_ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
+  propertySnippet("scroll", "滚动保留时间", "延长 Scroll 上下文。", '"scroll": "${1:1m}"', "000-scroll"),
+  propertySnippet("scroll_id", "Scroll ID", "指定 Scroll 上下文。", '"scroll_id": "${1:id}"', "001-scroll-id"),
+];
+
+export const UPDATE_ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
+  propertySnippet("doc", "局部文档", "提供需要合并的字段。", '"doc": {\n\t$0\n}', "000-doc"),
+  propertySnippet("script", "更新脚本", "使用脚本更新文档。", '"script": {\n\t"source": "$0"\n}', "001-script"),
+  propertySnippet("upsert", "不存在时写入", "提供 upsert 文档。", '"upsert": {\n\t$0\n}', "002-upsert"),
+  propertySnippet("doc_as_upsert", "将 doc 用作 upsert", "文档不存在时使用 doc。", '"doc_as_upsert": ${1:true}', "003-doc-as-upsert"),
+  propertySnippet("scripted_upsert", "脚本处理 upsert", "文档不存在时仍执行更新脚本。", '"scripted_upsert": ${1:true}', "004-scripted-upsert"),
+  propertySnippet("detect_noop", "检测无变化更新", "字段未变化时跳过写入。", '"detect_noop": ${1:true}', "005-detect-noop"),
+  propertySnippet("_source", "返回源字段", "控制更新响应中的 _source。", '"_source": ${1:true}', "006-source"),
+];
+
+function lineSnippet(
+  label: string,
+  detail: string,
+  insertText: string,
+  sortText: string,
+): RawSnippet {
+  return {
+    label,
+    detail,
+    documentation: detail,
+    insertText,
+    kind: "keyword",
+    sortText,
+  };
+}
+
+export const BULK_ACTION_SNIPPETS: ReadonlyArray<RawSnippet> = [
+  lineSnippet("index", "Bulk index 动作", '{"index":{"_index":"${1:index}","_id":"${2:id}"}}', "000-index"),
+  lineSnippet("create", "Bulk create 动作", '{"create":{"_index":"${1:index}","_id":"${2:id}"}}', "001-create"),
+  lineSnippet("update", "Bulk update 动作", '{"update":{"_index":"${1:index}","_id":"${2:id}"}}', "002-update"),
+  lineSnippet("delete", "Bulk delete 动作", '{"delete":{"_index":"${1:index}","_id":"${2:id}"}}', "003-delete"),
+];
+
+export const MSEARCH_HEADER_SNIPPETS: ReadonlyArray<RawSnippet> = [
+  lineSnippet("index", "MSearch 索引标头", '{"index":"${1:index}"}', "000-index"),
+  lineSnippet("routing", "MSearch routing 标头", '{"routing":"${1:routing}"}', "001-routing"),
+  lineSnippet("preference", "MSearch preference 标头", '{"preference":"${1:_local}"}', "002-preference"),
+  lineSnippet("search_type", "MSearch 搜索类型标头", '{"search_type":"${1:query_then_fetch}"}', "003-search-type"),
+  lineSnippet("request_cache", "MSearch 请求缓存标头", '{"request_cache":${1:true}}', "004-request-cache"),
+  lineSnippet("empty header", "MSearch 空标头", "{}", "005-empty"),
+];
+
 const FULL_TEXT_QUERY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   propertySnippet("match", "全文匹配", "match 查询。", '"match": {\n\t"${1:field}": "$0"\n}', "010-match"),
   propertySnippet("match_bool_prefix", "布尔前缀匹配", "将最后一个词作为 prefix 查询的 match 变体。", '"match_bool_prefix": {\n\t"${1:field}": "$0"\n}', "011-match_bool_prefix"),

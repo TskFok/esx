@@ -1,6 +1,13 @@
 import * as monacoEditor from "monaco-editor";
 import {
+  BULK_ACTION_SNIPPETS,
+  COUNT_ROOT_PROPERTY_SNIPPETS,
+  CREATE_INDEX_ROOT_PROPERTY_SNIPPETS,
   HTTP_METHODS,
+  MSEARCH_HEADER_SNIPPETS,
+  ROOT_PROPERTY_SNIPPETS,
+  SCROLL_ROOT_PROPERTY_SNIPPETS,
+  UPDATE_ROOT_PROPERTY_SNIPPETS,
   type ApiSegment,
   type RawSnippet,
 } from "./snippets";
@@ -17,15 +24,22 @@ import {
 } from "./suggestions";
 import type { ConsoleAutocompleteContext } from "./context";
 import {
+  filterAvailableSnippets,
   selectApiSegments,
   selectQueryParameterSnippets,
   selectQueryParameterValueSnippets,
 } from "./capabilities";
+import {
+  analyzeBodyCompletion,
+  type BodyCompletionKind,
+} from "./body-context";
 
 export { buildConsoleAutocompleteContext, extractIndexNamesFromPath } from "./context";
 export type { ConsoleAutocompleteContext } from "./context";
 export { validateConsoleContent } from "./validator";
 export type { ConsoleBodyDiagnostic } from "./validator";
+export { analyzeBodyCompletion } from "./body-context";
+export type { BodyCompletionContext, BodyCompletionKind } from "./body-context";
 export { flattenMappingFields, flattenMappingFieldsByIndex } from "./metadata";
 export { analyzeJsonCursor, isInsideString } from "./json-path";
 export type { JsonPathSegment } from "./json-path";
@@ -151,6 +165,9 @@ function buildJsonSuggestions(
   model: monacoEditor.editor.ITextModel,
   position: monacoEditor.Position,
   autocompleteContext: ConsoleAutocompleteContext,
+  analysisPrefix: string,
+  rootPropertySnippets: readonly RawSnippet[],
+  allowRootFieldKeys = false,
 ): monacoEditor.languages.CompletionItem[] {
   const range = model.getWordUntilPosition(position);
   const replaceRange = new monacoInstance.Range(
@@ -159,21 +176,19 @@ function buildJsonSuggestions(
     position.lineNumber,
     range.endColumn,
   );
-  const textBeforeCursor = model.getValueInRange(
-    new monacoInstance.Range(1, 1, position.lineNumber, position.column),
-  );
-  const cursorInfo = analyzeJsonCursor(textBeforeCursor);
-  const insideStringFallback = isInsideString(textBeforeCursor);
-  const textBeforeCurrentWord = range.word ? textBeforeCursor.slice(0, -range.word.length) : textBeforeCursor;
+  const cursorInfo = analyzeJsonCursor(analysisPrefix);
+  const insideStringFallback = isInsideString(analysisPrefix);
+  const textBeforeCurrentWord = range.word ? analysisPrefix.slice(0, -range.word.length) : analysisPrefix;
   const previousCharacter = getPreviousMeaningfulCharacter(textBeforeCurrentWord);
   const preferValueSnippets = cursorInfo.expectingValue || previousCharacter === ":" || previousCharacter === "[";
 
   const path = cursorInfo.path;
   const suggestionsList: monacoEditor.languages.CompletionItem[] = [];
+  const allowFields = allowRootFieldKeys && path.length === 0;
 
   if (cursorInfo.insideString || insideStringFallback) {
     if (cursorInfo.insideStringAsKey) {
-      if (shouldSuggestFieldsForKey(path) && autocompleteContext.fieldNames.length > 0) {
+      if ((allowFields || shouldSuggestFieldsForKey(path)) && autocompleteContext.fieldNames.length > 0) {
         suggestionsList.push(
           ...buildFieldSuggestions(monacoInstance, autocompleteContext.fieldNames, replaceRange, "string-value"),
         );
@@ -190,13 +205,15 @@ function buildJsonSuggestions(
   }
 
   if (!preferValueSnippets) {
-    if (shouldSuggestFieldsForKey(path) && autocompleteContext.fieldNames.length > 0) {
+    if ((allowFields || shouldSuggestFieldsForKey(path)) && autocompleteContext.fieldNames.length > 0) {
       suggestionsList.push(
         ...buildFieldSuggestions(monacoInstance, autocompleteContext.fieldNames, replaceRange, "key"),
       );
     }
 
-    const properties = selectPropertySuggestions(path, autocompleteContext);
+    const properties = path.length === 0
+      ? filterAvailableSnippets(rootPropertySnippets, autocompleteContext)
+      : selectPropertySuggestions(path, autocompleteContext);
     for (const snippet of properties) {
       suggestionsList.push(renderSnippet(monacoInstance, snippet, replaceRange, false));
     }
@@ -210,6 +227,61 @@ function buildJsonSuggestions(
   }
 
   return suggestionsList;
+}
+
+const ROOT_SNIPPETS_BY_KIND: Partial<Record<BodyCompletionKind, readonly RawSnippet[]>> = {
+  "search-json": ROOT_PROPERTY_SNIPPETS,
+  "msearch-body": ROOT_PROPERTY_SNIPPETS,
+  "scroll-json": SCROLL_ROOT_PROPERTY_SNIPPETS,
+  "count-json": COUNT_ROOT_PROPERTY_SNIPPETS,
+  "create-index-json": CREATE_INDEX_ROOT_PROPERTY_SNIPPETS,
+  "update-json": UPDATE_ROOT_PROPERTY_SNIPPETS,
+  "bulk-update": UPDATE_ROOT_PROPERTY_SNIPPETS,
+  "document-json": [],
+  "bulk-source": [],
+};
+
+function buildBodySuggestions(
+  monacoInstance: typeof monacoEditor,
+  model: monacoEditor.editor.ITextModel,
+  position: monacoEditor.Position,
+  autocompleteContext: ConsoleAutocompleteContext,
+): monacoEditor.languages.CompletionItem[] {
+  const textBeforeCursor = model.getValueInRange(
+    new monacoInstance.Range(1, 1, position.lineNumber, position.column),
+  );
+  const bodyContext = analyzeBodyCompletion(textBeforeCursor, autocompleteContext.request);
+  const lineContent = model.getLineContent(position.lineNumber);
+  const lineRange = new monacoInstance.Range(
+    position.lineNumber,
+    1,
+    position.lineNumber,
+    lineContent.length + 1,
+  );
+
+  if (bodyContext.kind === "bulk-action" || bodyContext.kind === "msearch-header") {
+    const snippets = bodyContext.kind === "bulk-action"
+      ? BULK_ACTION_SNIPPETS
+      : MSEARCH_HEADER_SNIPPETS;
+    return snippets.map((snippet) => renderSnippet(monacoInstance, snippet, lineRange, false));
+  }
+  if (bodyContext.kind === "unknown") return [];
+
+  const rootSnippets = ROOT_SNIPPETS_BY_KIND[bodyContext.kind];
+  if (!rootSnippets) return [];
+  const analysisPrefix = bodyContext.kind === "msearch-body"
+    ? `POST /_search\n${bodyContext.currentLine}`
+    : textBeforeCursor;
+  const allowRootFieldKeys = bodyContext.kind === "document-json" || bodyContext.kind === "bulk-source";
+  return buildJsonSuggestions(
+    monacoInstance,
+    model,
+    position,
+    autocompleteContext,
+    analysisPrefix,
+    rootSnippets,
+    allowRootFieldKeys,
+  );
 }
 
 type QueryParameterCursor = {
@@ -418,5 +490,5 @@ export function provideConsoleCompletionItems(
     return buildPathSuggestions(monacoInstance, lineContent, position.column, autocompleteContext);
   }
 
-  return buildJsonSuggestions(monacoInstance, model, position, autocompleteContext);
+  return buildBodySuggestions(monacoInstance, model, position, autocompleteContext);
 }
