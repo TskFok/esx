@@ -139,6 +139,32 @@ describe("buildConsoleAutocompleteContext", () => {
     expect(context.fieldNames).toEqual(["price", "sku"]);
   });
 
+  it("保留按索引和 alias 精确解析的只读字段 metadata", () => {
+    const context = buildConsoleAutocompleteContext([], "POST /_bulk", {
+      connectionId: "conn",
+      indices: ["orders", "users"],
+      aliases: ["all-data", "orders-read"],
+      fields: ["order_id", "shared", "user_id"],
+      fieldsByIndex: {
+        orders: ["order_id", "shared"],
+        users: ["user_id", "shared"],
+      },
+      aliasToIndices: {
+        "all-data": ["orders", "users"],
+        "orders-read": ["orders"],
+      },
+      fetchedAt: "",
+      expiresAt: "",
+    });
+
+    expect(context.fieldNamesByTarget).toEqual({
+      "all-data": ["order_id", "shared", "user_id"],
+      orders: ["order_id", "shared"],
+      "orders-read": ["order_id", "shared"],
+      users: ["shared", "user_id"],
+    });
+  });
+
   it("falls back to all fields when the current target is unknown", () => {
     const context = buildConsoleAutocompleteContext(
       [],

@@ -38,4 +38,47 @@ describe("parseConsoleRequestContext", () => {
       bodyMode: "unknown",
     });
   });
+
+  it.each([
+    ["GET /_search", "search"],
+    ["POST /orders/_search", "search"],
+    ["GET /_search/scroll", "scroll"],
+    ["GET /orders/_count", "count"],
+    ["PUT /orders/_bulk", "bulk"],
+    ["GET /_msearch", "msearch"],
+    ["GET /_cat/indices", "cat"],
+    ["PUT /orders/_mapping", "mapping"],
+    ["GET /_settings", "settings"],
+    ["GET /_tasks", "tasks"],
+    ["GET /_snapshot", "snapshot"],
+    ["DELETE /_snapshot/backups", "snapshot"],
+    ["PUT /_snapshot/backups/nightly", "snapshot"],
+    ["POST /_snapshot/backups/nightly/_restore", "snapshot"],
+    ["POST /orders/_update/42", "update-document"],
+    ["POST /orders/_doc", "index-document"],
+    ["PUT /orders/_doc/42", "index-document"],
+    ["PUT /orders", "create-index"],
+  ] as const)("只识别静态 endpoint profile：%s", (content, endpoint) => {
+    expect(parseConsoleRequestContext(content).endpoint).toBe(endpoint);
+  });
+
+  it.each([
+    "DELETE /orders/_search",
+    "GET /_bulk",
+    "POST /_search/scroll/extra",
+    "POST /orders/_doc/42/extra",
+    "POST /foo/bar/_search",
+    "POST /_cat/indices",
+    "DELETE /orders/_mapping",
+    "POST /_settings",
+    "POST /_tasks",
+    "GET /_tasks/42/extra",
+    "GET /_snapshot/backups/nightly/extra",
+    "GET /_snapshot/backups/nightly/_restore",
+  ])("非法 method 或路径形态保持 unknown：%s", (content) => {
+    expect(parseConsoleRequestContext(content)).toMatchObject({
+      endpoint: "unknown",
+      bodyMode: "unknown",
+    });
+  });
 });

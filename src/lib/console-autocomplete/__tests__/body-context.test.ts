@@ -41,4 +41,33 @@ describe("analyzeBodyCompletion", () => {
 
     expect(analyzeBodyCompletion(content, parseConsoleRequestContext(content)).kind).toBe("unknown");
   });
+
+  it.each([
+    ['POST /_bulk\n{"index":{"_index":"orders"}}\n', "bulk-source", ["orders"]],
+    ['POST /_bulk\n{"update":{"_index":"orders, users","_id":"1"}}\n', "bulk-update", ["orders", "users"]],
+    ['POST /_msearch\n{"index":"orders"}\n', "msearch-body", ["orders"]],
+    ['POST /_msearch\n{"index":["orders","users"]}\n', "msearch-body", ["orders", "users"]],
+  ] as const)("保留当前 NDJSON 正文的目标：%s", (content, kind, targetNames) => {
+    expect(analyzeBodyCompletion(content, parseConsoleRequestContext(content))).toMatchObject({
+      kind,
+      targetNames,
+    });
+  });
+
+  it.each([
+    ['POST /_bulk\n{"index":{}}\n', "bulk-source"],
+    ['POST /_msearch\n{}\n', "msearch-body"],
+  ] as const)("未提供 NDJSON 目标时保留空缺以便回退 URL：%s", (content, kind) => {
+    expect(analyzeBodyCompletion(content, parseConsoleRequestContext(content))).toMatchObject({
+      kind,
+      targetNames: null,
+    });
+  });
+
+  it.each([
+    'POST /_bulk\n{"index":{"_index":"orders-*"}}\n',
+    'POST /_msearch\n{"index":"unknown*"}\n',
+  ])("显式 wildcard NDJSON 目标保守为空：%s", (content) => {
+    expect(analyzeBodyCompletion(content, parseConsoleRequestContext(content)).targetNames).toEqual([]);
+  });
 });

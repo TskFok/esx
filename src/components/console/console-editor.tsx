@@ -16,6 +16,7 @@ const EMPTY_AUTOCOMPLETE_CONTEXT: ConsoleAutocompleteContext = {
   aliasNames: [],
   historyTargetNames: [],
   fieldNames: [],
+  fieldNamesByTarget: {},
   cluster: DEFAULT_CLUSTER_METADATA,
   request: parseConsoleRequestContext(""),
 };

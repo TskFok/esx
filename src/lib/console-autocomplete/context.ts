@@ -10,6 +10,7 @@ export interface ConsoleAutocompleteContext {
   aliasNames: string[];
   historyTargetNames: string[];
   fieldNames: string[];
+  readonly fieldNamesByTarget: Readonly<Record<string, readonly string[]>>;
   cluster: typeof DEFAULT_CLUSTER_METADATA;
   request: ConsoleRequestContext;
 }
@@ -94,6 +95,59 @@ function resolveFieldNames(
   return uniqueSorted([...resolved]);
 }
 
+function buildFieldNamesByTarget(
+  metadata: SearchMetadataInput | null | undefined,
+): Readonly<Record<string, readonly string[]>> {
+  const fieldsByIndex = metadata?.fieldsByIndex ?? {};
+  const aliasToIndices = metadata?.aliasToIndices ?? {};
+  const result: Record<string, readonly string[]> = {};
+  const indexNames = uniqueSorted([
+    ...(metadata?.indices ?? []),
+    ...Object.keys(fieldsByIndex),
+  ]);
+
+  indexNames.forEach((indexName) => {
+    result[indexName] = uniqueSorted([...(fieldsByIndex[indexName] ?? [])]);
+  });
+
+  uniqueSorted([...(metadata?.aliases ?? []), ...Object.keys(aliasToIndices)]).forEach(
+    (aliasName) => {
+      const indexTargets = aliasToIndices[aliasName] ?? [];
+      if (
+        indexTargets.length === 0 ||
+        indexTargets.some((indexName) => !Object.prototype.hasOwnProperty.call(result, indexName))
+      ) {
+        result[aliasName] = [];
+        return;
+      }
+
+      result[aliasName] = uniqueSorted(
+        indexTargets.flatMap((indexName) => [...(result[indexName] ?? [])]),
+      );
+    },
+  );
+
+  return result;
+}
+
+export function resolveFieldNamesForTargets(
+  targetNames: readonly string[],
+  fieldNamesByTarget: Readonly<Record<string, readonly string[]>>,
+) {
+  if (
+    targetNames.length === 0 ||
+    targetNames.some((targetName) =>
+      !Object.prototype.hasOwnProperty.call(fieldNamesByTarget, targetName)
+    )
+  ) {
+    return [];
+  }
+
+  return uniqueSorted(
+    targetNames.flatMap((targetName) => [...(fieldNamesByTarget[targetName] ?? [])]),
+  );
+}
+
 export function buildConsoleAutocompleteContext(
   requests: SavedRequest[],
   currentContent = "",
@@ -108,12 +162,14 @@ export function buildConsoleAutocompleteContext(
   const indexNames = uniqueSorted([...(metadata?.indices ?? [])]);
   const aliasNames = uniqueSorted([...(metadata?.aliases ?? [])]);
   const fieldNames = resolveFieldNames(currentTargets, metadata);
+  const fieldNamesByTarget = buildFieldNamesByTarget(metadata);
   const cluster = normalizeClusterMetadata(metadata?.cluster);
 
   return {
     indexNames,
     aliasNames,
     fieldNames,
+    fieldNamesByTarget,
     cluster,
     request,
     historyTargetNames: historyTargetNames.filter(

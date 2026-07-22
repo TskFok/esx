@@ -39,6 +39,7 @@ function context(overrides: Partial<ConnectionSearchClusterMetadata>): ConsoleAu
     aliasNames: [],
     historyTargetNames: [],
     fieldNames: [],
+    fieldNamesByTarget: {},
     cluster: cluster(overrides),
     request: parseConsoleRequestContext("GET /"),
   };

@@ -104,6 +104,22 @@ function metadataWithFields(fields: string[]) {
   };
 }
 
+function metadataWithTargetFields(): ConnectionSearchMetadata {
+  return {
+    ...metadata({}),
+    indices: ["orders", "users"],
+    aliases: ["orders-read"],
+    fields: ["order_id", "order_total", "user_email", "user_id"],
+    fieldsByIndex: {
+      orders: ["order_id", "order_total"],
+      users: ["user_email", "user_id"],
+    },
+    aliasToIndices: {
+      "orders-read": ["orders"],
+    },
+  };
+}
+
 function completionLabelsAt(content: string, lineNumber: number, column: number, searchMetadata: ConnectionSearchMetadata) {
   const context = buildConsoleAutocompleteContext([], content, searchMetadata);
   const suggestions = provideConsoleCompletionItems(
@@ -227,6 +243,19 @@ describe("provideConsoleCompletionItems", () => {
     expect(completionLabels("GET /orders/_search?pretty=true ")).toEqual([]);
   });
 
+  it.each([
+    "DELETE /orders/_search",
+    "GET /_bulk",
+    "POST /_search/scroll/extra",
+    "POST /orders/_doc/42/extra",
+    "POST /foo/bar/_search",
+  ])("非法 endpoint 不返回查询参数或正文候选：%s", (requestLine) => {
+    const searchMetadata = metadataWithFields(["order_id", "user_email"]);
+
+    expect(completionLabels(`${requestLine}?<cursor>`, searchMetadata)).toEqual([]);
+    expect(completionLabels(`${requestLine}\n{<cursor>}`, searchMetadata)).toEqual([]);
+  });
+
   it("replaces only the current parameter name or value", () => {
     const nameSuggestion = completionSuggestions("GET /orders/_search?size=10&fr<cursor>om=20")
       .find((item) => item.label === "from");
@@ -261,6 +290,39 @@ describe("provideConsoleCompletionItems", () => {
     expect(labels).toEqual(expect.arrayContaining(["multi_match", "constant_score", "geo_distance", "script_score"]));
   });
 
+  it("Query DSL 值候选只保留 OpenSearch 可用的 knn 模板", () => {
+    const suggestions = completionSuggestions(
+      'POST /orders/_search\n{"query": <cursor>}',
+      metadata({
+        product: "opensearch",
+        version: { number: "2.19.0", major: 2, minor: 19 },
+        distribution: "opensearch",
+        buildFlavor: null,
+      }),
+    );
+    const labels = suggestions.map((item) => String(item.label));
+    const knnSuggestions = suggestions.filter((item) => item.label === "knn");
+
+    expect(knnSuggestions).toHaveLength(1);
+    expect(knnSuggestions[0]?.insertText).toContain('"vector"');
+    expect(knnSuggestions[0]?.insertText).not.toContain('"query_vector"');
+    expectLabelsAbsent(labels, ["semantic", "sparse_vector"]);
+  });
+
+  it("Query DSL 值候选遵守 Elasticsearch 次版本边界", () => {
+    const labelsFor = (minor: number) => completionLabels(
+      'POST /orders/_search\n{"query": <cursor>}',
+      metadata({
+        version: { number: `8.${minor}.0`, major: 8, minor },
+      }),
+    );
+
+    expectLabelsAbsent(labelsFor(11), ["knn", "semantic", "sparse_vector"]);
+    expect(labelsFor(14)).toContain("knn");
+    expectLabelsAbsent(labelsFor(14), ["semantic", "sparse_vector"]);
+    expect(labelsFor(15)).toEqual(expect.arrayContaining(["knn", "semantic", "sparse_vector"]));
+  });
+
   it("Create Index 根对象不提示 Search 属性", () => {
     const labels = completionLabels("PUT /orders\n{\n  <cursor>\n}");
 
@@ -288,6 +350,22 @@ describe("provideConsoleCompletionItems", () => {
       "_source",
     ]));
     ["query", "aggs", "size"].forEach((label) => expect(labels).not.toContain(label));
+  });
+
+  it.each([
+    'PUT /orders\n{"query": <cursor>}',
+    'POST /_search/scroll\n{"query": <cursor>}',
+    'POST /orders/_update/42\n{"query": <cursor>}',
+  ])("非 Search 正文的非法 query 值不提示 Query DSL：%s", (content) => {
+    expect(completionLabels(content)).toEqual([]);
+  });
+
+  it.each([
+    'POST /orders/_search\n{"query": <cursor>}',
+    'POST /orders/_count\n{"query": <cursor>}',
+    'POST /_msearch\n{"index":"orders"}\n{"query": <cursor>}',
+  ])("合法 Search 语义正文的 query 值继续提示 Query DSL：%s", (content) => {
+    expect(completionLabels(content)).toEqual(expect.arrayContaining(["bool", "match", "term"]));
   });
 
   it("Document 根对象只提示 mapping 字段", () => {
@@ -322,6 +400,58 @@ describe("provideConsoleCompletionItems", () => {
 
     expect(labels).toEqual(expect.arrayContaining(["title", "price"]));
     ["query", "aggs", "size"].forEach((label) => expect(labels).not.toContain(label));
+  });
+
+  it("全局 Bulk 按 action 目标隔离 source mapping 字段", () => {
+    const labels = completionLabels(
+      'POST /_bulk\n{"index":{"_index":"orders"}}\n<cursor>',
+      metadataWithTargetFields(),
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["order_id", "order_total"]));
+    expectLabelsAbsent(labels, ["user_email", "user_id"]);
+  });
+
+  it("全局 Bulk 缺少、未知或 wildcard 目标时不混入动态字段", () => {
+    const searchMetadata = metadataWithTargetFields();
+
+    expect(completionLabels('POST /_bulk\n{"index":{}}\n<cursor>', searchMetadata)).toEqual([]);
+    expect(completionLabels(
+      'POST /_bulk\n{"index":{"_index":"missing"}}\n<cursor>',
+      searchMetadata,
+    )).toEqual([]);
+    expect(completionLabels(
+      'POST /_bulk\n{"index":{"_index":"orders-*"}}\n<cursor>',
+      searchMetadata,
+    )).toEqual([]);
+  });
+
+  it("索引级 Bulk 在 action 未给目标时回退 URL target", () => {
+    expect(completionLabels(
+      'POST /orders/_bulk\n{"index":{}}\n<cursor>',
+      metadataWithTargetFields(),
+    )).toEqual(expect.arrayContaining(["order_id", "order_total"]));
+  });
+
+  it("Bulk 支持 alias 与逗号分隔目标并去重字段", () => {
+    const searchMetadata = metadataWithTargetFields();
+    const aliasLabels = completionLabels(
+      'POST /_bulk\n{"index":{"_index":"orders-read"}}\n<cursor>',
+      searchMetadata,
+    );
+    const multiTargetLabels = completionLabels(
+      'POST /_bulk\n{"index":{"_index":"orders,users"}}\n<cursor>',
+      searchMetadata,
+    );
+
+    expect(aliasLabels).toEqual(expect.arrayContaining(["order_id", "order_total"]));
+    expectLabelsAbsent(aliasLabels, ["user_email", "user_id"]);
+    expect(multiTargetLabels).toEqual(expect.arrayContaining([
+      "order_id",
+      "order_total",
+      "user_email",
+      "user_id",
+    ]));
   });
 
   it("Bulk source 嵌套对象不泄漏通用候选", () => {
@@ -363,6 +493,37 @@ describe("provideConsoleCompletionItems", () => {
     expect(labels).toEqual(expect.arrayContaining(["query", "aggs", "size"]));
   });
 
+  it("全局 MSearch 按 header 目标隔离字段查询键", () => {
+    const labels = completionLabels(
+      'POST /_msearch\n{"index":"orders"}\n{"query":{"term":{<cursor>}}}',
+      metadataWithTargetFields(),
+    );
+
+    expect(labels).toEqual(expect.arrayContaining(["order_id", "order_total"]));
+    expectLabelsAbsent(labels, ["user_email", "user_id"]);
+  });
+
+  it("全局 MSearch 缺少目标时不混入动态字段", () => {
+    expect(completionLabels(
+      'POST /_msearch\n{}\n{"query":{"term":{<cursor>}}}',
+      metadataWithTargetFields(),
+    )).toEqual([]);
+  });
+
+  it("索引级 MSearch 在 header 未给目标时回退 URL target", () => {
+    expect(completionLabels(
+      'POST /orders/_msearch\n{}\n{"query":{"term":{<cursor>}}}',
+      metadataWithTargetFields(),
+    )).toEqual(expect.arrayContaining(["order_id", "order_total"]));
+  });
+
+  it("MSearch 字符串数组目标合并字段", () => {
+    expect(completionLabels(
+      'POST /_msearch\n{"index":["orders","users"]}\n{"query":{"term":{<cursor>}}}',
+      metadataWithTargetFields(),
+    )).toEqual(expect.arrayContaining(["order_id", "order_total", "user_email", "user_id"]));
+  });
+
   it("Search 根候选不退化", () => {
     const labels = completionLabels("POST /orders/_search\n{\n  <cursor>\n}");
 
@@ -385,6 +546,29 @@ describe("provideConsoleCompletionItems", () => {
 
   it("未知对象不回退到 Search 根属性或 Query DSL", () => {
     expect(completionLabels('POST /orders/_search\n{"unknown":{ <cursor>}}')).toEqual([]);
+  });
+
+  it.each([
+    'POST /orders/_search\n{"unknown":{"sort":{<cursor>}}}',
+    'POST /orders/_search\n{"unknown":{"field":"<cursor>"}}',
+    'POST /orders/_search\n{"unknown":{"path":"<cursor>"}}',
+  ])("未知字段引用路径不提示 mapping 字段：%s", (content) => {
+    expect(completionLabels(
+      content,
+      metadataWithFields(["order_id", "customer_name"]),
+    )).toEqual([]);
+  });
+
+  it.each([
+    'POST /orders/_search\n{"sort":{<cursor>}}',
+    'POST /orders/_search\n{"query":{"exists":{"field":"<cursor>"}}}',
+    'POST /orders/_search\n{"query":{"nested":{"path":"<cursor>"}}}',
+    'POST /orders/_search\n{"aggs":{"by_customer":{"terms":{"field":"<cursor>"}}}}',
+  ])("合法字段引用路径继续提示 mapping 字段：%s", (content) => {
+    expect(completionLabels(
+      content,
+      metadataWithFields(["order_id", "customer_name"]),
+    )).toEqual(expect.arrayContaining(["order_id", "customer_name"]));
   });
 
   it("term 字段参数对象只提示 term 参数且不重复 mapping 字段", () => {

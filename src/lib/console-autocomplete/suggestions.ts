@@ -57,6 +57,13 @@ const QUERY_CHILD_KEYS_BY_PARENT: Readonly<Record<string, ReadonlySet<string>>> 
 const SPAN_CHILD_KEYS = new Set(["match", "include", "exclude", "big", "little", "query"]);
 const SPAN_CLAUSE_ARRAY_PARENTS = new Set(["span_near", "span_or"]);
 const MULTI_TERM_QUERY_LABELS = new Set(["fuzzy", "prefix", "range", "regexp", "wildcard"]);
+const QUERY_TYPE_LABELS = new Set(QUERY_LEAF_PROPERTY_SNIPPETS.map((snippet) => snippet.label));
+const QUERY_FIELD_ARRAY_TYPES = new Set([
+  "multi_match",
+  "combined_fields",
+  "simple_query_string",
+  "more_like_this",
+]);
 
 function isQuerySuggestionContext(path: JsonPathSegment[]): boolean {
   const last = path[path.length - 1];
@@ -118,6 +125,13 @@ function isSpanChildContext(path: JsonPathSegment[]): boolean {
 
   if (spanQueryIndex < 0) return false;
   const parentPath = path.slice(0, spanQueryIndex);
+  return isQuerySuggestionContext(parentPath) || isSpanChildContext(parentPath);
+}
+
+function isKnownQueryDefinitionPath(path: JsonPathSegment[]) {
+  const queryType = path[path.length - 1];
+  if (typeof queryType !== "string" || !QUERY_TYPE_LABELS.has(queryType)) return false;
+  const parentPath = path.slice(0, -1);
   return isQuerySuggestionContext(parentPath) || isSpanChildContext(parentPath);
 }
 
@@ -269,7 +283,20 @@ const SPAN_QUERY_VALUE_SNIPPETS = QUERY_LEAF_VALUE_SNIPPETS.filter((snippet) =>
   snippet.label.startsWith("span_")
 );
 
-export function selectValueSuggestions(path: JsonPathSegment[]): RawSnippet[] {
+function filterAvailableValueSnippets(
+  snippets: readonly RawSnippet[],
+  autocompleteContext?: Pick<ConsoleAutocompleteContext, "cluster"> | null,
+) {
+  return filterAvailableSnippets(snippets, autocompleteContext).filter(
+    (snippet, index, available) =>
+      available.findIndex((candidate) => candidate.label === snippet.label) === index,
+  );
+}
+
+export function selectValueSuggestions(
+  path: JsonPathSegment[],
+  autocompleteContext?: Pick<ConsoleAutocompleteContext, "cluster"> | null,
+): RawSnippet[] {
   const last = path[path.length - 1];
   const secondLast = path[path.length - 2];
 
@@ -277,19 +304,21 @@ export function selectValueSuggestions(path: JsonPathSegment[]): RawSnippet[] {
   if (typeof last === "string" && NUMBER_VALUE_KEYS.has(last)) return NUMBER_VALUE_SNIPPETS;
   if (typeof last === "string" && BOOLEAN_VALUE_KEYS.has(last)) return BOOLEAN_VALUE_SNIPPETS;
   if (isSpanChildContext(path)) {
-    return last === "match" && secondLast === "span_multi"
-      ? [...MULTI_TERM_QUERY_VALUE_SNIPPETS]
-      : [...SPAN_QUERY_VALUE_SNIPPETS];
+    return filterAvailableValueSnippets(
+      last === "match" && secondLast === "span_multi"
+        ? MULTI_TERM_QUERY_VALUE_SNIPPETS
+        : SPAN_QUERY_VALUE_SNIPPETS,
+      autocompleteContext,
+    );
   }
   if (isQuerySuggestionContext(path)) {
-    return [...QUERY_LEAF_VALUE_SNIPPETS];
+    return filterAvailableValueSnippets(QUERY_LEAF_VALUE_SNIPPETS, autocompleteContext);
   }
   return [];
 }
 
 export function shouldSuggestFieldsForKey(path: JsonPathSegment[]) {
   const last = path[path.length - 1];
-  const secondLast = path[path.length - 2];
 
   if (isFieldQueryValueObjectContext(path)) {
     return false;
@@ -307,11 +336,14 @@ export function shouldSuggestFieldsForKey(path: JsonPathSegment[]) {
     return false;
   }
 
-  if (secondLast === "fields" && typeof last === "string") {
+  if (path.length === 2 && path[0] === "highlight" && last === "fields") {
     return true;
   }
 
-  if (last === "sort" || secondLast === "sort") {
+  if (
+    (path.length === 1 && last === "sort") ||
+    (path.length === 2 && path[0] === "sort" && typeof last === "number")
+  ) {
     return true;
   }
 
@@ -321,13 +353,31 @@ export function shouldSuggestFieldsForKey(path: JsonPathSegment[]) {
 export function shouldSuggestFieldsForStringValue(path: JsonPathSegment[]) {
   const last = path[path.length - 1];
   const secondLast = path[path.length - 2];
+  const thirdLast = path[path.length - 3];
 
   if (typeof last === "string" && FIELD_VALUE_KEYS.has(last)) {
-    return true;
+    if (
+      path.length === 2 &&
+      last === "field" &&
+      (path[0] === "collapse" || path[0] === "knn")
+    ) {
+      return true;
+    }
+
+    const aggregationProperties = selectAggregationPropertySuggestions(path.slice(0, -1));
+    if (aggregationProperties?.some((snippet) => snippet.label === last)) {
+      return true;
+    }
+
+    return isKnownQueryDefinitionPath(path.slice(0, -1));
   }
 
   if (typeof last === "number" && typeof secondLast === "string" && FIELD_ARRAY_VALUE_KEYS.has(secondLast)) {
-    return true;
+    if (path.length === 2) return true;
+    return secondLast === "fields" &&
+      typeof thirdLast === "string" &&
+      QUERY_FIELD_ARRAY_TYPES.has(thirdLast) &&
+      isKnownQueryDefinitionPath(path.slice(0, -2));
   }
 
   return false;

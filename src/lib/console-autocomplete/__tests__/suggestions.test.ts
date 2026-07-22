@@ -314,11 +314,18 @@ describe("shouldSuggestFieldsForKey", () => {
 
   it("does not suggest mapping fields for a query-like key below an unknown object", () => {
     expect(shouldSuggestFieldsForKey(["unknown", "term"])).toBe(false);
+    expect(shouldSuggestFieldsForKey(["unknown", "sort"])).toBe(false);
   });
 
   it("returns false for top-level and for highlight container", () => {
     expect(shouldSuggestFieldsForKey([])).toBe(false);
     expect(shouldSuggestFieldsForKey(["highlight"])).toBe(false);
+  });
+
+  it("只在 Search 根 sort 对象中提示字段键", () => {
+    expect(shouldSuggestFieldsForKey(["sort"])).toBe(true);
+    expect(shouldSuggestFieldsForKey(["sort", 0])).toBe(true);
+    expect(shouldSuggestFieldsForKey(["unknown", "sort", 0])).toBe(false);
   });
 });
 
@@ -330,6 +337,8 @@ describe("shouldSuggestFieldsForStringValue", () => {
 
   it("returns false otherwise", () => {
     expect(shouldSuggestFieldsForStringValue(["query", "match_all"])).toBe(false);
+    expect(shouldSuggestFieldsForStringValue(["unknown", "field"])).toBe(false);
+    expect(shouldSuggestFieldsForStringValue(["unknown", "path"])).toBe(false);
   });
 
   it("returns true for expanded field array and vector field values", () => {

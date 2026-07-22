@@ -22,7 +22,11 @@ import {
   shouldSuggestFieldsForKey,
   shouldSuggestFieldsForStringValue,
 } from "./suggestions";
-import type { ConsoleAutocompleteContext } from "./context";
+import {
+  extractIndexNamesFromPath,
+  resolveFieldNamesForTargets,
+  type ConsoleAutocompleteContext,
+} from "./context";
 import {
   filterAvailableSnippets,
   selectApiSegments,
@@ -185,11 +189,20 @@ function buildJsonSuggestions(
   const path = cursorInfo.path;
   const suggestionsList: monacoEditor.languages.CompletionItem[] = [];
   const allowFields = allowRootFieldKeys && path.length === 0;
+  const availableRootProperties = filterAvailableSnippets(
+    rootPropertySnippets,
+    autocompleteContext,
+  );
+  const pathHasAvailableRoot = typeof path[0] === "string" &&
+    availableRootProperties.some((snippet) => snippet.label === path[0]);
   if (allowRootFieldKeys && path.length > 0) return [];
 
   if (cursorInfo.insideString || insideStringFallback) {
     if (cursorInfo.insideStringAsKey) {
-      if ((allowFields || shouldSuggestFieldsForKey(path)) && autocompleteContext.fieldNames.length > 0) {
+      if (
+        (allowFields || (pathHasAvailableRoot && shouldSuggestFieldsForKey(path))) &&
+        autocompleteContext.fieldNames.length > 0
+      ) {
         suggestionsList.push(
           ...buildFieldSuggestions(monacoInstance, autocompleteContext.fieldNames, replaceRange, "string-value"),
         );
@@ -197,7 +210,11 @@ function buildJsonSuggestions(
       return suggestionsList;
     }
 
-    if (shouldSuggestFieldsForStringValue(path) && autocompleteContext.fieldNames.length > 0) {
+    if (
+      pathHasAvailableRoot &&
+      shouldSuggestFieldsForStringValue(path) &&
+      autocompleteContext.fieldNames.length > 0
+    ) {
       suggestionsList.push(
         ...buildFieldSuggestions(monacoInstance, autocompleteContext.fieldNames, replaceRange, "string-value"),
       );
@@ -206,14 +223,17 @@ function buildJsonSuggestions(
   }
 
   if (!preferValueSnippets) {
-    if ((allowFields || shouldSuggestFieldsForKey(path)) && autocompleteContext.fieldNames.length > 0) {
+    if (
+      (allowFields || (pathHasAvailableRoot && shouldSuggestFieldsForKey(path))) &&
+      autocompleteContext.fieldNames.length > 0
+    ) {
       suggestionsList.push(
         ...buildFieldSuggestions(monacoInstance, autocompleteContext.fieldNames, replaceRange, "key"),
       );
     }
 
     const properties = path.length === 0
-      ? filterAvailableSnippets(rootPropertySnippets, autocompleteContext)
+      ? availableRootProperties
       : selectPropertySuggestions(path, autocompleteContext, cursorInfo.objectFrames);
     for (const snippet of properties) {
       suggestionsList.push(renderSnippet(monacoInstance, snippet, replaceRange, false));
@@ -222,7 +242,15 @@ function buildJsonSuggestions(
     return suggestionsList;
   }
 
-  const values = selectValueSuggestions(path);
+  const rootKey = path[0];
+  if (
+    typeof rootKey !== "string" ||
+    !availableRootProperties.some((snippet) => snippet.label === rootKey)
+  ) {
+    return [];
+  }
+
+  const values = selectValueSuggestions(path, autocompleteContext);
   for (const snippet of values) {
     suggestionsList.push(renderSnippet(monacoInstance, snippet, replaceRange, false));
   }
@@ -274,11 +302,23 @@ function buildBodySuggestions(
     ? `POST /_search\n${bodyContext.currentLine}`
     : textBeforeCursor;
   const allowRootFieldKeys = bodyContext.kind === "document-json" || bodyContext.kind === "bulk-source";
+  const usesNdjsonTarget = bodyContext.kind === "bulk-source" ||
+    bodyContext.kind === "bulk-update" ||
+    bodyContext.kind === "msearch-body";
+  const bodyAutocompleteContext = usesNdjsonTarget
+    ? {
+        ...autocompleteContext,
+        fieldNames: resolveFieldNamesForTargets(
+          bodyContext.targetNames ?? extractIndexNamesFromPath(autocompleteContext.request.path),
+          autocompleteContext.fieldNamesByTarget,
+        ),
+      }
+    : autocompleteContext;
   return buildJsonSuggestions(
     monacoInstance,
     model,
     position,
-    autocompleteContext,
+    bodyAutocompleteContext,
     analysisPrefix,
     rootSnippets,
     allowRootFieldKeys,

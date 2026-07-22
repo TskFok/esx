@@ -35,31 +35,95 @@ export interface ConsoleRequestContext {
   bodyMode: ConsoleBodyMode;
 }
 
+const GET_OR_POST = new Set(["GET", "POST"]);
+const POST_OR_PUT = new Set(["POST", "PUT"]);
+const GET_OR_PUT = new Set(["GET", "PUT"]);
+const CAT_ENDPOINTS = new Set(["indices", "aliases", "nodes", "health", "shards"]);
+
+function isTargetSegment(segment: string | undefined) {
+  return !!segment && (!segment.startsWith("_") || segment === "_all");
+}
+
+function isGlobalOrTargetEndpoint(segments: string[], endpoint: string) {
+  return (
+    (segments.length === 1 && segments[0] === endpoint) ||
+    (segments.length === 2 && segments[1] === endpoint && isTargetSegment(segments[0]))
+  );
+}
+
+function isSnapshotEndpoint(method: string, segments: string[]) {
+  if (segments[0] !== "_snapshot") return false;
+  if (segments.length === 1) return method === "GET";
+  if (segments.length === 2) return method === "GET" || method === "PUT" || method === "DELETE";
+  if (segments.length === 3) {
+    return method === "GET" || method === "PUT" || method === "POST" || method === "DELETE";
+  }
+  return segments.length === 4 && segments[3] === "_restore" && method === "POST";
+}
+
 function classifyEndpoint(method: string, segments: string[]): ConsoleEndpoint {
-  const first = segments[0];
-  const last = segments[segments.length - 1];
   if (segments.length === 0) return "root";
-  if (first === "_search" && segments[1] === "scroll") return "scroll";
-  if (last === "_search") return "search";
-  if (last === "_count") return "count";
-  if (last === "_bulk") return "bulk";
-  if (last === "_msearch") return "msearch";
-  if (first === "_cat") return "cat";
-  if (last === "_mapping") return "mapping";
-  if (last === "_settings") return "settings";
-  if (first === "_tasks") return "tasks";
-  if (first === "_snapshot") return "snapshot";
-  if (segments.length >= 3 && segments[segments.length - 2] === "_update" && method === "POST") {
+  if (
+    GET_OR_POST.has(method) &&
+    segments.length === 2 &&
+    segments[0] === "_search" &&
+    segments[1] === "scroll"
+  ) {
+    return "scroll";
+  }
+  if (GET_OR_POST.has(method) && isGlobalOrTargetEndpoint(segments, "_search")) return "search";
+  if (GET_OR_POST.has(method) && isGlobalOrTargetEndpoint(segments, "_count")) return "count";
+  if (POST_OR_PUT.has(method) && isGlobalOrTargetEndpoint(segments, "_bulk")) return "bulk";
+  if (GET_OR_POST.has(method) && isGlobalOrTargetEndpoint(segments, "_msearch")) return "msearch";
+  if (
+    method === "GET" &&
+    segments.length === 2 &&
+    segments[0] === "_cat" &&
+    CAT_ENDPOINTS.has(segments[1] ?? "")
+  ) {
+    return "cat";
+  }
+  if (
+    (segments.length === 1 && segments[0] === "_mapping" && method === "GET") ||
+    (segments.length === 2 && segments[1] === "_mapping" &&
+      isTargetSegment(segments[0]) && GET_OR_PUT.has(method))
+  ) {
+    return "mapping";
+  }
+  if (
+    (segments.length === 1 && segments[0] === "_settings" && method === "GET") ||
+    (segments.length === 2 && segments[1] === "_settings" &&
+      isTargetSegment(segments[0]) && GET_OR_PUT.has(method))
+  ) {
+    return "settings";
+  }
+  if (method === "GET" && segments.length === 1 && segments[0] === "_tasks") return "tasks";
+  if (isSnapshotEndpoint(method, segments)) return "snapshot";
+  if (
+    segments.length === 3 &&
+    segments[1] === "_update" &&
+    isTargetSegment(segments[0]) &&
+    method === "POST"
+  ) {
     return "update-document";
   }
   if (
-    segments.length >= 2 &&
+    segments.length === 2 &&
     segments[1] === "_doc" &&
-    (method === "POST" || method === "PUT")
+    isTargetSegment(segments[0]) &&
+    method === "POST"
   ) {
     return "index-document";
   }
-  if (segments.length === 1 && !first?.startsWith("_") && method === "PUT") {
+  if (
+    segments.length === 3 &&
+    segments[1] === "_doc" &&
+    isTargetSegment(segments[0]) &&
+    POST_OR_PUT.has(method)
+  ) {
+    return "index-document";
+  }
+  if (segments.length === 1 && isTargetSegment(segments[0]) && method === "PUT") {
     return "create-index";
   }
   return "unknown";
