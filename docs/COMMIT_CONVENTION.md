@@ -15,7 +15,7 @@
 feat: 添加连接导入导出
 fix: 修复 SSH 隧道断开后重连失败
 refactor(console): 拆分请求解析逻辑
-chore: 发布 v0.2.0
+发布：v0.2.0
 ```
 
 ## Type 说明
@@ -31,12 +31,12 @@ chore: 发布 v0.2.0
 | `docs` | 文档 | 文档 |
 | `test` | 测试 | 测试 |
 
-不在上表中的 type 不会出现在 Release Notes 中。
+不在上表中的 type 不会出现在 Release Notes 中。版本发布提交使用 `发布：vX.Y.Z`，不纳入 Release Notes 分组。
 
 ## 发布流程
 
 1. 日常开发按上述规范提交到 `master`。
-2. 在 `master` 分支执行 `pnpm release`（或 `--minor` / `--major`）升版并打 tag。
+2. 在与远端同步的分支执行 `pnpm release`（默认 patch 升版），或 `pnpm release x.y.z` 指定版本；打包失败时可 `pnpm release --current` 重发当前版本。
 3. 推送 tag 后，GitHub Actions（`.github/workflows/release.yml`）自动构建并创建 Release。
 4. Release Notes 由 `scripts/lib/changelog.mjs` 根据 tag 区间内符合规范的 commit 自动生成，并按 type 分组。
 

@@ -32,6 +32,7 @@ describe("parseConventionalCommit", () => {
 describe("isReleaseCommit", () => {
   it("识别发布 commit", () => {
     expect(isReleaseCommit("chore: 发布 v0.2.0")).toBe(true);
+    expect(isReleaseCommit("发布：v0.2.0")).toBe(true);
     expect(isReleaseCommit("发布 v0.2.0")).toBe(true);
     expect(isReleaseCommit("chore: 更新依赖")).toBe(false);
   });
@@ -42,7 +43,7 @@ describe("groupCommitsByType", () => {
     const groups = groupCommitsByType([
       { hash: "abc1234", subject: "feat: 添加导出" },
       { hash: "def5678", subject: "fix: 修复导入" },
-      { hash: "ghi9012", subject: "chore: 发布 v0.2.0" },
+      { hash: "ghi9012", subject: "发布：v0.2.0" },
       { hash: "jkl3456", subject: "style: 调整样式" },
     ]);
 

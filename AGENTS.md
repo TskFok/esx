@@ -33,10 +33,10 @@
 ```text
 feat: 添加连接导入导出
 fix: 修复 SSH 重连失败
-chore: 发布 v0.2.0
+发布：v0.2.0
 ```
 
-发布版本时使用 `chore: 发布 vX.Y.Z`。完整发布流程见 [docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md)。
+发布版本时执行 `pnpm release`（提交信息为 `发布：vX.Y.Z`）。完整发布流程见 [docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md)。
 
 ## 开发约定
 

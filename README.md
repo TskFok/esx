@@ -313,7 +313,7 @@ POST /my-index/_search
 
 ## 提交与发布
 
-日常提交遵循 Conventional Commits：`feat:`、`fix:` 等英文 type 前缀 + 中文描述。发布时在 `master` 执行 `pnpm release`，GitHub Actions 会按 type 分组生成 Release Notes。详见 [docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md)。
+日常提交遵循 Conventional Commits：`feat:`、`fix:` 等英文 type 前缀 + 中文描述。发布时执行 `pnpm release`（或 `pnpm release x.y.z` / `pnpm release --current`），GitHub Actions 会按 type 分组生成 Release Notes。详见 [docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md)。
 
 ## 本地开发建议
 

@@ -45,7 +45,11 @@ export function parseConventionalCommit(subject) {
  */
 export function isReleaseCommit(subject) {
   const trimmed = subject.trim();
-  return /^chore:\s*发布\s+v?\d+\.\d+\.\d+/i.test(trimmed) || /^发布\s+v/i.test(trimmed);
+  return (
+    /^chore:\s*发布\s+v?\d+\.\d+\.\d+/i.test(trimmed) ||
+    /^发布[：:]\s*v?\d+\.\d+\.\d+/i.test(trimmed) ||
+    /^发布\s+v/i.test(trimmed)
+  );
 }
 
 /**
