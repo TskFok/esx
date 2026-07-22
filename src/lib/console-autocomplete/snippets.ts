@@ -28,6 +28,7 @@ export type ApiSegment = {
   documentation: string;
   insertText: string;
   availability?: SnippetAvailability;
+  methods?: readonly string[];
 };
 
 function propertySnippet(
@@ -81,6 +82,14 @@ export const INDEX_API_SEGMENTS: ReadonlyArray<ApiSegment> = [
   { label: "_bulk", detail: "索引 bulk", documentation: "对当前索引执行 bulk。", insertText: "_bulk" },
   { label: "_update_by_query", detail: "按查询更新", documentation: "对当前索引执行 update by query。", insertText: "_update_by_query" },
   { label: "_delete_by_query", detail: "按查询删除", documentation: "对当前索引执行 delete by query。", insertText: "_delete_by_query" },
+];
+
+export const CAT_API_SEGMENTS: ReadonlyArray<ApiSegment> = [
+  { label: "indices", detail: "索引列表", documentation: "列出索引。", insertText: "indices?v=true" },
+  { label: "aliases", detail: "别名列表", documentation: "列出 alias。", insertText: "aliases?v=true" },
+  { label: "nodes", detail: "节点列表", documentation: "列出节点。", insertText: "nodes?v=true" },
+  { label: "health", detail: "集群健康", documentation: "显示集群健康摘要。", insertText: "health?v=true" },
+  { label: "shards", detail: "分片列表", documentation: "列出分片。", insertText: "shards?v=true" },
 ];
 
 export const HTTP_METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"] as const;

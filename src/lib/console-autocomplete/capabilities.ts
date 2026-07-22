@@ -3,6 +3,7 @@ import type {
   SearchClusterProduct,
 } from "../../types/requests";
 import {
+  CAT_API_SEGMENTS,
   GLOBAL_API_SEGMENTS,
   INDEX_API_SEGMENTS,
   type ApiSegment,
@@ -220,10 +221,63 @@ function deduplicateByLabel<T extends { label: string }>(list: readonly T[]) {
   return list.filter((item, index, array) => array.findIndex((other) => other.label === item.label) === index);
 }
 
-export function selectApiSegments(scope: "global" | "index", context?: CompletionCapabilityContext | null): ApiSegment[] {
-  const base = scope === "index" ? INDEX_API_SEGMENTS : GLOBAL_API_SEGMENTS;
+const GLOBAL_API_METHODS: Record<string, readonly string[]> = {
+  "_cluster/health": ["GET"],
+  "_cat/indices": ["GET"],
+  "_search": ["GET", "POST"],
+  "_count": ["GET", "POST"],
+  "_mapping": ["GET"],
+  "_settings": ["GET"],
+  "_aliases": ["GET"],
+  "_bulk": ["POST", "PUT"],
+  "_msearch": ["GET", "POST"],
+  "_tasks": ["GET"],
+  "_nodes/stats": ["GET"],
+  "_security/_authenticate": ["GET"],
+  "_license": ["GET"],
+  "_ml/anomaly_detectors": ["GET"],
+  "_plugins/_security/api/account": ["GET"],
+  "_plugins/_security/authinfo": ["GET"],
+  "_plugins/_ism/policies": ["GET"],
+  "_plugins/_knn/stats": ["GET"],
+};
+
+const INDEX_API_METHODS: Record<string, readonly string[]> = {
+  "_search": ["GET", "POST"],
+  "_count": ["GET", "POST"],
+  "_mapping": ["GET", "PUT"],
+  "_settings": ["GET", "PUT"],
+  "_refresh": ["GET", "POST"],
+  "_doc": ["GET", "POST", "PUT", "DELETE", "HEAD"],
+  "_bulk": ["POST", "PUT"],
+  "_update_by_query": ["POST"],
+  "_delete_by_query": ["POST"],
+};
+
+const CAT_API_METHODS: Record<string, readonly string[]> = Object.fromEntries(
+  CAT_API_SEGMENTS.map((segment) => [segment.label, ["GET"] as const]),
+);
+
+export function selectApiSegments(
+  scope: "global" | "index" | "cat",
+  context: CompletionCapabilityContext | null | undefined,
+  method: string,
+): ApiSegment[] {
+  const base = scope === "index"
+    ? INDEX_API_SEGMENTS
+    : scope === "cat"
+      ? CAT_API_SEGMENTS
+      : GLOBAL_API_SEGMENTS;
   const productSpecific = scope === "global" ? PRODUCT_GLOBAL_API_SEGMENTS : [];
-  return deduplicateByLabel(filterAvailableSnippets([...base, ...productSpecific], context));
+  const methods = scope === "index"
+    ? INDEX_API_METHODS
+    : scope === "cat"
+      ? CAT_API_METHODS
+      : GLOBAL_API_METHODS;
+
+  return deduplicateByLabel(filterAvailableSnippets([...base, ...productSpecific], context))
+    .filter((segment) => methods[segment.label]?.includes(method) === true)
+    .map((segment) => ({ ...segment, methods: methods[segment.label] }));
 }
 
 const COMMON_QUERY_PARAMETERS: ReadonlyArray<QueryParameterSnippet> = [

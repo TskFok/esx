@@ -96,17 +96,6 @@ function metadata(overrides: Partial<ConnectionSearchMetadata["cluster"]>): Conn
   };
 }
 
-function completionLabels(content: string, searchMetadata: ConnectionSearchMetadata) {
-  const context = buildConsoleAutocompleteContext([], content, searchMetadata);
-  const suggestions = provideConsoleCompletionItems(
-    fakeMonaco,
-    modelFor(content),
-    { lineNumber: 1, column: content.length + 1 } as never,
-    context,
-  );
-  return suggestions.map((item) => String(item.label));
-}
-
 function completionLabelsAt(content: string, lineNumber: number, column: number, searchMetadata: ConnectionSearchMetadata) {
   const context = buildConsoleAutocompleteContext([], content, searchMetadata);
   const suggestions = provideConsoleCompletionItems(
@@ -118,7 +107,45 @@ function completionLabelsAt(content: string, lineNumber: number, column: number,
   return suggestions.map((item) => String(item.label));
 }
 
+function completionLabels(content: string, searchMetadata = metadata({})) {
+  const marker = "<cursor>";
+  const markerOffset = content.indexOf(marker);
+  const normalized = markerOffset >= 0 ? content.replace(marker, "") : content;
+  const cursorOffset = markerOffset >= 0 ? markerOffset : normalized.length;
+  const beforeCursor = normalized.slice(0, cursorOffset);
+  const lines = beforeCursor.split(/\r?\n/);
+  const lineNumber = lines.length;
+  const column = (lines[lineNumber - 1]?.length ?? 0) + 1;
+  return completionLabelsAt(normalized, lineNumber, column, searchMetadata);
+}
+
 describe("provideConsoleCompletionItems", () => {
+  it("only suggests index-level APIs after an index path", () => {
+    const labels = completionLabels("GET /orders/");
+
+    expect(labels).toEqual(expect.arrayContaining(["_search", "_mapping", "_refresh"]));
+    expect(labels).not.toEqual(expect.arrayContaining(["_cluster/health", "_cat/indices", "orders"]));
+  });
+
+  it("only suggests relative child paths in the cat namespace", () => {
+    const labels = completionLabels("GET /_cat/");
+
+    expect(labels).toContain("indices");
+    expect(labels).not.toContain("_cat/indices");
+    expect(labels).not.toContain("orders");
+  });
+
+  it("only suggests global APIs allowed for POST at the root path", () => {
+    const labels = completionLabels("POST /");
+
+    expect(labels).toEqual(expect.arrayContaining(["_search", "_bulk", "_msearch"]));
+    expect(labels).not.toContain("_cluster/health");
+  });
+
+  it("does not fall back to global or index suggestions after a document API", () => {
+    expect(completionLabels("GET /orders/_doc/")).toEqual([]);
+  });
+
   it("suggests search query parameters after question mark", () => {
     const labels = completionLabels("GET /_search?", metadata({}));
 

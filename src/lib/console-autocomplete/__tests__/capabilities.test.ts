@@ -45,11 +45,11 @@ describe("selectApiSegments", () => {
       product: "elasticsearch",
       version: { number: "8.12.1", major: 8, minor: 12 },
       license: { type: "basic", status: "active", source: "elastic-license" },
-    })));
+    }), "GET"));
     const osLabels = labelsOf(selectApiSegments("global", context({
       product: "opensearch",
       version: { number: "2.19.0", major: 2, minor: 19 },
-    })));
+    }), "GET"));
 
     expect(esLabels).toEqual(expect.arrayContaining(["_security/_authenticate", "_license"]));
     expect(esLabels).not.toEqual(expect.arrayContaining(["_plugins/_security/api/account"]));
@@ -62,19 +62,19 @@ describe("selectApiSegments", () => {
       product: "elasticsearch",
       version: { number: "8.12.1", major: 8, minor: 12 },
       license: { type: "basic", status: "active", source: "elastic-license" },
-    })));
+    }), "GET"));
     const platinumLabels = labelsOf(selectApiSegments("global", context({
       product: "elasticsearch",
       version: { number: "8.12.1", major: 8, minor: 12 },
       license: { type: "platinum", status: "active", source: "elastic-license" },
-    })));
+    }), "GET"));
 
     expect(basicLabels).not.toEqual(expect.arrayContaining(["_ml/anomaly_detectors"]));
     expect(platinumLabels).toEqual(expect.arrayContaining(["_ml/anomaly_detectors"]));
   });
 
   it("uses conservative common APIs for unknown products", () => {
-    const labels = labelsOf(selectApiSegments("global", context({ product: "unknown" })));
+    const labels = labelsOf(selectApiSegments("global", context({ product: "unknown" }), "GET"));
 
     expect(labels).toEqual(expect.arrayContaining(["_cluster/health", "_search"]));
     expect(labels).not.toEqual(expect.arrayContaining([
@@ -82,6 +82,22 @@ describe("selectApiSegments", () => {
       "_plugins/_security/api/account",
       "_ml/anomaly_detectors",
     ]));
+  });
+
+  it("filters global APIs by HTTP method", () => {
+    const labels = labelsOf(selectApiSegments("global", context({ product: "unknown" }), "POST"));
+
+    expect(labels).toEqual(expect.arrayContaining(["_search", "_bulk", "_msearch"]));
+    expect(labels).not.toContain("_cluster/health");
+  });
+
+  it("returns relative GET-only API names for the cat scope", () => {
+    const getLabels = labelsOf(selectApiSegments("cat", context({ product: "unknown" }), "GET"));
+    const postLabels = labelsOf(selectApiSegments("cat", context({ product: "unknown" }), "POST"));
+
+    expect(getLabels).toEqual(expect.arrayContaining(["indices", "aliases", "nodes", "health", "shards"]));
+    expect(getLabels).not.toContain("_cat/indices");
+    expect(postLabels).toEqual([]);
   });
 });
 

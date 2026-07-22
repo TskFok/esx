@@ -279,6 +279,21 @@ function buildQueryParameterSuggestions(
   }));
 }
 
+type PathSuggestionScope = "root" | "index" | "cat" | "none";
+
+function resolvePathSuggestionScope(
+  lineContent: string,
+  segmentRange: monacoEditor.IRange,
+): PathSuggestionScope {
+  const prefix = lineContent.slice(0, segmentRange.startColumn - 1);
+  const pathPrefix = prefix.trim().split(/\s+/, 2)[1]?.split("?", 1)[0] ?? "";
+  const completed = pathPrefix.split("/").filter(Boolean);
+  if (completed.length === 0) return "root";
+  if (completed.length === 1 && completed[0] === "_cat") return "cat";
+  if (completed.length === 1 && !completed[0]?.startsWith("_")) return "index";
+  return "none";
+}
+
 function buildPathSuggestions(
   monacoInstance: typeof monacoEditor,
   lineContent: string,
@@ -286,15 +301,10 @@ function buildPathSuggestions(
   autocompleteContext: ConsoleAutocompleteContext,
 ): monacoEditor.languages.CompletionItem[] {
   const range = getPathSegmentRange(monacoInstance, lineContent, column);
-  const trimmedLine = lineContent.trim();
-  const parts = trimmedLine.split(/\s+/);
-  const pathText = parts.slice(1).join(" ");
-  const pathWithoutQuery = pathText.split("?", 1)[0] ?? "";
-  const pathPrefix = lineContent.slice(0, column - 1);
-  const segmentCount = (pathPrefix.split(/\s+/, 2)[1] ?? "").split("/").filter(Boolean).length;
-  const firstSegment = pathWithoutQuery.split("/").filter(Boolean)[0] ?? "";
-  const currentSegment = lineContent.slice(range.startColumn - 1, range.endColumn - 1);
-  const looksLikeGlobalApi = currentSegment.startsWith("_") || (segmentCount <= 1 && firstSegment.startsWith("_"));
+  const scope = resolvePathSuggestionScope(lineContent, range);
+  if (scope === "none") {
+    return [];
+  }
 
   const indexSuggestions = autocompleteContext.indexNames.map((indexName, index) => ({
     label: indexName,
@@ -324,8 +334,12 @@ function buildPathSuggestions(
     sortText: `2${index.toString().padStart(3, "0")}-${targetName}`,
   }));
 
-  const apiSegments: ReadonlyArray<ApiSegment> =
-    selectApiSegments(segmentCount > 1 && firstSegment && !firstSegment.startsWith("_") ? "index" : "global", autocompleteContext);
+  const apiScope = scope === "root" ? "global" : scope;
+  const apiSegments: ReadonlyArray<ApiSegment> = selectApiSegments(
+    apiScope,
+    autocompleteContext,
+    autocompleteContext.request.method,
+  );
 
   const apiSuggestions = apiSegments.map((segment, index) => ({
     label: segment.label,
@@ -338,8 +352,10 @@ function buildPathSuggestions(
     sortText: `3${index.toString().padStart(3, "0")}-${segment.label}`,
   }));
 
-  const targetSuggestions = [...indexSuggestions, ...aliasSuggestions, ...historySuggestions];
-  return looksLikeGlobalApi ? [...apiSuggestions, ...targetSuggestions] : [...targetSuggestions, ...apiSuggestions];
+  const targetSuggestions = scope === "root"
+    ? [...indexSuggestions, ...aliasSuggestions, ...historySuggestions]
+    : [];
+  return [...targetSuggestions, ...apiSuggestions];
 }
 
 export function provideConsoleCompletionItems(
