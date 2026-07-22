@@ -952,7 +952,7 @@ dependencies = [
 
 [[package]]
 name = "esx"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "keyring",
  "native-tls",
