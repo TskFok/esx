@@ -14,6 +14,10 @@ function labelsOf(list: readonly { label: string }[]) {
   return list.map((item) => item.label);
 }
 
+function expectLabelsAbsent(labels: readonly string[], forbidden: readonly string[]) {
+  expect(labels.filter((label) => forbidden.includes(label))).toEqual([]);
+}
+
 function cluster(overrides: Partial<ConnectionSearchClusterMetadata>): ConnectionSearchClusterMetadata {
   return {
     ...DEFAULT_CLUSTER_METADATA,
@@ -53,9 +57,9 @@ describe("selectApiSegments", () => {
     }), "GET"));
 
     expect(esLabels).toEqual(expect.arrayContaining(["_security/_authenticate", "_license"]));
-    expect(esLabels).not.toEqual(expect.arrayContaining(["_plugins/_security/api/account"]));
+    expectLabelsAbsent(esLabels, ["_plugins/_security/api/account"]);
     expect(osLabels).toEqual(expect.arrayContaining(["_plugins/_security/api/account", "_plugins/_ism/policies"]));
-    expect(osLabels).not.toEqual(expect.arrayContaining(["_security/_authenticate", "_license"]));
+    expectLabelsAbsent(osLabels, ["_security/_authenticate", "_license"]);
   });
 
   it("hides paid Elasticsearch APIs for basic or unknown licenses", () => {
@@ -70,7 +74,7 @@ describe("selectApiSegments", () => {
       license: { type: "platinum", status: "active", source: "elastic-license" },
     }), "GET"));
 
-    expect(basicLabels).not.toEqual(expect.arrayContaining(["_ml/anomaly_detectors"]));
+    expectLabelsAbsent(basicLabels, ["_ml/anomaly_detectors"]);
     expect(platinumLabels).toEqual(expect.arrayContaining(["_ml/anomaly_detectors"]));
   });
 
@@ -78,11 +82,11 @@ describe("selectApiSegments", () => {
     const labels = labelsOf(selectApiSegments("global", context({ product: "unknown" }), "GET"));
 
     expect(labels).toEqual(expect.arrayContaining(["_cluster/health", "_search"]));
-    expect(labels).not.toEqual(expect.arrayContaining([
+    expectLabelsAbsent(labels, [
       "_security/_authenticate",
       "_plugins/_security/api/account",
       "_ml/anomaly_detectors",
-    ]));
+    ]);
   });
 
   it("filters global APIs by HTTP method", () => {
@@ -121,7 +125,7 @@ describe("selectQueryParameterSnippets", () => {
     const labels = labelsOf(selectQueryParameterSnippets("scroll", context({})));
 
     expect(labels).toEqual(expect.arrayContaining(["scroll", "scroll_id", "rest_total_hits_as_int"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["from", "size", "sort", "search_type"]));
+    expectLabelsAbsent(labels, ["from", "size", "sort", "search_type"]);
   });
 
   it("does not return already used query parameters", () => {
@@ -215,7 +219,8 @@ describe("DSL capability filtering", () => {
       version: { number: "8.14.3", major: 8, minor: 14 },
     })));
 
-    expect(result).not.toEqual(expect.arrayContaining(["semantic", "sparse_vector"]));
+    expect(result).not.toContain("semantic");
+    expect(result).not.toContain("sparse_vector");
   });
 
   it("unknown versions hide strongly version-constrained candidates", () => {
@@ -224,7 +229,9 @@ describe("DSL capability filtering", () => {
       version: { number: null, major: null, minor: null },
     })));
 
-    expect(result).not.toEqual(expect.arrayContaining(["knn", "semantic", "sparse_vector"]));
+    expect(result).not.toContain("knn");
+    expect(result).not.toContain("semantic");
+    expect(result).not.toContain("sparse_vector");
   });
 
   it("OpenSearch knn uses a dynamic field and vector parameter", () => {

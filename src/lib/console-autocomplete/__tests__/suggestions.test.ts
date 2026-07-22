@@ -11,6 +11,10 @@ function labelsOf(list: readonly { label: string }[]) {
   return list.map((item) => item.label);
 }
 
+function expectLabelsAbsent(labels: readonly string[], forbidden: readonly string[]) {
+  expect(labels.filter((label) => forbidden.includes(label))).toEqual([]);
+}
+
 function elasticsearchContext(major: number, minor: number) {
   return {
     cluster: {
@@ -42,7 +46,7 @@ describe("selectPropertySuggestions", () => {
   it("suggests leaf queries inside must[N]", () => {
     const labels = labelsOf(selectPropertySuggestions(["query", "bool", "must", 0]));
     expect(labels).toEqual(expect.arrayContaining(["match", "term", "range", "exists"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["size", "aggs"]));
+    expectLabelsAbsent(labels, ["size", "aggs"]);
   });
 
   it("suggests placeholder agg_name directly under aggs", () => {
@@ -58,19 +62,19 @@ describe("selectPropertySuggestions", () => {
   it("suggests terms aggregation properties inside aggs.<name>.terms", () => {
     const labels = labelsOf(selectPropertySuggestions(["aggs", "key", "terms"]));
     expect(labels).toEqual(expect.arrayContaining(["field", "size", "order"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["date_histogram", "avg", "aggs"]));
+    expectLabelsAbsent(labels, ["date_histogram", "avg", "aggs"]);
   });
 
   it("suggests terms aggregation properties inside aggregations.<name>.terms", () => {
     const labels = labelsOf(selectPropertySuggestions(["aggregations", "key", "terms"]));
     expect(labels).toEqual(expect.arrayContaining(["field", "size", "order"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["date_histogram", "avg", "aggs"]));
+    expectLabelsAbsent(labels, ["date_histogram", "avg", "aggs"]);
   });
 
   it("suggests aggregation properties inside nested sub aggregations", () => {
     const labels = labelsOf(selectPropertySuggestions(["aggs", "outer", "aggs", "inner", "terms"]));
     expect(labels).toEqual(expect.arrayContaining(["field", "size", "order"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["date_histogram", "avg", "aggs"]));
+    expectLabelsAbsent(labels, ["date_histogram", "avg", "aggs"]);
   });
 
   it("suggests type-specific properties for aggregation leaf objects", () => {
@@ -139,7 +143,7 @@ describe("selectPropertySuggestions", () => {
     ));
 
     expect(labels).toEqual(expect.arrayContaining(["value", "boost", "case_insensitive"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["status", "bool", "query"]));
+    expectLabelsAbsent(labels, ["status", "bool", "query"]);
   });
 
   it("filters case_insensitive by product version inside a term field object", () => {
@@ -160,7 +164,7 @@ describe("selectPropertySuggestions", () => {
     const labels = labelsOf(selectPropertySuggestions(["query", "range", "created_at"]));
 
     expect(labels).toEqual(expect.arrayContaining(["gt", "gte", "lt", "lte", "format", "time_zone", "boost"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["created_at", "bool", "query"]));
+    expectLabelsAbsent(labels, ["created_at", "bool", "query"]);
   });
 
   it("suggests long-form parameters inside supported field query objects", () => {
@@ -180,16 +184,16 @@ describe("selectPropertySuggestions", () => {
     const spanMultiMatch = labelsOf(selectPropertySuggestions(["query", "span_multi", "match"]));
 
     expect(clauses).toEqual(expect.arrayContaining(["span_term", "span_first", "span_multi"]));
-    expect(clauses).not.toEqual(expect.arrayContaining(["match", "knn", "semantic"]));
+    expectLabelsAbsent(clauses, ["match", "knn", "semantic"]);
     expect(spanMultiMatch).toEqual(expect.arrayContaining(["fuzzy", "prefix", "range", "regexp", "wildcard"]));
-    expect(spanMultiMatch).not.toEqual(expect.arrayContaining(["match", "term", "bool"]));
+    expectLabelsAbsent(spanMultiMatch, ["match", "term", "bool"]);
   });
 
   it("restricts span_or clauses to the Span query family", () => {
     const labels = labelsOf(selectPropertySuggestions(["query", "span_or", "clauses", 0]));
 
     expect(labels).toEqual(expect.arrayContaining(["span_term", "span_first", "span_multi"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["match", "term", "bool"]));
+    expectLabelsAbsent(labels, ["match", "term", "bool"]);
   });
 
   it("does not infer Query DSL from an unknown filter or term path", () => {
@@ -244,7 +248,7 @@ describe("selectPropertySuggestions", () => {
     expect(topLevel).toEqual(expect.arrayContaining(["global", "terms"]));
     expect(topLevel).not.toContain("reverse_nested");
     expect(child).toEqual(expect.arrayContaining(["terms", "filter"]));
-    expect(child).not.toEqual(expect.arrayContaining(["global", "reverse_nested"]));
+    expectLabelsAbsent(child, ["global", "reverse_nested"]);
     expect(nestedChild).toContain("reverse_nested");
     expect(nestedChild).not.toContain("global");
   });
@@ -254,7 +258,7 @@ describe("selectValueSuggestions", () => {
   it("includes bool/match/term for array item position under must", () => {
     const labels = labelsOf(selectValueSuggestions(["query", "bool", "must"]));
     expect(labels).toEqual(expect.arrayContaining(["bool", "match", "term", "range", "exists"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["true", "false", "null"]));
+    expectLabelsAbsent(labels, ["true", "false", "null"]);
   });
 
   it("returns no suggestions for an unknown scalar value position", () => {

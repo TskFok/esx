@@ -119,6 +119,10 @@ function completionLabels(content: string, searchMetadata = metadata({})) {
   return completionSuggestions(content, searchMetadata).map((item) => String(item.label));
 }
 
+function expectLabelsAbsent(labels: readonly string[], forbidden: readonly string[]) {
+  expect(labels.filter((label) => forbidden.includes(label))).toEqual([]);
+}
+
 function completionSuggestions(content: string, searchMetadata = metadata({})) {
   const marker = "<cursor>";
   const markerOffset = content.indexOf(marker);
@@ -142,7 +146,9 @@ describe("provideConsoleCompletionItems", () => {
     const labels = completionLabels("GET /orders/");
 
     expect(labels).toEqual(expect.arrayContaining(["_search", "_mapping", "_refresh"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["_cluster/health", "_cat/indices", "orders"]));
+    expect(labels).not.toContain("_cluster/health");
+    expect(labels).not.toContain("_cat/indices");
+    expect(labels).not.toContain("orders");
   });
 
   it("only suggests relative child paths in the cat namespace", () => {
@@ -168,7 +174,7 @@ describe("provideConsoleCompletionItems", () => {
     const labels = completionLabels("GET /_search?", metadata({}));
 
     expect(labels).toEqual(expect.arrayContaining(["pretty", "size", "allow_partial_search_results"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["_cluster/health", "_cat/indices"]));
+    expectLabelsAbsent(labels, ["_cluster/health", "_cat/indices"]);
   });
 
   it("suggests cat query parameters after ampersand", () => {
@@ -193,7 +199,7 @@ describe("provideConsoleCompletionItems", () => {
     const labels = completionLabels("POST /_search/scroll?");
 
     expect(labels).toEqual(expect.arrayContaining(["scroll", "scroll_id", "rest_total_hits_as_int"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["from", "size", "sort", "search_type"]));
+    expectLabelsAbsent(labels, ["from", "size", "sort", "search_type"]);
   });
 
   it("does not suggest an already used query parameter", () => {
@@ -207,7 +213,7 @@ describe("provideConsoleCompletionItems", () => {
     const labels = completionLabels("GET /orders/_search?pretty=");
 
     expect(labels).toEqual(expect.arrayContaining(["true", "false"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["from", "size", "pretty"]));
+    expectLabelsAbsent(labels, ["from", "size", "pretty"]);
   });
 
   it("suggests only legal enum values", () => {
@@ -367,14 +373,14 @@ describe("provideConsoleCompletionItems", () => {
     const labels = completionLabels('POST /orders/_search\n{"size": <cursor>}');
 
     expect(labels).toContain("0");
-    expect(labels).not.toEqual(expect.arrayContaining(["bool", "match", "term", "null"]));
+    expectLabelsAbsent(labels, ["bool", "match", "term", "null"]);
   });
 
   it("profile 值位置只提示布尔值", () => {
     const labels = completionLabels('POST /orders/_search\n{"profile": <cursor>}');
 
     expect(labels).toEqual(expect.arrayContaining(["true", "false"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["bool", "match", "null", "0"]));
+    expectLabelsAbsent(labels, ["bool", "match", "null", "0"]);
   });
 
   it("未知对象不回退到 Search 根属性或 Query DSL", () => {
@@ -388,7 +394,7 @@ describe("provideConsoleCompletionItems", () => {
     );
 
     expect(labels).toEqual(expect.arrayContaining(["value", "boost", "case_insensitive"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["status", "created_at", "bool", "query"]));
+    expectLabelsAbsent(labels, ["status", "created_at", "bool", "query"]);
   });
 
   it("range 字段参数对象只提示 range 参数且不重复 mapping 字段", () => {
@@ -398,7 +404,7 @@ describe("provideConsoleCompletionItems", () => {
     );
 
     expect(labels).toEqual(expect.arrayContaining(["gt", "gte", "lt", "lte", "format", "time_zone", "boost"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["status", "created_at", "bool", "query"]));
+    expectLabelsAbsent(labels, ["status", "created_at", "bool", "query"]);
   });
 
   it("match 字段参数对象提示长格式参数", () => {
@@ -407,7 +413,7 @@ describe("provideConsoleCompletionItems", () => {
     );
 
     expect(labels).toEqual(expect.arrayContaining(["query", "analyzer", "operator", "fuzziness", "boost"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["title", "bool", "aggs"]));
+    expectLabelsAbsent(labels, ["title", "bool", "aggs"]);
   });
 
   it("span_near clauses 只提示 Span 查询", () => {
@@ -416,7 +422,7 @@ describe("provideConsoleCompletionItems", () => {
     );
 
     expect(labels).toEqual(expect.arrayContaining(["span_term", "span_first", "span_multi"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["match", "knn", "semantic"]));
+    expectLabelsAbsent(labels, ["match", "knn", "semantic"]);
   });
 
   it("span_or clauses 只提示 Span 查询", () => {
@@ -425,7 +431,7 @@ describe("provideConsoleCompletionItems", () => {
     );
 
     expect(labels).toEqual(expect.arrayContaining(["span_term", "span_first", "span_multi"]));
-    expect(labels).not.toEqual(expect.arrayContaining(["match", "knn", "semantic"]));
+    expectLabelsAbsent(labels, ["match", "knn", "semantic"]);
   });
 
   it("span_multi match 值位置只提示 multi-term 查询", () => {
