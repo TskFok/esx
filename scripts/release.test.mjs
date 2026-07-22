@@ -161,7 +161,8 @@ function releaseHarness(
     failOn,
     localTag = "",
     remoteTag = "",
-    runtime,
+    // 默认固定非 Windows，避免宿主 platform / npm_execpath 影响通用用例断言
+    runtime = { platform: "linux" },
     state = {},
     status = "",
     syncResults = ["0\t0"],
@@ -227,6 +228,13 @@ describe("发布编排", () => {
     const { result, files } = releaseHarness(["--current"]);
     expect(result).toEqual({ mode: "current", version: "0.1.0" });
     expect(files.has(joined)).toBe(true);
+  });
+
+  it("默认编排夹具固定非 Windows runtime，避免宿主平台改写 pnpm 调用", () => {
+    const { calls } = releaseHarness([]);
+    expect(calls).toContainEqual(["pnpm", "test"]);
+    expect(calls).toContainEqual(["pnpm", "build"]);
+    expect(calls.some(([command]) => command === process.execPath)).toBe(false);
   });
 
   it("通过成功返回空分支名的查询给出 detached HEAD 专用提示", () => {
