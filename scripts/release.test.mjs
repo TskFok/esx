@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   getConsistentVersion,
@@ -8,6 +9,15 @@ import {
   updateVersionContents,
 } from "./release-core.mjs";
 import { runRelease } from "./release.mjs";
+
+const REPO_ROOT = "/repo";
+const VERSION_RELATIVE_PATHS = {
+  packageJson: "package.json",
+  tauriConfig: "src-tauri/tauri.conf.json",
+  cargoToml: "src-tauri/Cargo.toml",
+  cargoLock: "src-tauri/Cargo.lock",
+};
+const versionPath = (key) => path.join(REPO_ROOT, VERSION_RELATIVE_PATHS[key]);
 
 describe("发布参数", () => {
   it("无参数时递增补丁号", () => {
@@ -157,12 +167,13 @@ function releaseHarness(
     syncResults = ["0\t0"],
   } = {},
 ) {
-  const files = new Map([
-    ["/repo/package.json", manifests.packageJson],
-    ["/repo/src-tauri/tauri.conf.json", manifests.tauriConfig],
-    ["/repo/src-tauri/Cargo.toml", manifests.cargoToml],
-    ["/repo/src-tauri/Cargo.lock", manifests.cargoLock],
-  ]);
+  // 必须用 path.join，与 release.mjs 一致；否则 Windows 上 Map key 对不上
+  const files = new Map(
+    Object.entries(VERSION_RELATIVE_PATHS).map(([key, relativePath]) => [
+      path.join(REPO_ROOT, relativePath),
+      manifests[key],
+    ]),
+  );
   const calls = [];
   const events = [];
   let syncResultIndex = 0;
@@ -170,10 +181,10 @@ function releaseHarness(
   state.calls = calls;
   state.events = events;
   const fileSystem = {
-    readFileSync: (path) => files.get(path),
-    writeFileSync: (path, value) => {
-      events.push(["write", path]);
-      files.set(path, value);
+    readFileSync: (filePath) => files.get(filePath),
+    writeFileSync: (filePath, value) => {
+      events.push(["write", filePath]);
+      files.set(filePath, value);
     },
   };
   const execute = (command, commandArgs) => {
@@ -196,7 +207,7 @@ function releaseHarness(
   };
   const result = runRelease({
     args,
-    cwd: "/repo",
+    cwd: REPO_ROOT,
     execute,
     fileSystem,
     output: { log() {}, error() {} },
@@ -206,6 +217,18 @@ function releaseHarness(
 }
 
 describe("发布编排", () => {
+  it("版本文件夹具使用 path.join，避免 Windows 分隔符导致读文件失败", () => {
+    const joined = path.join(REPO_ROOT, VERSION_RELATIVE_PATHS.packageJson);
+    if (process.platform === "win32") {
+      expect(joined).not.toBe("/repo/package.json");
+    }
+    expect(joined).toBe(versionPath("packageJson"));
+
+    const { result, files } = releaseHarness(["--current"]);
+    expect(result).toEqual({ mode: "current", version: "0.1.0" });
+    expect(files.has(joined)).toBe(true);
+  });
+
   it("通过成功返回空分支名的查询给出 detached HEAD 专用提示", () => {
     const state = {};
 
@@ -458,10 +481,10 @@ describe("发布编排", () => {
         "--manifest-path",
         "src-tauri/Cargo.toml",
       ],
-      ["write", "/repo/package.json"],
-      ["write", "/repo/src-tauri/tauri.conf.json"],
-      ["write", "/repo/src-tauri/Cargo.toml"],
-      ["write", "/repo/src-tauri/Cargo.lock"],
+      ["write", versionPath("packageJson")],
+      ["write", versionPath("tauriConfig")],
+      ["write", versionPath("cargoToml")],
+      ["write", versionPath("cargoLock")],
       [
         "command",
         "cargo",
@@ -492,7 +515,7 @@ describe("发布编排", () => {
   it("current 不写版本或提交并强推当前标签", () => {
     const { calls, events, files, result } = releaseHarness(["--current"]);
     expect(result).toEqual({ mode: "current", version: "0.1.0" });
-    expect(files.get("/repo/package.json")).toBe(manifests.packageJson);
+    expect(files.get(versionPath("packageJson"))).toBe(manifests.packageJson);
     expect(events.some(([type]) => type === "write")).toBe(false);
     expect(calls.some((call) => call.includes("commit"))).toBe(false);
     expect(calls).toContainEqual([
@@ -528,10 +551,10 @@ describe("发布编排", () => {
       "src-tauri/Cargo.toml",
       "src-tauri/Cargo.lock",
     ]);
-    expect(state.files.get("/repo/package.json")).toBe(manifests.packageJson);
-    expect(state.files.get("/repo/src-tauri/tauri.conf.json")).toBe(manifests.tauriConfig);
-    expect(state.files.get("/repo/src-tauri/Cargo.toml")).toBe(manifests.cargoToml);
-    expect(state.files.get("/repo/src-tauri/Cargo.lock")).toBe(manifests.cargoLock);
+    expect(state.files.get(versionPath("packageJson"))).toBe(manifests.packageJson);
+    expect(state.files.get(versionPath("tauriConfig"))).toBe(manifests.tauriConfig);
+    expect(state.files.get(versionPath("cargoToml"))).toBe(manifests.cargoToml);
+    expect(state.files.get(versionPath("cargoLock"))).toBe(manifests.cargoLock);
   });
 
   it("分支推送失败时给出 current 恢复命令", () => {
