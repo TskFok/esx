@@ -292,6 +292,7 @@ export const ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
     "为当前搜索请求定义 runtime fields。",
     '"runtime_mappings": {\n\t"${1:field_name}": {\n\t\t"type": "${2:keyword}",\n\t\t"script": {\n\t\t\t"source": "$0"\n\t\t}\n\t}\n}',
     "036-runtime_mappings",
+    { products: ["elasticsearch"], minVersion: [7, 11] },
   ),
   {
     label: "track_total_hits",
@@ -313,7 +314,16 @@ export const ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
     "Point in time",
     "使用 point in time 上下文搜索。",
     '"pit": {\n\t"id": "$1",\n\t"keep_alive": "${2:1m}"\n}',
-    "048-pit",
+    "048-pit-elasticsearch",
+    { products: ["elasticsearch"], minVersion: [7, 10] },
+  ),
+  propertySnippet(
+    "pit",
+    "Point in time",
+    "使用 point in time 上下文搜索。",
+    '"pit": {\n\t"id": "$1",\n\t"keep_alive": "${2:1m}"\n}',
+    "048-pit-opensearch",
+    { products: ["opensearch"], minVersion: [2, 4] },
   ),
   propertySnippet(
     "knn",
@@ -333,13 +343,6 @@ export const CREATE_INDEX_ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
 
 export const COUNT_ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   propertySnippet("query", "计数查询", "配置 Count API 查询。", '"query": {\n\t$0\n}', "000-query"),
-  propertySnippet(
-    "runtime_mappings",
-    "运行时映射",
-    "配置 Count API 运行时字段。",
-    '"runtime_mappings": {\n\t$0\n}',
-    "001-runtime-mappings",
-  ),
 ];
 
 export const SCROLL_ROOT_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
@@ -391,11 +394,13 @@ export const MSEARCH_HEADER_SNIPPETS: ReadonlyArray<RawSnippet> = [
 
 const FULL_TEXT_QUERY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   propertySnippet("match", "全文匹配", "match 查询。", '"match": {\n\t"${1:field}": "$0"\n}', "010-match"),
-  propertySnippet("match_bool_prefix", "布尔前缀匹配", "将最后一个词作为 prefix 查询的 match 变体。", '"match_bool_prefix": {\n\t"${1:field}": "$0"\n}', "011-match_bool_prefix"),
+  propertySnippet("match_bool_prefix", "布尔前缀匹配", "将最后一个词作为 prefix 查询的 match 变体。", '"match_bool_prefix": {\n\t"${1:field}": "$0"\n}', "011-match_bool_prefix-elasticsearch", { products: ["elasticsearch"], minVersion: [7, 2] }),
+  propertySnippet("match_bool_prefix", "布尔前缀匹配", "将最后一个词作为 prefix 查询的 match 变体。", '"match_bool_prefix": {\n\t"${1:field}": "$0"\n}', "011-match_bool_prefix-opensearch", { products: ["opensearch"], minMajor: 1 }),
   propertySnippet("match_phrase", "短语匹配", "match_phrase 查询。", '"match_phrase": {\n\t"${1:field}": "$0"\n}', "012-match_phrase"),
   propertySnippet("match_phrase_prefix", "短语前缀匹配", "match_phrase_prefix 查询。", '"match_phrase_prefix": {\n\t"${1:field}": "$0"\n}', "013-match_phrase_prefix"),
   propertySnippet("multi_match", "多字段匹配", "multi_match 查询。", '"multi_match": {\n\t"query": "$1",\n\t"fields": [\n\t\t"${2:field}"\n\t]\n}', "014-multi_match"),
-  propertySnippet("combined_fields", "组合字段匹配", "combined_fields 查询。", '"combined_fields": {\n\t"query": "$1",\n\t"fields": [\n\t\t"${2:field}"\n\t]\n}', "015-combined_fields"),
+  propertySnippet("combined_fields", "组合字段匹配", "combined_fields 查询。", '"combined_fields": {\n\t"query": "$1",\n\t"fields": [\n\t\t"${2:field}"\n\t]\n}', "015-combined_fields-elasticsearch", { products: ["elasticsearch"], minVersion: [7, 13] }),
+  propertySnippet("combined_fields", "组合字段匹配", "combined_fields 查询。", '"combined_fields": {\n\t"query": "$1",\n\t"fields": [\n\t\t"${2:field}"\n\t]\n}', "015-combined_fields-opensearch", { products: ["opensearch"], minVersion: [3, 2] }),
   propertySnippet("query_string", "Lucene 语法", "query_string 查询。", '"query_string": {\n\t"query": "$0"\n}', "016-query_string"),
   propertySnippet("simple_query_string", "简易查询字符串", "simple_query_string 查询。", '"simple_query_string": {\n\t"query": "$1",\n\t"fields": [\n\t\t"${2:field}"\n\t]\n}', "017-simple_query_string"),
   propertySnippet("intervals", "Intervals 查询", "按词项顺序和距离匹配文本。", '"intervals": {\n\t"${1:field}": {\n\t\t"match": {\n\t\t\t"query": "$0"\n\t\t}\n\t}\n}', "018-intervals"),
@@ -427,7 +432,8 @@ const GEO_QUERY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   propertySnippet("geo_bounding_box", "地理边界框查询", "按地理边界框过滤。", '"geo_bounding_box": {\n\t"${1:location}": {\n\t\t"top_left": "$2",\n\t\t"bottom_right": "$0"\n\t}\n}', "061-geo_bounding_box"),
   propertySnippet("geo_polygon", "地理多边形查询", "按地理多边形过滤。", '"geo_polygon": {\n\t"${1:location}": {\n\t\t"points": [\n\t\t\t"$0"\n\t\t]\n\t}\n}', "062-geo_polygon"),
   propertySnippet("geo_shape", "地理形状查询", "按 geo_shape 字段过滤。", '"geo_shape": {\n\t"${1:field}": {\n\t\t"shape": {\n\t\t\t"type": "${2:envelope}",\n\t\t\t"coordinates": [\n\t\t\t\t$0\n\t\t\t]\n\t\t},\n\t\t"relation": "${3:intersects}"\n\t}\n}', "063-geo_shape"),
-  propertySnippet("shape", "形状查询", "按 shape 字段过滤。", '"shape": {\n\t"${1:field}": {\n\t\t"shape": {\n\t\t\t"type": "${2:envelope}",\n\t\t\t"coordinates": [\n\t\t\t\t$0\n\t\t\t]\n\t\t},\n\t\t"relation": "${3:intersects}"\n\t}\n}', "064-shape"),
+  propertySnippet("shape", "形状查询", "按 shape 字段过滤。", '"shape": {\n\t"${1:field}": {\n\t\t"shape": {\n\t\t\t"type": "${2:envelope}",\n\t\t\t"coordinates": [\n\t\t\t\t$0\n\t\t\t]\n\t\t},\n\t\t"relation": "${3:intersects}"\n\t}\n}', "064-shape", { products: ["elasticsearch"], minVersion: [7, 4] }),
+  propertySnippet("xy_shape", "平面形状查询", "按 OpenSearch xy_shape 字段过滤。", '"xy_shape": {\n\t"${1:field}": {\n\t\t"shape": {\n\t\t\t"type": "${2:envelope}",\n\t\t\t"coordinates": [\n\t\t\t\t$0\n\t\t\t]\n\t\t},\n\t\t"relation": "${3:intersects}"\n\t}\n}', "064-xy-shape", { products: ["opensearch"], minVersion: [2, 4] }),
 ];
 
 const JOINING_QUERY_SNIPPETS: ReadonlyArray<RawSnippet> = [
@@ -455,9 +461,10 @@ const SPECIALIZED_QUERY_SNIPPETS: ReadonlyArray<RawSnippet> = [
   propertySnippet("script", "脚本查询", "用脚本判断文档是否匹配。", '"script": {\n\t"script": {\n\t\t"source": "$0"\n\t}\n}', "090-script"),
   propertySnippet("script_score", "脚本评分", "用脚本修改查询评分。", '"script_score": {\n\t"query": {\n\t\t$1\n\t},\n\t"script": {\n\t\t"source": "$0"\n\t}\n}', "091-script_score"),
   propertySnippet("more_like_this", "相似文档查询", "查找与给定文本或文档相似的文档。", '"more_like_this": {\n\t"fields": [\n\t\t"${1:field}"\n\t],\n\t"like": "$0"\n}', "092-more_like_this"),
-  propertySnippet("distance_feature", "距离特征查询", "按日期或地理距离提升靠近 origin 的文档。", '"distance_feature": {\n\t"field": "$1",\n\t"origin": "$2",\n\t"pivot": "${3:7d}"\n}', "093-distance_feature"),
+  propertySnippet("distance_feature", "距离特征查询", "按日期或地理距离提升靠近 origin 的文档。", '"distance_feature": {\n\t"field": "$1",\n\t"origin": "$2",\n\t"pivot": "${3:7d}"\n}', "093-distance_feature-elasticsearch", { products: ["elasticsearch"], minVersion: [7, 2] }),
+  propertySnippet("distance_feature", "距离特征查询", "按日期或地理距离提升靠近 origin 的文档。", '"distance_feature": {\n\t"field": "$1",\n\t"origin": "$2",\n\t"pivot": "${3:7d}"\n}', "093-distance_feature-opensearch", { products: ["opensearch"], minMajor: 1 }),
   propertySnippet("rank_feature", "排名特征查询", "按 rank_feature 字段提升文档。", '"rank_feature": {\n\t"field": "$0"\n}', "094-rank_feature"),
-  propertySnippet("pinned", "置顶查询", "将指定文档固定在结果顶部。", '"pinned": {\n\t"ids": [\n\t\t"$1"\n\t],\n\t"organic": {\n\t\t$0\n\t}\n}', "095-pinned"),
+  propertySnippet("pinned", "置顶查询", "将指定文档固定在结果顶部。", '"pinned": {\n\t"ids": [\n\t\t"$1"\n\t],\n\t"organic": {\n\t\t$0\n\t}\n}', "095-pinned", { products: ["elasticsearch"], minVersion: [7, 4] }),
   propertySnippet("wrapper", "Wrapper 查询", "使用 base64 编码查询。", '"wrapper": {\n\t"query": "$0"\n}', "096-wrapper"),
   propertySnippet(
     "knn",
@@ -580,9 +587,28 @@ export const AGG_TYPE_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
     label: "date_histogram",
     detail: "日期直方图",
     documentation: "按日期区间分桶。",
+    insertText: '"date_histogram": {\n\t"field": "$1",\n\t"interval": "${2:1d}"\n}',
+    kind: "property",
+    sortText: "002-date_histogram-elasticsearch-legacy",
+    availability: { products: ["elasticsearch"], minMajor: 7, maxVersion: [7, 1] },
+  },
+  {
+    label: "date_histogram",
+    detail: "日期直方图",
+    documentation: "按日期区间分桶。",
     insertText: '"date_histogram": {\n\t"field": "$1",\n\t"calendar_interval": "${2:day}"\n}',
     kind: "property",
-    sortText: "002-date_histogram",
+    sortText: "002-date_histogram-elasticsearch",
+    availability: { products: ["elasticsearch"], minVersion: [7, 2] },
+  },
+  {
+    label: "date_histogram",
+    detail: "日期直方图",
+    documentation: "按日期区间分桶。",
+    insertText: '"date_histogram": {\n\t"field": "$1",\n\t"calendar_interval": "${2:day}"\n}',
+    kind: "property",
+    sortText: "002-date_histogram-opensearch",
+    availability: { products: ["opensearch"], minMajor: 1 },
   },
   {
     label: "histogram",
@@ -733,6 +759,7 @@ export const AGG_TYPE_PROPERTY_SNIPPETS: ReadonlyArray<RawSnippet> = [
     "返回排序后文档上的指定指标字段。",
     '"top_metrics": {\n\t"metrics": {\n\t\t"field": "$1"\n\t},\n\t"sort": {\n\t\t"${2:field}": "${3:desc}"\n\t}\n}',
     "022-top_metrics",
+    { products: ["elasticsearch"], minVersion: [7, 7] },
   ),
   propertySnippet(
     "median_absolute_deviation",
@@ -884,12 +911,31 @@ export const AGG_PROPERTY_SNIPPETS_BY_TYPE: Readonly<Record<string, ReadonlyArra
   date_histogram: [
     AGG_FIELD_PROPERTY_SNIPPET,
     {
+      label: "interval",
+      detail: "日期间隔",
+      documentation: "Elasticsearch 7.1 及更早版本使用的日期直方图间隔。",
+      insertText: '"interval": "${1:1d}"',
+      kind: "property",
+      sortText: "002-interval",
+      availability: { products: ["elasticsearch"], minMajor: 7, maxVersion: [7, 1] },
+    },
+    {
       label: "calendar_interval",
       detail: "日历间隔",
       documentation: "按日历单位设置日期直方图间隔。",
       insertText: '"calendar_interval": "${1:day}"',
       kind: "property",
-      sortText: "002-calendar_interval",
+      sortText: "003-calendar_interval-elasticsearch",
+      availability: { products: ["elasticsearch"], minVersion: [7, 2] },
+    },
+    {
+      label: "calendar_interval",
+      detail: "日历间隔",
+      documentation: "按日历单位设置日期直方图间隔。",
+      insertText: '"calendar_interval": "${1:day}"',
+      kind: "property",
+      sortText: "003-calendar_interval-opensearch",
+      availability: { products: ["opensearch"], minMajor: 1 },
     },
     {
       label: "fixed_interval",
@@ -897,7 +943,17 @@ export const AGG_PROPERTY_SNIPPETS_BY_TYPE: Readonly<Record<string, ReadonlyArra
       documentation: "按固定时长设置日期直方图间隔。",
       insertText: '"fixed_interval": "${1:1h}"',
       kind: "property",
-      sortText: "003-fixed_interval",
+      sortText: "004-fixed_interval-elasticsearch",
+      availability: { products: ["elasticsearch"], minVersion: [7, 2] },
+    },
+    {
+      label: "fixed_interval",
+      detail: "固定间隔",
+      documentation: "按固定时长设置日期直方图间隔。",
+      insertText: '"fixed_interval": "${1:1h}"',
+      kind: "property",
+      sortText: "004-fixed_interval-opensearch",
+      availability: { products: ["opensearch"], minMajor: 1 },
     },
     {
       label: "format",

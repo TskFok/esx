@@ -351,8 +351,8 @@ describe("provideConsoleCompletionItems", () => {
   it("Count 根对象只提示 Count 支持的属性", () => {
     const labels = completionLabels("POST /orders/_count\n{\n  <cursor>\n}");
 
-    expect(labels).toEqual(expect.arrayContaining(["query", "runtime_mappings"]));
-    ["aggs", "from", "size", "sort"].forEach((label) => expect(labels).not.toContain(label));
+    expect(labels).toContain("query");
+    ["runtime_mappings", "aggs", "from", "size", "sort"].forEach((label) => expect(labels).not.toContain(label));
   });
 
   it("Update 根对象提示更新属性而非 Search 属性", () => {

@@ -25,6 +25,16 @@ function elasticsearchContext(major: number, minor: number) {
   };
 }
 
+function opensearchContext(major: number, minor: number) {
+  return {
+    cluster: {
+      ...DEFAULT_CLUSTER_METADATA,
+      product: "opensearch" as const,
+      version: { number: `${major}.${minor}.0`, major, minor },
+    },
+  };
+}
+
 describe("selectPropertySuggestions", () => {
   it("suggests root keys at top-level", () => {
     const labels = labelsOf(selectPropertySuggestions([]));
@@ -55,7 +65,7 @@ describe("selectPropertySuggestions", () => {
   });
 
   it("suggests aggregation types under aggs.<name>", () => {
-    const labels = labelsOf(selectPropertySuggestions(["aggs", "my_agg"]));
+    const labels = labelsOf(selectPropertySuggestions(["aggs", "my_agg"], elasticsearchContext(8, 12)));
     expect(labels).toEqual(expect.arrayContaining(["terms", "date_histogram", "avg", "sum", "aggs"]));
   });
 
@@ -78,7 +88,7 @@ describe("selectPropertySuggestions", () => {
   });
 
   it("suggests type-specific properties for aggregation leaf objects", () => {
-    expect(labelsOf(selectPropertySuggestions(["aggs", "key", "date_histogram"]))).toEqual(
+    expect(labelsOf(selectPropertySuggestions(["aggs", "key", "date_histogram"], elasticsearchContext(8, 12)))).toEqual(
       expect.arrayContaining(["field", "calendar_interval"]),
     );
     expect(labelsOf(selectPropertySuggestions(["aggs", "key", "histogram"]))).toEqual(
@@ -158,6 +168,55 @@ describe("selectPropertySuggestions", () => {
 
     expect(es79).not.toContain("case_insensitive");
     expect(es710).toContain("case_insensitive");
+  });
+
+  it("filters DSL and search body snippets by the supported product and version", () => {
+    const es71 = elasticsearchContext(7, 1);
+    const es72 = elasticsearchContext(7, 2);
+    const es74 = elasticsearchContext(7, 4);
+    const es710 = elasticsearchContext(7, 10);
+    const es711 = elasticsearchContext(7, 11);
+    const es713 = elasticsearchContext(7, 13);
+    const os23 = opensearchContext(2, 3);
+    const os24 = opensearchContext(2, 4);
+    const os31 = opensearchContext(3, 1);
+    const os32 = opensearchContext(3, 2);
+
+    expectLabelsAbsent(labelsOf(selectPropertySuggestions(["query"], es71)), [
+      "match_bool_prefix",
+      "distance_feature",
+      "shape",
+      "pinned",
+      "combined_fields",
+    ]);
+    expect(labelsOf(selectPropertySuggestions(["query"], es72))).toEqual(
+      expect.arrayContaining(["match_bool_prefix", "distance_feature"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["query"], es74))).toEqual(
+      expect.arrayContaining(["shape", "pinned"]),
+    );
+    expect(labelsOf(selectPropertySuggestions(["query"], es713))).toContain("combined_fields");
+    expectLabelsAbsent(labelsOf(selectPropertySuggestions([], es710)), ["runtime_mappings"]);
+    expect(labelsOf(selectPropertySuggestions([], es711))).toContain("runtime_mappings");
+    expectLabelsAbsent(labelsOf(selectPropertySuggestions([], es71)), ["pit"]);
+    expect(labelsOf(selectPropertySuggestions([], es710))).toContain("pit");
+
+    expectLabelsAbsent(labelsOf(selectPropertySuggestions([], os23)), ["runtime_mappings", "pit"]);
+    expect(labelsOf(selectPropertySuggestions([], os24))).toContain("pit");
+    expectLabelsAbsent(labelsOf(selectPropertySuggestions(["query"], os24)), ["shape", "pinned", "combined_fields"]);
+    expect(labelsOf(selectPropertySuggestions(["query"], os24))).toContain("xy_shape");
+    expect(labelsOf(selectPropertySuggestions(["query"], os31))).not.toContain("combined_fields");
+    expect(labelsOf(selectPropertySuggestions(["query"], os32))).toContain("combined_fields");
+  });
+
+  it("uses the date histogram interval syntax supported by the Elasticsearch version", () => {
+    const es71Snippet = selectPropertySuggestions(["aggs", "x"], elasticsearchContext(7, 1))
+      .find((snippet) => snippet.label === "date_histogram");
+    const es72Snippet = selectPropertySuggestions(["aggs", "x"], elasticsearchContext(7, 2))
+      .find((snippet) => snippet.label === "date_histogram");
+
+    expect(es71Snippet?.insertText).toContain('"interval"');
+    expect(es72Snippet?.insertText).toContain('"calendar_interval"');
   });
 
   it("suggests only range parameters inside a range field object", () => {
@@ -251,6 +310,40 @@ describe("selectPropertySuggestions", () => {
     expectLabelsAbsent(child, ["global", "reverse_nested"]);
     expect(nestedChild).toContain("reverse_nested");
     expect(nestedChild).not.toContain("global");
+  });
+
+  it("only suggests pipeline aggregations below compatible bucket aggregations", () => {
+    const es8 = elasticsearchContext(8, 12);
+    const pipelineTypes = [
+      "bucket_script",
+      "bucket_selector",
+      "bucket_sort",
+      "derivative",
+      "moving_fn",
+      "cumulative_sum",
+    ];
+    const topLevel = labelsOf(selectPropertySuggestions(["aggs", "x"], es8));
+    const termsChild = labelsOf(selectPropertySuggestions(
+      ["aggs", "by_status", "aggs", "x"],
+      es8,
+      [{ currentKey: "aggs", seenKeys: ["terms", "aggs"] }],
+    ));
+    const histogramChild = labelsOf(selectPropertySuggestions(
+      ["aggs", "by_day", "aggs", "x"],
+      es8,
+      [{ currentKey: "aggs", seenKeys: ["date_histogram", "aggs"] }],
+    ));
+
+    expectLabelsAbsent(topLevel, pipelineTypes);
+    expect(termsChild).toEqual(expect.arrayContaining(["bucket_script", "bucket_selector", "bucket_sort"]));
+    expectLabelsAbsent(termsChild, ["derivative", "moving_fn", "cumulative_sum"]);
+    expect(histogramChild).toEqual(expect.arrayContaining(pipelineTypes));
+  });
+
+  it("hides Elasticsearch-only top_metrics from OpenSearch", () => {
+    const labels = labelsOf(selectPropertySuggestions(["aggs", "x"], opensearchContext(3, 2)));
+
+    expect(labels).not.toContain("top_metrics");
   });
 });
 

@@ -39,6 +39,7 @@ export const FIELD_OBJECT_QUERY_KEYS = new Set([
   "geo_polygon",
   "geo_shape",
   "shape",
+  "xy_shape",
 ]);
 
 export const FIELD_VALUE_KEYS = new Set(["field", "path"]);
@@ -57,6 +58,33 @@ const QUERY_CHILD_KEYS_BY_PARENT: Readonly<Record<string, ReadonlySet<string>>> 
 const SPAN_CHILD_KEYS = new Set(["match", "include", "exclude", "big", "little", "query"]);
 const SPAN_CLAUSE_ARRAY_PARENTS = new Set(["span_near", "span_or"]);
 const MULTI_TERM_QUERY_LABELS = new Set(["fuzzy", "prefix", "range", "regexp", "wildcard"]);
+const PARENT_PIPELINE_AGGREGATIONS = new Set([
+  "bucket_script",
+  "bucket_selector",
+  "bucket_sort",
+]);
+const HISTOGRAM_PIPELINE_AGGREGATIONS = new Set([
+  "derivative",
+  "moving_fn",
+  "cumulative_sum",
+]);
+const MULTI_BUCKET_AGGREGATIONS = new Set([
+  "adjacency_matrix",
+  "auto_date_histogram",
+  "composite",
+  "date_histogram",
+  "date_range",
+  "filters",
+  "geotile_grid",
+  "histogram",
+  "ip_range",
+  "multi_terms",
+  "range",
+  "rare_terms",
+  "significant_terms",
+  "significant_text",
+  "terms",
+]);
 const QUERY_TYPE_LABELS = new Set(QUERY_LEAF_PROPERTY_SNIPPETS.map((snippet) => snippet.label));
 const QUERY_FIELD_ARRAY_TYPES = new Set([
   "multi_match",
@@ -172,10 +200,15 @@ function selectAggregationTypeSuggestions(
 ) {
   const topLevel = path.length === 2 && (path[0] === "aggs" || path[0] === "aggregations");
   const insideNested = objectFrames.some((frame) => frame.seenKeys.includes("nested"));
+  const parentAggregationTypes = new Set(objectFrames.flatMap((frame) => frame.seenKeys));
+  const hasMultiBucketParent = [...parentAggregationTypes].some((type) => MULTI_BUCKET_AGGREGATIONS.has(type));
+  const hasHistogramParent = parentAggregationTypes.has("date_histogram") || parentAggregationTypes.has("histogram");
 
   return AGG_TYPE_PROPERTY_SNIPPETS.filter((snippet) => {
     if (snippet.label === "global") return topLevel;
     if (snippet.label === "reverse_nested") return insideNested;
+    if (PARENT_PIPELINE_AGGREGATIONS.has(snippet.label)) return !topLevel && hasMultiBucketParent;
+    if (HISTOGRAM_PIPELINE_AGGREGATIONS.has(snippet.label)) return !topLevel && hasHistogramParent;
     return true;
   });
 }
