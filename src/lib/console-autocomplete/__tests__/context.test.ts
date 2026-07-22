@@ -91,6 +91,11 @@ describe("buildConsoleAutocompleteContext", () => {
     expect(context.aliasNames).toEqual(["daily"]);
     expect(context.fieldNames).toEqual(["user.id", "user.name"]);
     expect(context.historyTargetNames).toEqual(["users"]);
+    expect(context.request).toMatchObject({
+      method: "POST",
+      endpoint: "search",
+      bodyMode: "search-json",
+    });
   });
 
   it("filters field names to the index referenced by current path", () => {

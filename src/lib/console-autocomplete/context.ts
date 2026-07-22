@@ -1,26 +1,21 @@
 import type { ConnectionSearchMetadata, SavedRequest } from "../../types/requests";
 import { DEFAULT_CLUSTER_METADATA, normalizeClusterMetadata } from "./capabilities";
+import {
+  parseConsoleRequestContext,
+  type ConsoleRequestContext,
+} from "./request-context";
 
-export type ConsoleAutocompleteContext = {
+export interface ConsoleAutocompleteContext {
   indexNames: string[];
   aliasNames: string[];
   historyTargetNames: string[];
   fieldNames: string[];
   cluster: typeof DEFAULT_CLUSTER_METADATA;
-};
+  request: ConsoleRequestContext;
+}
 
 function uniqueSorted(values: string[]) {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right, "zh-CN"));
-}
-
-function extractPathFromContent(content: string) {
-  const firstLine = content.split(/\r?\n/, 1)[0]?.trim() ?? "";
-  if (!firstLine) {
-    return "";
-  }
-
-  const [, ...pathParts] = firstLine.split(/\s+/);
-  return pathParts.join(" ").trim();
 }
 
 function normalizeIndexName(value: string) {
@@ -104,8 +99,8 @@ export function buildConsoleAutocompleteContext(
   currentContent = "",
   metadata?: SearchMetadataInput | null,
 ): ConsoleAutocompleteContext {
-  const currentPath = extractPathFromContent(currentContent);
-  const currentTargets = extractIndexNamesFromPath(currentPath);
+  const request = parseConsoleRequestContext(currentContent);
+  const currentTargets = extractIndexNamesFromPath(request.path);
   const historyTargetNames = uniqueSorted([
     ...requests.flatMap((request) => extractIndexNamesFromPath(request.path)),
     ...currentTargets,
@@ -120,6 +115,7 @@ export function buildConsoleAutocompleteContext(
     aliasNames,
     fieldNames,
     cluster,
+    request,
     historyTargetNames: historyTargetNames.filter(
       (item) => !indexNames.includes(item) && !aliasNames.includes(item),
     ),

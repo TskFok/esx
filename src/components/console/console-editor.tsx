@@ -7,6 +7,7 @@ import {
   provideConsoleCompletionItems,
   validateConsoleContent,
 } from "../../lib/console-autocomplete";
+import { parseConsoleRequestContext } from "../../lib/console-autocomplete/request-context";
 
 loader.config({ monaco: monacoEditor });
 
@@ -16,6 +17,7 @@ const EMPTY_AUTOCOMPLETE_CONTEXT: ConsoleAutocompleteContext = {
   historyTargetNames: [],
   fieldNames: [],
   cluster: DEFAULT_CLUSTER_METADATA,
+  request: parseConsoleRequestContext(""),
 };
 
 const modelAutocompleteContext = new WeakMap<monacoEditor.editor.ITextModel, ConsoleAutocompleteContext>();

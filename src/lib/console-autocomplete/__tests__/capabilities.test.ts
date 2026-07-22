@@ -6,6 +6,7 @@ import {
 } from "../capabilities";
 import { selectPropertySuggestions } from "../suggestions";
 import type { ConsoleAutocompleteContext } from "../context";
+import { parseConsoleRequestContext } from "../request-context";
 import type { ConnectionSearchClusterMetadata } from "../../../types/requests";
 
 function labelsOf(list: readonly { label: string }[]) {
@@ -34,6 +35,7 @@ function context(overrides: Partial<ConnectionSearchClusterMetadata>): ConsoleAu
     historyTargetNames: [],
     fieldNames: [],
     cluster: cluster(overrides),
+    request: parseConsoleRequestContext(""),
   };
 }
 
