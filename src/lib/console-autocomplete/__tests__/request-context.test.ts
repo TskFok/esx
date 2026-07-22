@@ -81,4 +81,32 @@ describe("parseConsoleRequestContext", () => {
       bodyMode: "unknown",
     });
   });
+
+  it.each([
+    "PUT /_all",
+    "PUT /orders-*",
+    "PUT /orders%3F",
+    "PUT /orders,users",
+    "PUT /_search",
+    "POST /_all/_doc",
+    "POST /orders-*/_doc/42",
+    "PUT /orders,users/_doc/42",
+    "POST /_all/_update/42",
+    "POST /orders-*/_update/42",
+    "POST /orders,users/_update/42",
+  ])("写 endpoint 拒绝非单一具体 target：%s", (content) => {
+    expect(parseConsoleRequestContext(content)).toMatchObject({
+      endpoint: "unknown",
+      bodyMode: "unknown",
+    });
+  });
+
+  it.each([
+    ["PUT /orders-write", "create-index"],
+    ["POST /orders-write/_doc", "index-document"],
+    ["PUT /orders-write/_doc/42", "index-document"],
+    ["POST /orders-write/_update/42", "update-document"],
+  ] as const)("写 endpoint 保留单一具体 index 或 alias：%s", (content, endpoint) => {
+    expect(parseConsoleRequestContext(content).endpoint).toBe(endpoint);
+  });
 });

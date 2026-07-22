@@ -40,14 +40,23 @@ const POST_OR_PUT = new Set(["POST", "PUT"]);
 const GET_OR_PUT = new Set(["GET", "PUT"]);
 const CAT_ENDPOINTS = new Set(["indices", "aliases", "nodes", "health", "shards"]);
 
-function isTargetSegment(segment: string | undefined) {
+function isMultiTargetSegment(segment: string | undefined) {
   return !!segment && (!segment.startsWith("_") || segment === "_all");
+}
+
+function isSingleConcreteTargetSegment(segment: string | undefined) {
+  return !!segment &&
+    !segment.startsWith("_") &&
+    !segment.includes(",") &&
+    !segment.includes("*") &&
+    !segment.includes("?") &&
+    !/%(?:2a|2c|3f)/i.test(segment);
 }
 
 function isGlobalOrTargetEndpoint(segments: string[], endpoint: string) {
   return (
     (segments.length === 1 && segments[0] === endpoint) ||
-    (segments.length === 2 && segments[1] === endpoint && isTargetSegment(segments[0]))
+    (segments.length === 2 && segments[1] === endpoint && isMultiTargetSegment(segments[0]))
   );
 }
 
@@ -86,14 +95,14 @@ function classifyEndpoint(method: string, segments: string[]): ConsoleEndpoint {
   if (
     (segments.length === 1 && segments[0] === "_mapping" && method === "GET") ||
     (segments.length === 2 && segments[1] === "_mapping" &&
-      isTargetSegment(segments[0]) && GET_OR_PUT.has(method))
+      isMultiTargetSegment(segments[0]) && GET_OR_PUT.has(method))
   ) {
     return "mapping";
   }
   if (
     (segments.length === 1 && segments[0] === "_settings" && method === "GET") ||
     (segments.length === 2 && segments[1] === "_settings" &&
-      isTargetSegment(segments[0]) && GET_OR_PUT.has(method))
+      isMultiTargetSegment(segments[0]) && GET_OR_PUT.has(method))
   ) {
     return "settings";
   }
@@ -102,7 +111,7 @@ function classifyEndpoint(method: string, segments: string[]): ConsoleEndpoint {
   if (
     segments.length === 3 &&
     segments[1] === "_update" &&
-    isTargetSegment(segments[0]) &&
+    isSingleConcreteTargetSegment(segments[0]) &&
     method === "POST"
   ) {
     return "update-document";
@@ -110,7 +119,7 @@ function classifyEndpoint(method: string, segments: string[]): ConsoleEndpoint {
   if (
     segments.length === 2 &&
     segments[1] === "_doc" &&
-    isTargetSegment(segments[0]) &&
+    isSingleConcreteTargetSegment(segments[0]) &&
     method === "POST"
   ) {
     return "index-document";
@@ -118,12 +127,12 @@ function classifyEndpoint(method: string, segments: string[]): ConsoleEndpoint {
   if (
     segments.length === 3 &&
     segments[1] === "_doc" &&
-    isTargetSegment(segments[0]) &&
+    isSingleConcreteTargetSegment(segments[0]) &&
     POST_OR_PUT.has(method)
   ) {
     return "index-document";
   }
-  if (segments.length === 1 && isTargetSegment(segments[0]) && method === "PUT") {
+  if (segments.length === 1 && isSingleConcreteTargetSegment(segments[0]) && method === "PUT") {
     return "create-index";
   }
   return "unknown";

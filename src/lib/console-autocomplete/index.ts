@@ -196,6 +196,7 @@ function buildJsonSuggestions(
   const pathHasAvailableRoot = typeof path[0] === "string" &&
     availableRootProperties.some((snippet) => snippet.label === path[0]);
   if (allowRootFieldKeys && path.length > 0) return [];
+  if (path.length > 0 && !pathHasAvailableRoot) return [];
 
   if (cursorInfo.insideString || insideStringFallback) {
     if (cursorInfo.insideStringAsKey) {
@@ -240,14 +241,6 @@ function buildJsonSuggestions(
     }
 
     return suggestionsList;
-  }
-
-  const rootKey = path[0];
-  if (
-    typeof rootKey !== "string" ||
-    !availableRootProperties.some((snippet) => snippet.label === rootKey)
-  ) {
-    return [];
   }
 
   const values = selectValueSuggestions(path, autocompleteContext);
@@ -340,13 +333,27 @@ function analyzeQueryParameterCursor(
   const cursorIndex = Math.max(0, column - 1);
   const questionIndex = lineContent.lastIndexOf("?", cursorIndex);
   if (questionIndex < 0) return null;
-  const ampersandIndex = lineContent.lastIndexOf("&", cursorIndex - 1);
+  const whitespaceOffset = lineContent.slice(questionIndex + 1).search(/\s/);
+  const queryEnd = whitespaceOffset < 0
+    ? lineContent.length
+    : questionIndex + 1 + whitespaceOffset;
+  if (cursorIndex > queryEnd) return null;
+
+  const previousAmpersand = lineContent.lastIndexOf("&", cursorIndex - 1);
+  const ampersandIndex = previousAmpersand > questionIndex ? previousAmpersand : -1;
   const currentStart = Math.max(questionIndex, ampersandIndex) + 1;
   const current = lineContent.slice(currentStart, cursorIndex);
   if (/\s/.test(current)) return null;
   const equalsOffset = current.indexOf("=");
-  const completed = lineContent.slice(questionIndex + 1, currentStart);
-  const usedKeys = completed
+  const nextAmpersand = lineContent.indexOf("&", cursorIndex);
+  const currentEnd = nextAmpersand >= 0 && nextAmpersand < queryEnd
+    ? nextAmpersand
+    : queryEnd;
+  const otherParameters = [
+    lineContent.slice(questionIndex + 1, currentStart),
+    lineContent.slice(currentEnd, queryEnd),
+  ].join("");
+  const usedKeys = otherParameters
     .split("&")
     .map((part) => part.split("=", 1)[0]?.trim() ?? "")
     .filter(Boolean);

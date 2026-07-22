@@ -225,6 +225,13 @@ describe("provideConsoleCompletionItems", () => {
     expect(labels).toContain("from");
   });
 
+  it("查询参数去重会检查光标后的完整 query string", () => {
+    const labels = completionLabels("GET /_search?<cursor>&size=10");
+
+    expect(labels).not.toContain("size");
+    expect(labels).toContain("from");
+  });
+
   it("suggests parameter values instead of names after an equals sign", () => {
     const labels = completionLabels("GET /orders/_search?pretty=");
 
@@ -254,6 +261,17 @@ describe("provideConsoleCompletionItems", () => {
 
     expect(completionLabels(`${requestLine}?<cursor>`, searchMetadata)).toEqual([]);
     expect(completionLabels(`${requestLine}\n{<cursor>}`, searchMetadata)).toEqual([]);
+  });
+
+  it.each([
+    'PUT /orders,users\n{<cursor>}',
+    'POST /orders-*/_doc\n{<cursor>}',
+    'POST /_all/_update/42\n{<cursor>}',
+  ])("非法写 target 不返回 create/document/update 正文候选：%s", (content) => {
+    expect(completionLabels(
+      content,
+      metadataWithFields(["order_id", "user_email"]),
+    )).toEqual([]);
   });
 
   it("replaces only the current parameter name or value", () => {
@@ -366,6 +384,21 @@ describe("provideConsoleCompletionItems", () => {
     'POST /_msearch\n{"index":"orders"}\n{"query": <cursor>}',
   ])("合法 Search 语义正文的 query 值继续提示 Query DSL：%s", (content) => {
     expect(completionLabels(content)).toEqual(expect.arrayContaining(["bool", "match", "term"]));
+  });
+
+  it.each([
+    'PUT /orders\n{"query":{"bool":{<cursor>}}}',
+    'POST /_search/scroll\n{"query":{"bool":{<cursor>}}}',
+    'POST /orders/_update/42\n{"query":{"bool":{<cursor>}}}',
+  ])("非 Search 正文的非法 query 属性路径严格为空：%s", (content) => {
+    expect(completionLabels(content)).toEqual([]);
+  });
+
+  it.each([
+    'POST /orders/_search\n{"query":{"bool":{<cursor>}}}',
+    'POST /orders/_count\n{"query":{"bool":{<cursor>}}}',
+  ])("合法 Search 语义正文的 query.bool 继续提示属性：%s", (content) => {
+    expect(completionLabels(content)).toEqual(expect.arrayContaining(["must", "should", "filter"]));
   });
 
   it("Document 根对象只提示 mapping 字段", () => {
