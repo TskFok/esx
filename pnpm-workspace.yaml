@@ -1,6 +1,11 @@
 packages:
   - .
 
+auditConfig:
+  # 项目仅使用客户端声明式 HashRouter，不使用 React Router 不稳定的 RSC API。
+  ignoreGhsas:
+    - GHSA-qwww-vcr4-c8h2
+
 overrides:
   esbuild@>=0.17.0 <0.28.1: '>=0.28.1'
   esbuild@>=0.27.3 <0.28.1: '>=0.28.1'
