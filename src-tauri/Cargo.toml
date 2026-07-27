@@ -1,6 +1,6 @@
 [package]
 name = "esx"
-version = "0.1.6"
+version = "0.2.0"
 description = "Elasticsearch Dev Tools desktop app built with Tauri"
 authors = ["ushopal"]
 edition = "2021"
