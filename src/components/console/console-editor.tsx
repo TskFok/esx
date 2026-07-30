@@ -211,6 +211,8 @@ export function ConsoleEditor({
     () => ({
       automaticLayout: true,
       minimap: { enabled: false },
+      folding: true,
+      showFoldingControls: "always" as const,
       fontSize: 14,
       fontFamily: "'SF Mono', 'Monaco', 'Cascadia Mono', 'Menlo', monospace",
       fontLigatures: false,
