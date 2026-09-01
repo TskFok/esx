@@ -6,13 +6,18 @@ import {
   isGenericFailureMessage,
 } from "./errors";
 import { buildResponseSnapshot } from "./response-snapshot";
-import { buildServerStatus } from "./status";
+import { buildClusterOverview, buildIndicesStatus, buildOperationsStatus } from "./status";
 import { ensureTrailingSlashless } from "./utils";
 import { executeEsHttpRequest, executeSshHttpRequest, type TauriHttpResponse } from "./tauri";
 import type { ConnectionProfile, SshTunnelConfig } from "../types/connections";
 import type { ParsedConsoleRequest } from "./console-parser";
 import type { ConnectionSearchClusterMetadata, ResponseSnapshot } from "../types/requests";
 import type { AdminExecutionResult, AdminOperation } from "../types/admin";
+import type {
+  ClusterOverviewSnapshot,
+  IndicesStatusSnapshot,
+  OperationsStatusSnapshot,
+} from "../types/status";
 import { flattenMappingFields, flattenMappingFieldsByIndex } from "./console-autocomplete";
 import { normalizeConnectionProfileSecurity } from "./connection-security";
 
@@ -741,11 +746,11 @@ export async function executeAdminOperation(
   };
 }
 
-export async function fetchServerStatus(
+export async function fetchClusterOverview(
   connection: ConnectionProfile,
   credentials: RequestCredentials,
   sshTunnelOverride?: SshTunnelConfig | null,
-) {
+): Promise<ClusterOverviewSnapshot> {
   const clusterAttempt = await runServerStatusProbe(
     connection,
     credentials,
@@ -762,6 +767,17 @@ export async function fetchServerStatus(
     );
   }
 
+  return buildClusterOverview({
+    clusterHealthText: clusterAttempt.bodyText,
+    fetchedAt: new Date().toISOString(),
+  });
+}
+
+export async function fetchIndicesStatus(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  sshTunnelOverride?: SshTunnelConfig | null,
+): Promise<IndicesStatusSnapshot> {
   const indicesAttempt = await runServerStatusProbe(
     connection,
     credentials,
@@ -773,11 +789,22 @@ export async function fetchServerStatus(
   );
   if (!indicesAttempt.snapshot.ok) {
     throw new DetailedError(
-      buildServerStatusError([clusterAttempt, indicesAttempt]),
-      buildServerStatusDiagnostics([clusterAttempt, indicesAttempt]),
+      buildServerStatusError([indicesAttempt]),
+      buildServerStatusDiagnostics([indicesAttempt]),
     );
   }
 
+  return buildIndicesStatus({
+    indicesText: indicesAttempt.bodyText,
+    fetchedAt: new Date().toISOString(),
+  });
+}
+
+export async function fetchOperationsStatus(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  sshTunnelOverride?: SshTunnelConfig | null,
+): Promise<OperationsStatusSnapshot> {
   const nodesStatsAttempt = await runServerStatusProbe(
     connection,
     credentials,
@@ -788,9 +815,7 @@ export async function fetchServerStatus(
     sshTunnelOverride,
   );
 
-  return buildServerStatus({
-    clusterHealthText: clusterAttempt.bodyText,
-    indicesText: indicesAttempt.bodyText,
+  return buildOperationsStatus({
     nodesStatsText: nodesStatsAttempt.snapshot.ok ? nodesStatsAttempt.bodyText : null,
     nodesStatsDiagnostics: nodesStatsAttempt.snapshot.ok ? [] : buildServerStatusDiagnostics([nodesStatsAttempt]),
     fetchedAt: new Date().toISOString(),

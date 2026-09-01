@@ -10,7 +10,7 @@ vi.mock("../tauri", () => ({
   executeSshHttpRequest: vi.fn(),
 }));
 
-import { fetchServerStatus } from "../http-client";
+import { fetchClusterOverview, fetchIndicesStatus, fetchOperationsStatus } from "../http-client";
 
 const connection = {
   id: "conn-1",
@@ -37,7 +37,7 @@ function okResponse(body: unknown) {
   };
 }
 
-describe("fetchServerStatus probes", () => {
+describe("server status probes", () => {
   beforeEach(() => {
     executeEsHttpRequestMock.mockReset();
     executeEsHttpRequestMock.mockImplementation(async (payload: { url: string }) => {
@@ -91,23 +91,80 @@ describe("fetchServerStatus probes", () => {
     });
   });
 
-  it("loads shard counts from cluster health and skips _cat/shards", async () => {
-    const status = await fetchServerStatus(connection, { password: "secret" });
+  it("fetchClusterOverview only probes cluster health", async () => {
+    const status = await fetchClusterOverview(connection, { password: "secret" });
+    const requestedUrls = executeEsHttpRequestMock.mock.calls.map(
+      ([payload]) => (payload as { url: string }).url,
+    );
+
+    expect(requestedUrls).toEqual(["https://es.example.com:9200/_cluster/health?level=indices"]);
+    expect(status.cluster.name).toBe("logs");
+    expect(status.summary.shardCounts.started).toBe(2);
+  });
+
+  it("fetchIndicesStatus only probes cat indices", async () => {
+    const status = await fetchIndicesStatus(connection, { password: "secret" });
     const requestedUrls = executeEsHttpRequestMock.mock.calls.map(
       ([payload]) => (payload as { url: string }).url,
     );
 
     expect(requestedUrls).toEqual([
-      "https://es.example.com:9200/_cluster/health?level=indices",
       "https://es.example.com:9200/_cat/indices?format=json&bytes=b&expand_wildcards=all&h=health,status,index,pri,rep,docs.count,docs.deleted,store.size,pri.store.size",
+    ]);
+    expect(status.indices[0]?.name).toBe("orders");
+  });
+
+  it("fetchOperationsStatus only probes nodes stats", async () => {
+    const status = await fetchOperationsStatus(connection, { password: "secret" });
+    const requestedUrls = executeEsHttpRequestMock.mock.calls.map(
+      ([payload]) => (payload as { url: string }).url,
+    );
+
+    expect(requestedUrls).toEqual([
       "https://es.example.com:9200/_nodes/stats/os,jvm,fs,thread_pool,breaker,indices/indexing,search,merge,refresh,segments",
     ]);
-    expect(requestedUrls.some((url) => url.includes("/_cat/shards"))).toBe(false);
-    expect(status.indices[0]?.shardSummary).toMatchObject({
-      started: 2,
-      relocating: 0,
-      initializing: 0,
-      unassigned: 0,
+    expect(status.operations.nodeCount).toBe(0);
+  });
+
+  it("does not call the other probes when cluster health fails", async () => {
+    executeEsHttpRequestMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      bodyText: "nope",
     });
+
+    await expect(fetchClusterOverview(connection, { password: "secret" })).rejects.toThrow(/权限/);
+    expect(executeEsHttpRequestMock).toHaveBeenCalledOnce();
+  });
+
+  it("throws when the indices probe fails", async () => {
+    executeEsHttpRequestMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      bodyText: "nope",
+    });
+
+    await expect(fetchIndicesStatus(connection, { password: "secret" })).rejects.toThrow(/权限/);
+    expect(executeEsHttpRequestMock).toHaveBeenCalledOnce();
+  });
+
+  it("returns a partial failure when the operations probe fails", async () => {
+    executeEsHttpRequestMock.mockResolvedValue({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+      bodyText: "nope",
+    });
+
+    const status = await fetchOperationsStatus(connection, { password: "secret" });
+
+    expect(executeEsHttpRequestMock).toHaveBeenCalledOnce();
+    expect(status.operations.nodeCount).toBe(0);
+    expect(status.partialFailures).toEqual([
+      expect.stringContaining("探测 节点运维指标 /_nodes/stats/"),
+      expect.stringContaining("错误摘要：nope"),
+    ]);
   });
 });
