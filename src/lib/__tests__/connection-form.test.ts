@@ -55,6 +55,13 @@ describe("isConnectionFormDirty", () => {
     expect(isConnectionFormDirty(snapshot, snapshot)).toBe(false);
     expect(isConnectionFormDirty({ ...snapshot, name: "生产" }, snapshot)).toBe(true);
   });
+
+  it("相同字段值但键顺序不同时不视为脏", () => {
+    const snapshot = { ...defaultConnectionForm, name: "开发", sshProfileId: "ssh-1" };
+    const reordered = Object.fromEntries(Object.entries(snapshot).reverse()) as typeof snapshot;
+    expect(JSON.stringify(reordered) === JSON.stringify(snapshot)).toBe(false);
+    expect(isConnectionFormDirty(reordered, snapshot)).toBe(false);
+  });
 });
 
 describe("getConnectionEditorLeaveBehavior", () => {
@@ -76,6 +83,12 @@ describe("getConnectionEditorLeaveBehavior", () => {
   it("单击进入 Console 不拦截", () => {
     expect(
       getConnectionEditorLeaveBehavior({ isDirty: true, savePending: false, reason: "open-console" }),
+    ).toBe("allow");
+  });
+
+  it("保存中单击连接仍进入 Console", () => {
+    expect(
+      getConnectionEditorLeaveBehavior({ isDirty: true, savePending: true, reason: "open-console" }),
     ).toBe("allow");
   });
 

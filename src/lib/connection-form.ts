@@ -55,8 +55,10 @@ export function isSshFormIncomplete(values: SshProfileFormValues): boolean {
   );
 }
 
+const connectionFormKeys = Object.keys(defaultConnectionForm) as (keyof ConnectionFormValues)[];
+
 export function isConnectionFormDirty(current: ConnectionFormValues, snapshot: ConnectionFormValues): boolean {
-  return JSON.stringify(current) !== JSON.stringify(snapshot);
+  return connectionFormKeys.some((key) => current[key] !== snapshot[key]);
 }
 
 export function getConnectionEditorLeaveBehavior(options: {
@@ -64,11 +66,11 @@ export function getConnectionEditorLeaveBehavior(options: {
   savePending: boolean;
   reason: ConnectionEditorLeaveReason;
 }): "block" | "confirm" | "allow" {
-  if (options.savePending) {
-    return "block";
-  }
   if (options.reason === "open-console") {
     return "allow";
+  }
+  if (options.savePending) {
+    return "block";
   }
   if (options.isDirty) {
     return "confirm";
