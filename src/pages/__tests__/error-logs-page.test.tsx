@@ -26,6 +26,7 @@ vi.mock("../../providers/app-state", () => ({
   useAppState: vi.fn(),
 }));
 
+import { CONSOLE_ERROR_LOGS_PATH } from "../../lib/console-error-logs-panel";
 import { useAppState } from "../../providers/app-state";
 import { ErrorLogsPage } from "../error-logs-page";
 
@@ -66,7 +67,7 @@ describe("ErrorLogsPage", () => {
     renderLogsPage();
 
     expect(screen.getByText("console-page")).toBeInTheDocument();
-    expect(screen.getByText("?logs=1")).toBeInTheDocument();
+    expect(screen.getByText(CONSOLE_ERROR_LOGS_PATH.slice(CONSOLE_ERROR_LOGS_PATH.indexOf("?")))).toBeInTheDocument();
   });
 
   it("没有当前连接时在右侧面板展示日志，关闭后返回连接页", () => {

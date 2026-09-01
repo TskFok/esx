@@ -49,15 +49,11 @@ import {
   type ConsoleContextBreadcrumbSegment,
 } from "../lib/console-sidebar";
 import {
-  readInitialConsoleRightPaneFlags,
-  removeConsoleAdminOpenParam,
-  removeConsoleErrorLogsOpenParam,
-  removeConsoleStatusOpenParam,
-  removeConsoleWorkspaceOpenParam,
+  flagsFromConsoleRightPaneMode,
+  readInitialConsoleRightPaneMode,
+  removeConsoleRightPaneOpenParams,
   resolveConsoleRightPaneFromSearch,
-  writeStoredConsoleAdminVisible,
-  writeStoredConsoleErrorLogsVisible,
-  writeStoredConsoleStatusVisible,
+  writeStoredConsoleRightPaneMode,
   type ConsoleWorkspaceRightPaneMode,
 } from "../lib/console-error-logs-panel";
 import {
@@ -276,15 +272,8 @@ export function ConsolePage() {
   const [sidebarVisible, setSidebarVisible] = useState(readStoredConsoleSidebarVisible);
   const [sidebarWidth, setSidebarWidth] = useState(readStoredConsoleSidebarWidth);
   const [sidebarDragging, setSidebarDragging] = useState(false);
-  const [adminVisible, setAdminVisible] = useState(
-    () => readInitialConsoleRightPaneFlags(location.search).adminVisible,
-  );
-  const [statusVisible, setStatusVisible] = useState(
-    () => readInitialConsoleRightPaneFlags(location.search).statusVisible,
-  );
-  const [logsVisible, setLogsVisible] = useState(
-    () => readInitialConsoleRightPaneFlags(location.search).logsVisible,
-  );
+  const [rightPaneMode, setRightPaneMode] = useState(() => readInitialConsoleRightPaneMode(location.search));
+  const { logsVisible, statusVisible, adminVisible } = flagsFromConsoleRightPaneMode(rightPaneMode);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const sidebarWidthRef = useRef(sidebarWidth);
@@ -408,11 +397,8 @@ export function ConsolePage() {
 
     applyRightPaneMode(nextMode);
 
-    const searchWithoutWorkspace = removeConsoleWorkspaceOpenParam(location.search);
-    const searchWithoutAdmin = removeConsoleAdminOpenParam(searchWithoutWorkspace);
-    const searchWithoutStatus = removeConsoleStatusOpenParam(searchWithoutAdmin);
     navigate(
-      { pathname: location.pathname, search: removeConsoleErrorLogsOpenParam(searchWithoutStatus) },
+      { pathname: location.pathname, search: removeConsoleRightPaneOpenParams(location.search) },
       { replace: true },
     );
   }, [location.pathname, location.search, navigate]);
@@ -1344,15 +1330,8 @@ export function ConsolePage() {
   }
 
   function applyRightPaneMode(mode: ConsoleWorkspaceRightPaneMode) {
-    const nextLogs = mode === "error-logs";
-    const nextStatus = mode === "status";
-    const nextAdmin = mode === "admin";
-    setLogsVisible(nextLogs);
-    setStatusVisible(nextStatus);
-    setAdminVisible(nextAdmin);
-    writeStoredConsoleErrorLogsVisible(nextLogs);
-    writeStoredConsoleStatusVisible(nextStatus);
-    writeStoredConsoleAdminVisible(nextAdmin);
+    setRightPaneMode(mode);
+    writeStoredConsoleRightPaneMode(mode);
     if (mode !== "workspace" && !isLgSplit) {
       setMobileDrawerOpen(false);
     }

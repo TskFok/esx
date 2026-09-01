@@ -4,6 +4,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CONSOLE_WORKSPACE_PATH } from "../../lib/console-error-logs-panel";
 import { ConnectionsPage } from "../connections-page";
 import type { ConnectionProfile, SshProfile } from "../../types/connections";
 
@@ -152,7 +153,7 @@ describe("ConnectionsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /开发集群/ }));
 
     expect(setCurrentConnectionMock).toHaveBeenCalledWith("conn-1");
-    expect(navigateMock).toHaveBeenCalledWith("/console?workspace=1");
+    expect(navigateMock).toHaveBeenCalledWith(CONSOLE_WORKSPACE_PATH);
   });
 
   it("点击编辑后在右侧表单出现连接名称输入，而不是 Dialog 的 h3 标题", async () => {
@@ -196,7 +197,7 @@ describe("ConnectionsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /开发集群/ }));
 
     expect(setCurrentConnectionMock).toHaveBeenCalledWith("conn-1");
-    expect(navigateMock).toHaveBeenCalledWith("/console?workspace=1");
+    expect(navigateMock).toHaveBeenCalledWith(CONSOLE_WORKSPACE_PATH);
     expect(screen.queryByRole("heading", { name: "放弃未保存的更改？" })).not.toBeInTheDocument();
   });
 

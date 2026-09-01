@@ -6,6 +6,9 @@ export const CONSOLE_ADMIN_VISIBLE_STORAGE_KEY = "esx.console.adminVisible";
 export const CONSOLE_ADMIN_OPEN_PARAM = "admin";
 export const CONSOLE_WORKSPACE_OPEN_PARAM = "workspace";
 export const CONSOLE_WORKSPACE_PATH = "/console?workspace=1";
+export const CONSOLE_STATUS_PATH = "/console?status=1";
+export const CONSOLE_ADMIN_PATH = "/console?admin=1";
+export const CONSOLE_ERROR_LOGS_PATH = "/console?logs=1";
 
 export type ConsoleWorkspaceRightPaneMode = "workspace" | "error-logs" | "status" | "admin";
 
@@ -63,13 +66,39 @@ export function readStoredConsoleRightPaneFlags(): ConsoleRightPaneFlags {
   return { logsVisible, statusVisible, adminVisible };
 }
 
-export function readInitialConsoleRightPaneFlags(search: string): ConsoleRightPaneFlags {
-  const fromSearch = resolveConsoleRightPaneFromSearch(search);
-  if (fromSearch) {
-    return flagsFromConsoleRightPaneMode(fromSearch);
+export function consolePathForRightPane(mode: ConsoleWorkspaceRightPaneMode): string {
+  if (mode === "status") {
+    return CONSOLE_STATUS_PATH;
+  }
+  if (mode === "admin") {
+    return CONSOLE_ADMIN_PATH;
+  }
+  if (mode === "error-logs") {
+    return CONSOLE_ERROR_LOGS_PATH;
   }
 
-  return readStoredConsoleRightPaneFlags();
+  return CONSOLE_WORKSPACE_PATH;
+}
+
+export function readInitialConsoleRightPaneMode(search: string): ConsoleWorkspaceRightPaneMode {
+  return resolveConsoleRightPaneFromSearch(search) ?? getConsoleWorkspaceRightPane(readStoredConsoleRightPaneFlags());
+}
+
+export function readInitialConsoleRightPaneFlags(search: string): ConsoleRightPaneFlags {
+  return flagsFromConsoleRightPaneMode(readInitialConsoleRightPaneMode(search));
+}
+
+export function writeStoredConsoleRightPaneMode(mode: ConsoleWorkspaceRightPaneMode): void {
+  const flags = flagsFromConsoleRightPaneMode(mode);
+  writeStoredConsoleErrorLogsVisible(flags.logsVisible);
+  writeStoredConsoleStatusVisible(flags.statusVisible);
+  writeStoredConsoleAdminVisible(flags.adminVisible);
+}
+
+export function removeConsoleRightPaneOpenParams(search: string): string {
+  return removeConsoleErrorLogsOpenParam(
+    removeConsoleStatusOpenParam(removeConsoleAdminOpenParam(removeConsoleWorkspaceOpenParam(search))),
+  );
 }
 
 function readStoredFlag(key: string): boolean {

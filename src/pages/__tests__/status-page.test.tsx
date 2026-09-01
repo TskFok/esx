@@ -26,6 +26,7 @@ vi.mock("../../providers/app-state", () => ({
   useAppState: vi.fn(),
 }));
 
+import { CONSOLE_STATUS_PATH } from "../../lib/console-error-logs-panel";
 import { useAppState } from "../../providers/app-state";
 import { StatusPage } from "../status-page";
 
@@ -62,7 +63,7 @@ describe("StatusPage", () => {
     renderStatusPage();
 
     expect(screen.getByText("console-page")).toBeInTheDocument();
-    expect(screen.getByText("?status=1")).toBeInTheDocument();
+    expect(screen.getByText(CONSOLE_STATUS_PATH.slice(CONSOLE_STATUS_PATH.indexOf("?")))).toBeInTheDocument();
   });
 
   it("没有当前连接时返回连接页", () => {

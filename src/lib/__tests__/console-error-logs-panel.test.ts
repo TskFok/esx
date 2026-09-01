@@ -1,16 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CONSOLE_ADMIN_PATH,
   CONSOLE_ADMIN_VISIBLE_STORAGE_KEY,
+  CONSOLE_ERROR_LOGS_PATH,
   CONSOLE_ERROR_LOGS_VISIBLE_STORAGE_KEY,
+  CONSOLE_STATUS_PATH,
   CONSOLE_STATUS_VISIBLE_STORAGE_KEY,
   CONSOLE_WORKSPACE_PATH,
+  consolePathForRightPane,
   getConsoleWorkspaceRightPane,
   readInitialConsoleRightPaneFlags,
+  readInitialConsoleRightPaneMode,
   readStoredConsoleAdminVisible,
   readStoredConsoleErrorLogsVisible,
   readStoredConsoleStatusVisible,
   removeConsoleAdminOpenParam,
   removeConsoleErrorLogsOpenParam,
+  removeConsoleRightPaneOpenParams,
   removeConsoleStatusOpenParam,
   removeConsoleWorkspaceOpenParam,
   resolveConsoleRightPaneFromSearch,
@@ -20,6 +26,7 @@ import {
   shouldOpenConsoleWorkspace,
   writeStoredConsoleAdminVisible,
   writeStoredConsoleErrorLogsVisible,
+  writeStoredConsoleRightPaneMode,
   writeStoredConsoleStatusVisible,
 } from "../console-error-logs-panel";
 
@@ -204,6 +211,18 @@ describe("console workspace search param", () => {
   });
 });
 
+describe("console right pane navigation paths", () => {
+  it("maps each right pane mode to a dedicated console path", () => {
+    expect(consolePathForRightPane("workspace")).toBe(CONSOLE_WORKSPACE_PATH);
+    expect(consolePathForRightPane("status")).toBe(CONSOLE_STATUS_PATH);
+    expect(consolePathForRightPane("admin")).toBe(CONSOLE_ADMIN_PATH);
+    expect(consolePathForRightPane("error-logs")).toBe(CONSOLE_ERROR_LOGS_PATH);
+    expect(CONSOLE_STATUS_PATH).toBe("/console?status=1");
+    expect(CONSOLE_ADMIN_PATH).toBe("/console?admin=1");
+    expect(CONSOLE_ERROR_LOGS_PATH).toBe("/console?logs=1");
+  });
+});
+
 describe("resolveConsoleRightPaneFromSearch", () => {
   it("forces the request workspace even when status is also requested", () => {
     expect(resolveConsoleRightPaneFromSearch("?workspace=1")).toBe("workspace");
@@ -248,5 +267,66 @@ describe("readInitialConsoleRightPaneFlags", () => {
       statusVisible: true,
       adminVisible: false,
     });
+  });
+});
+
+describe("readInitialConsoleRightPaneMode", () => {
+  let localStorageMock: ReturnType<typeof createLocalStorageMock>;
+
+  beforeEach(() => {
+    localStorageMock = createLocalStorageMock();
+    vi.stubGlobal("window", { localStorage: localStorageMock });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns workspace when workspace=1 even if status was persisted", () => {
+    localStorageMock.setItem(CONSOLE_STATUS_VISIBLE_STORAGE_KEY, "true");
+    expect(readInitialConsoleRightPaneMode("?workspace=1")).toBe("workspace");
+  });
+
+  it("returns persisted status when landing without panel params", () => {
+    localStorageMock.setItem(CONSOLE_STATUS_VISIBLE_STORAGE_KEY, "true");
+    expect(readInitialConsoleRightPaneMode("")).toBe("status");
+  });
+
+  it("defaults to workspace when nothing is persisted or requested", () => {
+    expect(readInitialConsoleRightPaneMode("")).toBe("workspace");
+  });
+});
+
+describe("writeStoredConsoleRightPaneMode", () => {
+  let localStorageMock: ReturnType<typeof createLocalStorageMock>;
+
+  beforeEach(() => {
+    localStorageMock = createLocalStorageMock();
+    vi.stubGlobal("window", { localStorage: localStorageMock });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("persists exclusive flags for the selected mode", () => {
+    writeStoredConsoleRightPaneMode("status");
+
+    expect(localStorageMock.getItem(CONSOLE_STATUS_VISIBLE_STORAGE_KEY)).toBe("true");
+    expect(localStorageMock.getItem(CONSOLE_ADMIN_VISIBLE_STORAGE_KEY)).toBe("false");
+    expect(localStorageMock.getItem(CONSOLE_ERROR_LOGS_VISIBLE_STORAGE_KEY)).toBe("false");
+
+    writeStoredConsoleRightPaneMode("workspace");
+
+    expect(localStorageMock.getItem(CONSOLE_STATUS_VISIBLE_STORAGE_KEY)).toBe("false");
+    expect(localStorageMock.getItem(CONSOLE_ADMIN_VISIBLE_STORAGE_KEY)).toBe("false");
+    expect(localStorageMock.getItem(CONSOLE_ERROR_LOGS_VISIBLE_STORAGE_KEY)).toBe("false");
+  });
+});
+
+describe("removeConsoleRightPaneOpenParams", () => {
+  it("strips all right-pane open params in one pass", () => {
+    expect(removeConsoleRightPaneOpenParams("?workspace=1&status=1&admin=1&logs=1&foo=bar")).toBe("?foo=bar");
+    expect(removeConsoleRightPaneOpenParams("?workspace=1")).toBe("");
   });
 });

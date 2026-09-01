@@ -26,6 +26,7 @@ vi.mock("../../providers/app-state", () => ({
   useAppState: vi.fn(),
 }));
 
+import { CONSOLE_ADMIN_PATH } from "../../lib/console-error-logs-panel";
 import { useAppState } from "../../providers/app-state";
 import { AdminPage } from "../admin-page";
 
@@ -62,7 +63,7 @@ describe("AdminPage", () => {
     renderAdminPage();
 
     expect(screen.getByText("console-page")).toBeInTheDocument();
-    expect(screen.getByText("?admin=1")).toBeInTheDocument();
+    expect(screen.getByText(CONSOLE_ADMIN_PATH.slice(CONSOLE_ADMIN_PATH.indexOf("?")))).toBeInTheDocument();
   });
 
   it("没有当前连接时返回连接页", () => {

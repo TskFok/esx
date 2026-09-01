@@ -1,6 +1,7 @@
 import { Navigate, useNavigate } from "react-router-dom";
 import { Card } from "../components/ui/card";
 import { ErrorLogsPanel } from "../components/console/error-logs-panel";
+import { CONSOLE_ERROR_LOGS_PATH } from "../lib/console-error-logs-panel";
 import { useAppState } from "../providers/app-state";
 
 export function ErrorLogsPage() {
@@ -8,7 +9,7 @@ export function ErrorLogsPage() {
   const { currentConnection } = useAppState();
 
   if (currentConnection) {
-    return <Navigate to="/console?logs=1" replace />;
+    return <Navigate to={CONSOLE_ERROR_LOGS_PATH} replace />;
   }
 
   return (
