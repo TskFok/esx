@@ -4,9 +4,15 @@ type ConsoleMobileDrawerProps = {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
+  closeLabel?: string;
 };
 
-export function ConsoleMobileDrawer({ open, onClose, children }: ConsoleMobileDrawerProps) {
+export function ConsoleMobileDrawer({
+  open,
+  onClose,
+  children,
+  closeLabel = "关闭连接与请求抽屉",
+}: ConsoleMobileDrawerProps) {
   useEffect(() => {
     if (!open) {
       return;
@@ -34,7 +40,7 @@ export function ConsoleMobileDrawer({ open, onClose, children }: ConsoleMobileDr
       <button
         type="button"
         className="absolute inset-0 bg-slate-950/45"
-        aria-label="关闭连接与请求抽屉"
+        aria-label={closeLabel}
         onClick={onClose}
       />
       <aside className="absolute inset-y-0 left-0 flex w-[min(calc(100vw-3rem),320px)] max-w-full flex-col overflow-hidden rounded-r-2xl bg-slate-950 px-3 py-3 text-slate-50 shadow-xl shadow-slate-900/25">

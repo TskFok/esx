@@ -58,7 +58,7 @@ export function ConnectionEditorPanel({
   return (
     <Card className="flex h-full min-h-0 flex-col overflow-hidden p-6 sm:p-8">
       <div className="shrink-0">
-        <h3 className="text-2xl font-extrabold text-slate-900">{mode === "edit" ? "编辑连接" : "新增连接"}</h3>
+        <h2 className="text-2xl font-extrabold text-slate-900">{mode === "edit" ? "编辑连接" : "新增连接"}</h2>
         <p className="mt-2 text-sm leading-7 text-slate-500">连接直接保存为独立项。SSH 通道可选填。</p>
       </div>
 
