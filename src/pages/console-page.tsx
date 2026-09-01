@@ -24,6 +24,8 @@ import { ConsoleShortcutsDialog } from "../components/console/console-shortcuts-
 import { ConsoleSidebarPanel } from "../components/console/console-sidebar-panel";
 import { ConsoleWorkspaceRightPane } from "../components/console/console-workspace-right-pane";
 import { ErrorLogsPanel } from "../components/console/error-logs-panel";
+import { StatusPanel } from "../components/console/status-panel";
+import { AdminPanel } from "../components/console/admin-panel";
 import { ResponseViewer } from "../components/console/response-viewer";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -47,10 +49,19 @@ import {
   type ConsoleContextBreadcrumbSegment,
 } from "../lib/console-sidebar";
 import {
+  readStoredConsoleAdminVisible,
   readStoredConsoleErrorLogsVisible,
+  readStoredConsoleStatusVisible,
+  removeConsoleAdminOpenParam,
   removeConsoleErrorLogsOpenParam,
+  removeConsoleStatusOpenParam,
+  shouldOpenConsoleAdmin,
   shouldOpenConsoleErrorLogs,
+  shouldOpenConsoleStatus,
+  writeStoredConsoleAdminVisible,
   writeStoredConsoleErrorLogsVisible,
+  writeStoredConsoleStatusVisible,
+  type ConsoleWorkspaceRightPaneMode,
 } from "../lib/console-error-logs-panel";
 import {
   CONSOLE_EDITOR_SPLIT_STORAGE_KEY,
@@ -268,7 +279,19 @@ export function ConsolePage() {
   const [sidebarVisible, setSidebarVisible] = useState(readStoredConsoleSidebarVisible);
   const [sidebarWidth, setSidebarWidth] = useState(readStoredConsoleSidebarWidth);
   const [sidebarDragging, setSidebarDragging] = useState(false);
-  const [logsVisible, setLogsVisible] = useState(readStoredConsoleErrorLogsVisible);
+  const [adminVisible, setAdminVisible] = useState(readStoredConsoleAdminVisible);
+  const [statusVisible, setStatusVisible] = useState(() => {
+    if (readStoredConsoleAdminVisible()) {
+      return false;
+    }
+    return readStoredConsoleStatusVisible();
+  });
+  const [logsVisible, setLogsVisible] = useState(() => {
+    if (readStoredConsoleAdminVisible() || readStoredConsoleStatusVisible()) {
+      return false;
+    }
+    return readStoredConsoleErrorLogsVisible();
+  });
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const sidebarWidthRef = useRef(sidebarWidth);
@@ -385,14 +408,20 @@ export function ConsolePage() {
   }, [isLgSplit]);
 
   useEffect(() => {
-    if (!shouldOpenConsoleErrorLogs(location.search)) {
+    const openAdmin = shouldOpenConsoleAdmin(location.search);
+    const openStatus = shouldOpenConsoleStatus(location.search);
+    const openLogs = shouldOpenConsoleErrorLogs(location.search);
+    if (!openAdmin && !openStatus && !openLogs) {
       return;
     }
 
-    setLogsVisible(true);
-    writeStoredConsoleErrorLogsVisible(true);
+    const nextMode: ConsoleWorkspaceRightPaneMode = openAdmin ? "admin" : openStatus ? "status" : "error-logs";
+    applyRightPaneMode(nextMode);
+
+    const searchWithoutAdmin = removeConsoleAdminOpenParam(location.search);
+    const searchWithoutStatus = removeConsoleStatusOpenParam(searchWithoutAdmin);
     navigate(
-      { pathname: location.pathname, search: removeConsoleErrorLogsOpenParam(location.search) },
+      { pathname: location.pathname, search: removeConsoleErrorLogsOpenParam(searchWithoutStatus) },
       { replace: true },
     );
   }, [location.pathname, location.search, navigate]);
@@ -1323,16 +1352,43 @@ export function ConsolePage() {
     setMobileDrawerOpen((current) => !current);
   }
 
-  function setErrorLogsOpen(next: boolean) {
-    setLogsVisible(next);
-    writeStoredConsoleErrorLogsVisible(next);
-    if (next && !isLgSplit) {
+  function applyRightPaneMode(mode: ConsoleWorkspaceRightPaneMode) {
+    const nextLogs = mode === "error-logs";
+    const nextStatus = mode === "status";
+    const nextAdmin = mode === "admin";
+    setLogsVisible(nextLogs);
+    setStatusVisible(nextStatus);
+    setAdminVisible(nextAdmin);
+    writeStoredConsoleErrorLogsVisible(nextLogs);
+    writeStoredConsoleStatusVisible(nextStatus);
+    writeStoredConsoleAdminVisible(nextAdmin);
+    if (mode !== "workspace" && !isLgSplit) {
       setMobileDrawerOpen(false);
     }
   }
 
+  function setErrorLogsOpen(next: boolean) {
+    applyRightPaneMode(next ? "error-logs" : "workspace");
+  }
+
   function toggleErrorLogs() {
     setErrorLogsOpen(!logsVisible);
+  }
+
+  function setStatusOpen(next: boolean) {
+    applyRightPaneMode(next ? "status" : "workspace");
+  }
+
+  function toggleStatus() {
+    setStatusOpen(!statusVisible);
+  }
+
+  function setAdminOpen(next: boolean) {
+    applyRightPaneMode(next ? "admin" : "workspace");
+  }
+
+  function toggleAdmin() {
+    setAdminOpen(!adminVisible);
   }
 
   function handleBreadcrumbSegmentClick(segment: ConsoleContextBreadcrumbSegment) {
@@ -1389,10 +1445,12 @@ export function ConsolePage() {
       closeTitle={isLgSplit ? "隐藏侧边栏 (⌘B)" : "关闭抽屉 (⌘B)"}
       onClose={closeSidebar}
       onNavigateConnections={() => navigate("/connections")}
-      onNavigateStatus={() => navigate("/status")}
-      onNavigateAdmin={() => navigate("/admin")}
+      onNavigateStatus={toggleStatus}
+      onNavigateAdmin={toggleAdmin}
       onNavigateLogs={toggleErrorLogs}
       logsPanelOpen={logsVisible}
+      statusPanelOpen={statusVisible}
+      adminPanelOpen={adminVisible}
       onCreateRequest={handleCreateRequest}
       onExportClick={handleExportClick}
       onImportFileSelected={handleImportFileSelected}
@@ -1479,9 +1537,21 @@ export function ConsolePage() {
             ) : null}
             <ConsoleWorkspaceRightPane
               logsVisible={logsVisible}
+              statusVisible={statusVisible}
+              adminVisible={adminVisible}
               errorLogs={
                 <div className="flex min-h-0 flex-1 flex-col">
                   <ErrorLogsPanel onClose={() => setErrorLogsOpen(false)} />
+                </div>
+              }
+              status={
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <StatusPanel onClose={() => setStatusOpen(false)} />
+                </div>
+              }
+              admin={
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <AdminPanel onClose={() => setAdminOpen(false)} />
                 </div>
               }
               workspace={

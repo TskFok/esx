@@ -47,6 +47,8 @@ describe("ConsoleSidebarPanel navigation", () => {
     expect(connectionsButton).not.toHaveClass("bg-secondary");
     expect(connectionsButton).toHaveClass(...SIDEBAR_NAV_GHOST_CLASSES);
     expect(statusButton).toHaveClass(...SIDEBAR_NAV_GHOST_CLASSES);
+    expect(statusButton).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "治理" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "错误日志" })).toHaveAttribute("aria-pressed", "false");
   });
 
@@ -81,5 +83,77 @@ describe("ConsoleSidebarPanel navigation", () => {
     );
 
     expect(screen.getByRole("button", { name: "错误日志" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "状态" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "治理" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("状态打开时按钮为按下态", () => {
+    render(
+      <ConsoleSidebarPanel
+        connectionName="local"
+        requests={[]}
+        activeSavedRequestId={null}
+        onClose={vi.fn()}
+        onNavigateConnections={vi.fn()}
+        onNavigateStatus={vi.fn()}
+        onNavigateAdmin={vi.fn()}
+        onNavigateLogs={vi.fn()}
+        statusPanelOpen
+        onCreateRequest={vi.fn()}
+        onExportClick={vi.fn()}
+        onImportFileSelected={vi.fn()}
+        onSelectSavedRequest={vi.fn()}
+        onEditRequest={vi.fn()}
+        onDuplicateRequest={vi.fn()}
+        onDeleteRequest={vi.fn()}
+        onReorderRequests={vi.fn()}
+        selectionMode={false}
+        selectedRequestIds={[]}
+        onToggleSelectionMode={vi.fn()}
+        onToggleRequestSelection={vi.fn()}
+        onSelectAllVisible={vi.fn()}
+        onClearSelection={vi.fn()}
+        onOpenBulkTags={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "状态" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "错误日志" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "治理" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("治理打开时按钮为按下态", () => {
+    render(
+      <ConsoleSidebarPanel
+        connectionName="local"
+        requests={[]}
+        activeSavedRequestId={null}
+        onClose={vi.fn()}
+        onNavigateConnections={vi.fn()}
+        onNavigateStatus={vi.fn()}
+        onNavigateAdmin={vi.fn()}
+        onNavigateLogs={vi.fn()}
+        adminPanelOpen
+        onCreateRequest={vi.fn()}
+        onExportClick={vi.fn()}
+        onImportFileSelected={vi.fn()}
+        onSelectSavedRequest={vi.fn()}
+        onEditRequest={vi.fn()}
+        onDuplicateRequest={vi.fn()}
+        onDeleteRequest={vi.fn()}
+        onReorderRequests={vi.fn()}
+        selectionMode={false}
+        selectedRequestIds={[]}
+        onToggleSelectionMode={vi.fn()}
+        onToggleRequestSelection={vi.fn()}
+        onSelectAllVisible={vi.fn()}
+        onClearSelection={vi.fn()}
+        onOpenBulkTags={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "治理" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "状态" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "错误日志" })).toHaveAttribute("aria-pressed", "false");
   });
 });

@@ -29,6 +29,8 @@ export type ConsoleSidebarPanelProps = {
   onNavigateAdmin: () => void;
   onNavigateLogs: () => void;
   logsPanelOpen?: boolean;
+  statusPanelOpen?: boolean;
+  adminPanelOpen?: boolean;
   onCreateRequest: () => void;
   onExportClick: () => void;
   onImportFileSelected: (file: File) => void;
@@ -58,6 +60,8 @@ export function ConsoleSidebarPanel({
   onNavigateAdmin,
   onNavigateLogs,
   logsPanelOpen = false,
+  statusPanelOpen = false,
+  adminPanelOpen = false,
   onCreateRequest,
   onExportClick,
   onImportFileSelected,
@@ -150,7 +154,10 @@ export function ConsoleSidebarPanel({
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+            className={`h-8 rounded-lg px-2 text-xs hover:bg-white/10 hover:text-white ${
+              statusPanelOpen ? "bg-white/10 text-white" : "text-slate-200"
+            }`}
+            aria-pressed={statusPanelOpen}
             onClick={onNavigateStatus}
           >
             <Server className="mr-1 h-3.5 w-3.5" />
@@ -159,7 +166,10 @@ export function ConsoleSidebarPanel({
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+            className={`h-8 rounded-lg px-2 text-xs hover:bg-white/10 hover:text-white ${
+              adminPanelOpen ? "bg-white/10 text-white" : "text-slate-200"
+            }`}
+            aria-pressed={adminPanelOpen}
             onClick={onNavigateAdmin}
           >
             <Hammer className="mr-1 h-3.5 w-3.5" />

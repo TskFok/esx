@@ -27,7 +27,7 @@ vi.mock("../../providers/app-state", () => ({
 }));
 
 import { useAppState } from "../../providers/app-state";
-import { AdminPage } from "../admin-page";
+import { StatusPage } from "../status-page";
 
 const useAppStateMock = vi.mocked(useAppState);
 
@@ -41,11 +41,11 @@ function ConsoleSearchProbe() {
   );
 }
 
-function renderAdminPage() {
+function renderStatusPage() {
   return render(
-    <MemoryRouter initialEntries={["/admin"]}>
+    <MemoryRouter initialEntries={["/status"]}>
       <Routes>
-        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/status" element={<StatusPage />} />
         <Route path="/console" element={<ConsoleSearchProbe />} />
         <Route path="/connections" element={<div>connections-page</div>} />
       </Routes>
@@ -53,16 +53,16 @@ function renderAdminPage() {
   );
 }
 
-describe("AdminPage", () => {
-  it("已有当前连接时进入控制台并打开右侧治理", () => {
+describe("StatusPage", () => {
+  it("已有当前连接时进入控制台并打开右侧状态", () => {
     useAppStateMock.mockReturnValue({
       currentConnection: connection,
     } as unknown as ReturnType<typeof useAppState>);
 
-    renderAdminPage();
+    renderStatusPage();
 
     expect(screen.getByText("console-page")).toBeInTheDocument();
-    expect(screen.getByText("?admin=1")).toBeInTheDocument();
+    expect(screen.getByText("?status=1")).toBeInTheDocument();
   });
 
   it("没有当前连接时返回连接页", () => {
@@ -70,7 +70,7 @@ describe("AdminPage", () => {
       currentConnection: null,
     } as unknown as ReturnType<typeof useAppState>);
 
-    renderAdminPage();
+    renderStatusPage();
 
     expect(screen.getByText("connections-page")).toBeInTheDocument();
   });
