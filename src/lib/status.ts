@@ -1,24 +1,19 @@
 import type {
+  ClusterOverviewSnapshot,
+  ClusterOverviewSummary,
   ClusterStatus,
   DiskWatermark,
+  IndicesStatusSnapshot,
   IndexStatus,
   NodeOperationStatus,
+  OperationsStatusSnapshot,
   ServerOperationStatus,
   ServerHealth,
   ServerRiskFinding,
-  ServerStatusSnapshot,
   ServerStatusSort,
   ThreadPoolOperationStatus,
   ShardStateSummary,
 } from "../types/status";
-
-type ServerStatusInput = {
-  clusterHealthText: string;
-  indicesText: string;
-  nodesStatsText?: string | null;
-  nodesStatsDiagnostics?: string[];
-  fetchedAt?: string;
-};
 
 type FilterOptions = {
   query: string;
@@ -484,7 +479,7 @@ function hasShardCounts(summary: ShardStateSummary) {
   return summary.started + summary.relocating + summary.initializing + summary.unassigned + summary.other > 0;
 }
 
-function parseIndices(indicesText: string, shardSummaries: Record<string, ShardStateSummary>) {
+function parseIndices(indicesText: string) {
   const value = parseJsonValue(indicesText);
   if (!Array.isArray(value)) {
     return [];
@@ -507,7 +502,7 @@ function parseIndices(indicesText: string, shardSummaries: Record<string, ShardS
       docsDeleted: parseNumberValue(record["docs.deleted"]),
       storeBytes: parseNumberValue(record["store.size"]),
       primaryStoreBytes: parseNumberValue(record["pri.store.size"]),
-      shardSummary: shardSummaries[name] ?? emptyShardSummary(),
+      shardSummary: emptyShardSummary(),
     }];
   }).sort((left, right) => left.name.localeCompare(right.name, "zh-CN"));
 }
@@ -516,26 +511,38 @@ function sumKnownNumbers(indices: IndexStatus[], pick: (index: IndexStatus) => n
   return indices.reduce((total, index) => total + (pick(index) ?? 0), 0);
 }
 
-function summarizeShardCounts(indices: IndexStatus[]) {
-  return indices.reduce((summary, index) => ({
-    started: summary.started + index.shardSummary.started,
-    relocating: summary.relocating + index.shardSummary.relocating,
-    initializing: summary.initializing + index.shardSummary.initializing,
-    unassigned: summary.unassigned + index.shardSummary.unassigned,
-    other: summary.other + index.shardSummary.other,
-  }), emptyShardSummary());
+function buildHealthCountsFromClusterHealth(clusterHealthText: string) {
+  const counts: Record<ServerHealth, number> = { green: 0, yellow: 0, red: 0, unknown: 0 };
+  const record = toRecord(parseJsonValue(clusterHealthText));
+  const indices = record ? toRecord(record.indices) : null;
+  if (!indices) {
+    return counts;
+  }
+
+  Object.values(indices).forEach((value) => {
+    const index = toRecord(value);
+    counts[parseServerHealth(index?.status)] += 1;
+  });
+
+  return counts;
 }
 
-function buildRiskFindings({
+function sortRiskFindings(risks: ServerRiskFinding[]) {
+  const severityOrder: Record<ServerRiskFinding["severity"], number> = {
+    critical: 0,
+    warning: 1,
+    info: 2,
+  };
+
+  return risks.sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity]);
+}
+
+export function buildOverviewRiskFindings({
   cluster,
-  indices,
   summary,
-  operations,
 }: {
   cluster: ClusterStatus;
-  indices: IndexStatus[];
-  summary: ServerStatusSnapshot["summary"];
-  operations: ServerOperationStatus;
+  summary: ClusterOverviewSummary;
 }) {
   const risks: ServerRiskFinding[] = [];
   const pushRisk = (risk: ServerRiskFinding) => {
@@ -569,6 +576,15 @@ function buildRiskFindings({
       recommendation: "查看具体 index 的 shard 状态，并执行 allocation explain 判断是磁盘、节点、过滤规则还是副本数导致。",
     });
   }
+
+  return sortRiskFindings(risks);
+}
+
+export function buildOperationsRiskFindings(operations: ServerOperationStatus) {
+  const risks: ServerRiskFinding[] = [];
+  const pushRisk = (risk: ServerRiskFinding) => {
+    risks.push(risk);
+  };
 
   if (operations.diskWatermark === "flood_stage") {
     pushRisk({
@@ -652,6 +668,15 @@ function buildRiskFindings({
     });
   }
 
+  return sortRiskFindings(risks);
+}
+
+export function buildIndicesRiskFindings(indices: IndexStatus[]) {
+  const risks: ServerRiskFinding[] = [];
+  const pushRisk = (risk: ServerRiskFinding) => {
+    risks.push(risk);
+  };
+
   const highDeletedRatioIndex = indices.find((index) => {
     const docs = index.docsCount ?? 0;
     const deleted = index.docsDeleted ?? 0;
@@ -667,45 +692,71 @@ function buildRiskFindings({
     });
   }
 
-  const severityOrder: Record<ServerRiskFinding["severity"], number> = {
-    critical: 0,
-    warning: 1,
-    info: 2,
-  };
-
-  return risks.sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity]);
+  return sortRiskFindings(risks);
 }
 
-export function buildServerStatus(input: ServerStatusInput): ServerStatusSnapshot {
-  const shardSummaries = buildShardSummariesFromClusterHealth(input.clusterHealthText);
-  const indices = parseIndices(input.indicesText, shardSummaries);
+export function buildClusterOverview(input: {
+  clusterHealthText: string;
+  fetchedAt?: string;
+}): ClusterOverviewSnapshot {
   const cluster = parseClusterStatus(input.clusterHealthText);
-  const healthCounts = indices.reduce<Record<ServerHealth, number>>(
-    (counts, index) => ({
-      ...counts,
-      [index.health]: counts[index.health] + 1,
-    }),
-    { green: 0, yellow: 0, red: 0, unknown: 0 },
-  );
-  const indexShardCounts = summarizeShardCounts(indices);
+  const indexSummaries = buildShardSummariesFromClusterHealth(input.clusterHealthText);
+  const names = Object.keys(indexSummaries);
+  const healthCounts = buildHealthCountsFromClusterHealth(input.clusterHealthText);
+  const indexShardCounts = names.reduce((summary, name) => ({
+    started: summary.started + indexSummaries[name].started,
+    relocating: summary.relocating + indexSummaries[name].relocating,
+    initializing: summary.initializing + indexSummaries[name].initializing,
+    unassigned: summary.unassigned + indexSummaries[name].unassigned,
+    other: summary.other + indexSummaries[name].other,
+  }), emptyShardSummary());
+  const summary = {
+    totalIndices: names.length,
+    systemIndices: names.filter((name) => name.startsWith(".")).length,
+    healthCounts,
+    shardCounts: hasShardCounts(indexShardCounts) ? indexShardCounts : shardSummaryFromCluster(cluster),
+  };
+
+  return {
+    cluster,
+    summary,
+    risks: buildOverviewRiskFindings({ cluster, summary }),
+    fetchedAt: input.fetchedAt ?? new Date().toISOString(),
+  };
+}
+
+export function buildOperationsStatus(input: {
+  nodesStatsText?: string | null;
+  nodesStatsDiagnostics?: string[];
+  fetchedAt?: string;
+}): OperationsStatusSnapshot {
+  const operations = parseNodesStats(input.nodesStatsText);
+
+  return {
+    operations,
+    risks: buildOperationsRiskFindings(operations),
+    fetchedAt: input.fetchedAt ?? new Date().toISOString(),
+    partialFailures: [...(input.nodesStatsDiagnostics ?? [])],
+  };
+}
+
+export function buildIndicesStatus(input: {
+  indicesText: string;
+  fetchedAt?: string;
+}): IndicesStatusSnapshot {
+  const indices = parseIndices(input.indicesText);
   const summary = {
     totalIndices: indices.length,
     systemIndices: indices.filter((index) => index.name.startsWith(".")).length,
     visibleStoreBytes: sumKnownNumbers(indices, (index) => index.storeBytes),
     visibleDocsCount: sumKnownNumbers(indices, (index) => index.docsCount),
-    healthCounts,
-    shardCounts: hasShardCounts(indexShardCounts) ? indexShardCounts : shardSummaryFromCluster(cluster),
   };
-  const operations = parseNodesStats(input.nodesStatsText);
 
   return {
-    cluster,
     indices,
     summary,
-    operations,
-    risks: buildRiskFindings({ cluster, indices, summary, operations }),
+    risks: buildIndicesRiskFindings(indices),
     fetchedAt: input.fetchedAt ?? new Date().toISOString(),
-    partialFailures: [...(input.nodesStatsDiagnostics ?? [])],
   };
 }
 

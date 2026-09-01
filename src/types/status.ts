@@ -32,13 +32,18 @@ export type IndexStatus = {
   shardSummary: ShardStateSummary;
 };
 
-export type ServerStatusSummary = {
+export type ClusterOverviewSummary = {
   totalIndices: number;
   systemIndices: number;
-  visibleStoreBytes: number;
-  visibleDocsCount: number;
   healthCounts: Record<ServerHealth, number>;
   shardCounts: ShardStateSummary;
+};
+
+export type ClusterOverviewSnapshot = {
+  cluster: ClusterStatus;
+  summary: ClusterOverviewSummary;
+  risks: ServerRiskFinding[];
+  fetchedAt: string;
 };
 
 export type DiskWatermark = "normal" | "low" | "high" | "flood_stage" | "unknown";
@@ -135,14 +140,25 @@ export type ServerRiskFinding = {
   recommendation: string;
 };
 
-export type ServerStatusSnapshot = {
-  cluster: ClusterStatus;
-  indices: IndexStatus[];
-  summary: ServerStatusSummary;
+export type OperationsStatusSnapshot = {
   operations: ServerOperationStatus;
   risks: ServerRiskFinding[];
   fetchedAt: string;
   partialFailures: string[];
+};
+
+export type IndicesStatusSummary = {
+  totalIndices: number;
+  systemIndices: number;
+  visibleStoreBytes: number;
+  visibleDocsCount: number;
+};
+
+export type IndicesStatusSnapshot = {
+  indices: IndexStatus[];
+  summary: IndicesStatusSummary;
+  risks: ServerRiskFinding[];
+  fetchedAt: string;
 };
 
 export type ServerStatusSortKey = "name" | "health" | "status" | "docs" | "store";
