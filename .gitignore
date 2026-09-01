@@ -31,6 +31,9 @@ src-tauri/gen/
 !.env.example
 *.local
 
+# Git worktrees
+.worktrees/
+
 # Editor directories and files
 .vscode/
 .idea/
