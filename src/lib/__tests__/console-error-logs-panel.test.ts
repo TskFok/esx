@@ -3,16 +3,21 @@ import {
   CONSOLE_ADMIN_VISIBLE_STORAGE_KEY,
   CONSOLE_ERROR_LOGS_VISIBLE_STORAGE_KEY,
   CONSOLE_STATUS_VISIBLE_STORAGE_KEY,
+  CONSOLE_WORKSPACE_PATH,
   getConsoleWorkspaceRightPane,
+  readInitialConsoleRightPaneFlags,
   readStoredConsoleAdminVisible,
   readStoredConsoleErrorLogsVisible,
   readStoredConsoleStatusVisible,
   removeConsoleAdminOpenParam,
   removeConsoleErrorLogsOpenParam,
   removeConsoleStatusOpenParam,
+  removeConsoleWorkspaceOpenParam,
+  resolveConsoleRightPaneFromSearch,
   shouldOpenConsoleAdmin,
   shouldOpenConsoleErrorLogs,
   shouldOpenConsoleStatus,
+  shouldOpenConsoleWorkspace,
   writeStoredConsoleAdminVisible,
   writeStoredConsoleErrorLogsVisible,
   writeStoredConsoleStatusVisible,
@@ -178,5 +183,70 @@ describe("console admin search param", () => {
     expect(removeConsoleAdminOpenParam("?admin=1&foo=bar")).toBe("?foo=bar");
     expect(removeConsoleAdminOpenParam("?admin=1")).toBe("");
     expect(removeConsoleAdminOpenParam("?status=1&admin=1")).toBe("?status=1");
+  });
+});
+
+describe("console workspace search param", () => {
+  it("opens the request workspace when workspace=1", () => {
+    expect(shouldOpenConsoleWorkspace("?workspace=1")).toBe(true);
+    expect(shouldOpenConsoleWorkspace("workspace=open")).toBe(true);
+    expect(shouldOpenConsoleWorkspace("?status=1")).toBe(false);
+  });
+
+  it("removes the workspace param and keeps others", () => {
+    expect(removeConsoleWorkspaceOpenParam("?workspace=1&foo=bar")).toBe("?foo=bar");
+    expect(removeConsoleWorkspaceOpenParam("?workspace=1")).toBe("");
+    expect(removeConsoleWorkspaceOpenParam("?status=1&workspace=1")).toBe("?status=1");
+  });
+
+  it("points connection-to-console navigation at the request workspace", () => {
+    expect(CONSOLE_WORKSPACE_PATH).toBe("/console?workspace=1");
+  });
+});
+
+describe("resolveConsoleRightPaneFromSearch", () => {
+  it("forces the request workspace even when status is also requested", () => {
+    expect(resolveConsoleRightPaneFromSearch("?workspace=1")).toBe("workspace");
+    expect(resolveConsoleRightPaneFromSearch("?status=1&workspace=1")).toBe("workspace");
+  });
+
+  it("keeps existing panel params when workspace is absent", () => {
+    expect(resolveConsoleRightPaneFromSearch("?admin=1")).toBe("admin");
+    expect(resolveConsoleRightPaneFromSearch("?status=1")).toBe("status");
+    expect(resolveConsoleRightPaneFromSearch("?logs=1")).toBe("error-logs");
+    expect(resolveConsoleRightPaneFromSearch("")).toBeNull();
+  });
+});
+
+describe("readInitialConsoleRightPaneFlags", () => {
+  let localStorageMock: ReturnType<typeof createLocalStorageMock>;
+
+  beforeEach(() => {
+    localStorageMock = createLocalStorageMock();
+    vi.stubGlobal("window", { localStorage: localStorageMock });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the request workspace when workspace=1 even if status was persisted", () => {
+    localStorageMock.setItem(CONSOLE_STATUS_VISIBLE_STORAGE_KEY, "true");
+
+    expect(readInitialConsoleRightPaneFlags("?workspace=1")).toEqual({
+      logsVisible: false,
+      statusVisible: false,
+      adminVisible: false,
+    });
+  });
+
+  it("restores persisted status when landing on /console without panel params", () => {
+    localStorageMock.setItem(CONSOLE_STATUS_VISIBLE_STORAGE_KEY, "true");
+
+    expect(readInitialConsoleRightPaneFlags("")).toEqual({
+      logsVisible: false,
+      statusVisible: true,
+      adminVisible: false,
+    });
   });
 });

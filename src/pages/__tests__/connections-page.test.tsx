@@ -152,7 +152,7 @@ describe("ConnectionsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /开发集群/ }));
 
     expect(setCurrentConnectionMock).toHaveBeenCalledWith("conn-1");
-    expect(navigateMock).toHaveBeenCalledWith("/console");
+    expect(navigateMock).toHaveBeenCalledWith("/console?workspace=1");
   });
 
   it("点击编辑后在右侧表单出现连接名称输入，而不是 Dialog 的 h3 标题", async () => {
@@ -196,7 +196,7 @@ describe("ConnectionsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /开发集群/ }));
 
     expect(setCurrentConnectionMock).toHaveBeenCalledWith("conn-1");
-    expect(navigateMock).toHaveBeenCalledWith("/console");
+    expect(navigateMock).toHaveBeenCalledWith("/console?workspace=1");
     expect(screen.queryByRole("heading", { name: "放弃未保存的更改？" })).not.toBeInTheDocument();
   });
 

@@ -49,15 +49,12 @@ import {
   type ConsoleContextBreadcrumbSegment,
 } from "../lib/console-sidebar";
 import {
-  readStoredConsoleAdminVisible,
-  readStoredConsoleErrorLogsVisible,
-  readStoredConsoleStatusVisible,
+  readInitialConsoleRightPaneFlags,
   removeConsoleAdminOpenParam,
   removeConsoleErrorLogsOpenParam,
   removeConsoleStatusOpenParam,
-  shouldOpenConsoleAdmin,
-  shouldOpenConsoleErrorLogs,
-  shouldOpenConsoleStatus,
+  removeConsoleWorkspaceOpenParam,
+  resolveConsoleRightPaneFromSearch,
   writeStoredConsoleAdminVisible,
   writeStoredConsoleErrorLogsVisible,
   writeStoredConsoleStatusVisible,
@@ -279,19 +276,15 @@ export function ConsolePage() {
   const [sidebarVisible, setSidebarVisible] = useState(readStoredConsoleSidebarVisible);
   const [sidebarWidth, setSidebarWidth] = useState(readStoredConsoleSidebarWidth);
   const [sidebarDragging, setSidebarDragging] = useState(false);
-  const [adminVisible, setAdminVisible] = useState(readStoredConsoleAdminVisible);
-  const [statusVisible, setStatusVisible] = useState(() => {
-    if (readStoredConsoleAdminVisible()) {
-      return false;
-    }
-    return readStoredConsoleStatusVisible();
-  });
-  const [logsVisible, setLogsVisible] = useState(() => {
-    if (readStoredConsoleAdminVisible() || readStoredConsoleStatusVisible()) {
-      return false;
-    }
-    return readStoredConsoleErrorLogsVisible();
-  });
+  const [adminVisible, setAdminVisible] = useState(
+    () => readInitialConsoleRightPaneFlags(location.search).adminVisible,
+  );
+  const [statusVisible, setStatusVisible] = useState(
+    () => readInitialConsoleRightPaneFlags(location.search).statusVisible,
+  );
+  const [logsVisible, setLogsVisible] = useState(
+    () => readInitialConsoleRightPaneFlags(location.search).logsVisible,
+  );
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const sidebarWidthRef = useRef(sidebarWidth);
@@ -408,17 +401,15 @@ export function ConsolePage() {
   }, [isLgSplit]);
 
   useEffect(() => {
-    const openAdmin = shouldOpenConsoleAdmin(location.search);
-    const openStatus = shouldOpenConsoleStatus(location.search);
-    const openLogs = shouldOpenConsoleErrorLogs(location.search);
-    if (!openAdmin && !openStatus && !openLogs) {
+    const nextMode = resolveConsoleRightPaneFromSearch(location.search);
+    if (!nextMode) {
       return;
     }
 
-    const nextMode: ConsoleWorkspaceRightPaneMode = openAdmin ? "admin" : openStatus ? "status" : "error-logs";
     applyRightPaneMode(nextMode);
 
-    const searchWithoutAdmin = removeConsoleAdminOpenParam(location.search);
+    const searchWithoutWorkspace = removeConsoleWorkspaceOpenParam(location.search);
+    const searchWithoutAdmin = removeConsoleAdminOpenParam(searchWithoutWorkspace);
     const searchWithoutStatus = removeConsoleStatusOpenParam(searchWithoutAdmin);
     navigate(
       { pathname: location.pathname, search: removeConsoleErrorLogsOpenParam(searchWithoutStatus) },

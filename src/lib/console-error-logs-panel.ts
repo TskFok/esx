@@ -4,8 +4,16 @@ export const CONSOLE_STATUS_VISIBLE_STORAGE_KEY = "esx.console.statusVisible";
 export const CONSOLE_STATUS_OPEN_PARAM = "status";
 export const CONSOLE_ADMIN_VISIBLE_STORAGE_KEY = "esx.console.adminVisible";
 export const CONSOLE_ADMIN_OPEN_PARAM = "admin";
+export const CONSOLE_WORKSPACE_OPEN_PARAM = "workspace";
+export const CONSOLE_WORKSPACE_PATH = "/console?workspace=1";
 
 export type ConsoleWorkspaceRightPaneMode = "workspace" | "error-logs" | "status" | "admin";
+
+export type ConsoleRightPaneFlags = {
+  logsVisible: boolean;
+  statusVisible: boolean;
+  adminVisible: boolean;
+};
 
 export function getConsoleWorkspaceRightPane(input: {
   logsVisible: boolean;
@@ -20,6 +28,48 @@ export function getConsoleWorkspaceRightPane(input: {
   }
 
   return input.logsVisible ? "error-logs" : "workspace";
+}
+
+export function flagsFromConsoleRightPaneMode(mode: ConsoleWorkspaceRightPaneMode): ConsoleRightPaneFlags {
+  return {
+    logsVisible: mode === "error-logs",
+    statusVisible: mode === "status",
+    adminVisible: mode === "admin",
+  };
+}
+
+export function resolveConsoleRightPaneFromSearch(search: string): ConsoleWorkspaceRightPaneMode | null {
+  if (shouldOpenConsoleWorkspace(search)) {
+    return "workspace";
+  }
+  if (shouldOpenConsoleAdmin(search)) {
+    return "admin";
+  }
+  if (shouldOpenConsoleStatus(search)) {
+    return "status";
+  }
+  if (shouldOpenConsoleErrorLogs(search)) {
+    return "error-logs";
+  }
+
+  return null;
+}
+
+export function readStoredConsoleRightPaneFlags(): ConsoleRightPaneFlags {
+  const adminVisible = readStoredConsoleAdminVisible();
+  const statusVisible = adminVisible ? false : readStoredConsoleStatusVisible();
+  const logsVisible = adminVisible || statusVisible ? false : readStoredConsoleErrorLogsVisible();
+
+  return { logsVisible, statusVisible, adminVisible };
+}
+
+export function readInitialConsoleRightPaneFlags(search: string): ConsoleRightPaneFlags {
+  const fromSearch = resolveConsoleRightPaneFromSearch(search);
+  if (fromSearch) {
+    return flagsFromConsoleRightPaneMode(fromSearch);
+  }
+
+  return readStoredConsoleRightPaneFlags();
 }
 
 function readStoredFlag(key: string): boolean {
@@ -106,4 +156,12 @@ export function shouldOpenConsoleAdmin(search: string): boolean {
 
 export function removeConsoleAdminOpenParam(search: string): string {
   return removeSearchParam(search, CONSOLE_ADMIN_OPEN_PARAM);
+}
+
+export function shouldOpenConsoleWorkspace(search: string): boolean {
+  return shouldOpenFlag(search, CONSOLE_WORKSPACE_OPEN_PARAM);
+}
+
+export function removeConsoleWorkspaceOpenParam(search: string): string {
+  return removeSearchParam(search, CONSOLE_WORKSPACE_OPEN_PARAM);
 }

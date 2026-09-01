@@ -27,6 +27,7 @@ import {
   type ConnectionEditorLeaveReason,
   type ConnectionEditorMode,
 } from "../lib/connection-form";
+import { CONSOLE_WORKSPACE_PATH } from "../lib/console-error-logs-panel";
 import { CONSOLE_SIDEBAR_WIDTH_DEFAULT } from "../lib/console-sidebar";
 import {
   buildConnectionDeleteDescription,
@@ -277,7 +278,7 @@ export function ConnectionsPage() {
       setEditingConnection(null);
       setConnectionFormValues(defaultConnectionForm);
       setFormSnapshot(defaultConnectionForm);
-      navigate("/console");
+      navigate(CONSOLE_WORKSPACE_PATH);
     },
     onError(error) {
       const message = extractUnknownErrorMessage(error, "连接失败");
@@ -520,7 +521,7 @@ export function ConnectionsPage() {
       return;
     }
     setCurrentConnection(connectionId);
-    navigate("/console");
+    navigate(CONSOLE_WORKSPACE_PATH);
   }
 
   async function handleConfirmExport(payload: { password: string }) {
