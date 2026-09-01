@@ -1,5 +1,5 @@
 import { AlertTriangle, Loader2, PanelRightClose, RefreshCcw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -61,10 +61,14 @@ export function StatusPanel({
     statusHistoryByConnection,
   } = useAppState();
   const [activeTab, setActiveTab] = useState<StatusTab>("overview");
+  const lastNotifiedErrorUpdatedAtRef = useRef<Partial<Record<StatusTab, number>>>({});
+  const suppressNextReactivationErrorRef = useRef<Partial<Record<StatusTab, boolean>>>({});
   const connection = currentConnection ?? EMPTY_CONNECTION;
 
   useEffect(() => {
     setActiveTab("overview");
+    lastNotifiedErrorUpdatedAtRef.current = {};
+    suppressNextReactivationErrorRef.current = {};
   }, [currentConnection?.id]);
 
   const overviewQuery = useStatusTabQuery(connection, "overview", Boolean(currentConnection) && activeTab === "overview");
@@ -75,7 +79,18 @@ export function StatusPanel({
     activeTab === "overview" ? overviewQuery : activeTab === "operations" ? operationsQuery : indicesQuery;
 
   useEffect(() => {
-    if (!currentConnection || !currentQuery.isError) {
+    if (
+      !currentConnection ||
+      !currentQuery.isError ||
+      currentQuery.errorUpdatedAt <= 0 ||
+      lastNotifiedErrorUpdatedAtRef.current[activeTab] === currentQuery.errorUpdatedAt
+    ) {
+      return;
+    }
+
+    lastNotifiedErrorUpdatedAtRef.current[activeTab] = currentQuery.errorUpdatedAt;
+    if (suppressNextReactivationErrorRef.current[activeTab]) {
+      suppressNextReactivationErrorRef.current[activeTab] = false;
       return;
     }
 
@@ -89,7 +104,7 @@ export function StatusPanel({
       connection: buildConnectionLogContextFromProfile(currentConnection, getSshProfileForConnection(currentConnection)),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentQuery.isError, currentQuery.error]);
+  }, [activeTab, currentQuery.isError, currentQuery.error, currentQuery.errorUpdatedAt]);
 
   useEffect(() => {
     if (!currentConnection || !operationsQuery.isSuccess || !operationsQuery.data) {
@@ -107,7 +122,16 @@ export function StatusPanel({
   const statusHistory = statusHistoryByConnection[connection.id] ?? [];
 
   function refreshCurrentTab() {
+    suppressNextReactivationErrorRef.current[activeTab] = false;
     void currentQuery.refetch();
+  }
+
+  function activateTab(tab: StatusTab) {
+    const query = tab === "overview" ? overviewQuery : tab === "operations" ? operationsQuery : indicesQuery;
+    if (query.isError) {
+      suppressNextReactivationErrorRef.current[tab] = true;
+    }
+    setActiveTab(tab);
   }
 
   const currentError = currentQuery.isError
@@ -170,7 +194,7 @@ export function StatusPanel({
               "rounded-lg px-2.5 py-1 text-xs font-bold uppercase tracking-[0.12em]",
               activeTab === tab ? "bg-emerald-50 text-emerald-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
             )}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => activateTab(tab)}
           >
             {tabLabels[tab]}
           </button>

@@ -11,10 +11,11 @@ import type {
   OperationsStatusSnapshot,
 } from "../../../types/status";
 
-const { fetchClusterOverviewMock, fetchOperationsStatusMock, fetchIndicesStatusMock } = vi.hoisted(() => ({
+const { fetchClusterOverviewMock, fetchOperationsStatusMock, fetchIndicesStatusMock, toastErrorMock } = vi.hoisted(() => ({
   fetchClusterOverviewMock: vi.fn(),
   fetchOperationsStatusMock: vi.fn(),
   fetchIndicesStatusMock: vi.fn(),
+  toastErrorMock: vi.fn(),
 }));
 
 vi.mock("../../../lib/http-client", () => ({
@@ -25,6 +26,10 @@ vi.mock("../../../lib/http-client", () => ({
 
 vi.mock("../../../providers/app-state", () => ({
   useAppState: vi.fn(),
+}));
+
+vi.mock("sonner", () => ({
+  toast: { error: toastErrorMock },
 }));
 
 import { useAppState } from "../../../providers/app-state";
@@ -137,19 +142,22 @@ function renderPanel(onClose = vi.fn()) {
 }
 
 describe("StatusPanel", () => {
+  const recordErrorLog = vi.fn();
   const recordStatusSnapshot = vi.fn();
 
   beforeEach(() => {
     fetchClusterOverviewMock.mockReset().mockResolvedValue(overviewSnapshot);
     fetchOperationsStatusMock.mockReset().mockResolvedValue(operationsSnapshot);
     fetchIndicesStatusMock.mockReset().mockResolvedValue(indicesSnapshot);
+    toastErrorMock.mockReset();
+    recordErrorLog.mockReset();
     recordStatusSnapshot.mockReset();
     useAppStateMock.mockReturnValue({
       currentConnection: connection,
       getPassword: vi.fn(async () => "secret"),
       getSshSecret: vi.fn(async () => null),
       getSshProfileForConnection: vi.fn(() => null),
-      recordErrorLog: vi.fn(),
+      recordErrorLog,
       recordStatusSnapshot,
       statusHistoryByConnection: {},
     } as unknown as ReturnType<typeof useAppState>);
@@ -212,6 +220,37 @@ describe("StatusPanel", () => {
       expect(fetchClusterOverviewMock).toHaveBeenCalledTimes(2);
     });
     expect(fetchOperationsStatusMock).not.toHaveBeenCalled();
+  });
+
+  it("仅在当前标签产生新错误时通知并记录", async () => {
+    fetchClusterOverviewMock.mockRejectedValue(new Error("概览读取失败"));
+    renderPanel();
+
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledTimes(1);
+      expect(recordErrorLog).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "运维" }));
+    await waitFor(() => {
+      expect(fetchOperationsStatusMock).toHaveBeenCalledTimes(1);
+    });
+
+    const requestCountBeforeReturn = fetchClusterOverviewMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "概览" }));
+    await waitFor(() => {
+      expect(fetchClusterOverviewMock).toHaveBeenCalledTimes(requestCountBeforeReturn + 1);
+    });
+    expect(toastErrorMock).toHaveBeenCalledTimes(1);
+    expect(recordErrorLog).toHaveBeenCalledTimes(1);
+
+    const requestCountBeforeRefresh = fetchClusterOverviewMock.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: /刷新状态/ }));
+    await waitFor(() => {
+      expect(fetchClusterOverviewMock).toHaveBeenCalledTimes(requestCountBeforeRefresh + 1);
+      expect(toastErrorMock).toHaveBeenCalledTimes(2);
+      expect(recordErrorLog).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("切到索引标签展示索引数据且不含 Shards 列", async () => {
