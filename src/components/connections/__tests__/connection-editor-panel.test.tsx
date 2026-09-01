@@ -62,6 +62,52 @@ describe("ConnectionEditorPanel", () => {
     expect(screen.getByRole("button", { name: "验证并保存连接" })).toBeDisabled();
   });
 
+  it.each(["create", "edit"] as const)("%s 模式点击取消调用 onCancel，saving 时禁用", (mode) => {
+    const { props, unmount } = renderPanel({ mode });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(props.onCancel).toHaveBeenCalledTimes(1);
+    unmount();
+
+    const savingView = renderPanel({ mode, saving: true });
+    const cancelButton = screen.getByRole("button", { name: "取消" });
+    expect(cancelButton).toBeDisabled();
+    fireEvent.click(cancelButton);
+    expect(savingView.props.onCancel).not.toHaveBeenCalled();
+  });
+
+  it("完整表单可保存，不完整或保存中时禁用且不会重复触发", () => {
+    const completeView = renderPanel({ mode: "create", incomplete: false });
+    const saveButton = screen.getByRole("button", { name: "验证并保存连接" });
+    expect(saveButton).toBeEnabled();
+    fireEvent.click(saveButton);
+    expect(completeView.props.onSave).toHaveBeenCalledTimes(1);
+    completeView.unmount();
+
+    const incompleteView = renderPanel({ mode: "create", incomplete: true });
+    const incompleteSaveButton = screen.getByRole("button", { name: "验证并保存连接" });
+    expect(incompleteSaveButton).toBeDisabled();
+    fireEvent.click(incompleteSaveButton);
+    expect(incompleteView.props.onSave).not.toHaveBeenCalled();
+    incompleteView.unmount();
+
+    const savingView = renderPanel({ mode: "edit", incomplete: false, saving: true });
+    const savingButton = screen.getByRole("button", { name: "验证并保存连接" });
+    expect(savingButton).toBeDisabled();
+    fireEvent.click(savingButton);
+    expect(savingView.props.onSave).not.toHaveBeenCalled();
+  });
+
+  it("修改连接名称时通过 onChange 返回更新后的表单", () => {
+    const values = { ...defaultConnectionForm, name: "旧名称" };
+    const { props } = renderPanel({ mode: "edit", values });
+
+    fireEvent.change(screen.getByPlaceholderText("例如 生产 ES / 预发日志集群"), {
+      target: { value: "新名称" },
+    });
+
+    expect(props.onChange).toHaveBeenCalledWith({ ...values, name: "新名称" });
+  });
+
   it("选中 SSH 后可打开编辑弹窗回调", () => {
     const { props } = renderPanel({
       mode: "edit",
