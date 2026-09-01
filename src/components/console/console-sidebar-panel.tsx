@@ -25,6 +25,7 @@ export type ConsoleSidebarPanelProps = {
   closeTitle?: string;
   onClose: () => void;
   onNavigateConnections: () => void;
+  onNavigateConsole: () => void;
   onNavigateStatus: () => void;
   onNavigateAdmin: () => void;
   onNavigateLogs: () => void;
@@ -56,6 +57,7 @@ export function ConsoleSidebarPanel({
   closeTitle = "隐藏侧边栏 (⌘B)",
   onClose,
   onNavigateConnections,
+  onNavigateConsole,
   onNavigateStatus,
   onNavigateAdmin,
   onNavigateLogs,
@@ -87,6 +89,7 @@ export function ConsoleSidebarPanel({
 
   const availableTags = useMemo(() => collectConnectionTags(requests), [requests]);
   const canReorder = !selectionMode && !searchQuery.trim() && tagFilter === "all";
+  const consolePanelOpen = !statusPanelOpen && !adminPanelOpen && !logsPanelOpen;
 
   const visibleRequests = useMemo(
     () => filterConnectionRequests(requests, { searchQuery, tagFilter }),
@@ -131,25 +134,38 @@ export function ConsoleSidebarPanel({
             <p className="text-[10px] uppercase tracking-[0.28em] text-slate-400">ESX Console</p>
             <h1 className="mt-0.5 text-lg font-bold leading-tight">连接与请求</h1>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 shrink-0 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
-            title={closeTitle}
-            aria-label={closeTitle}
-            onClick={onClose}
-          >
-            <PanelLeftClose className="h-4 w-4" />
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+              onClick={onNavigateConnections}
+            >
+              连接页
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 shrink-0 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+              title={closeTitle}
+              aria-label={closeTitle}
+              onClick={onClose}
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-1">
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
-            onClick={onNavigateConnections}
+            className={`h-8 rounded-lg px-2 text-xs hover:bg-white/10 hover:text-white ${
+              consolePanelOpen ? "bg-white/10 text-white" : "text-slate-200"
+            }`}
+            aria-pressed={consolePanelOpen}
+            onClick={onNavigateConsole}
           >
-            连接页
+            控制台
           </Button>
           <Button
             variant="ghost"

@@ -1415,6 +1415,7 @@ export function ConsolePage() {
       closeTitle={isLgSplit ? "隐藏侧边栏 (⌘B)" : "关闭抽屉 (⌘B)"}
       onClose={closeSidebar}
       onNavigateConnections={() => navigate("/connections")}
+      onNavigateConsole={() => applyRightPaneMode("workspace")}
       onNavigateStatus={toggleStatus}
       onNavigateAdmin={toggleAdmin}
       onNavigateLogs={toggleErrorLogs}

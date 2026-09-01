@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -175,5 +175,34 @@ describe("ConsolePage right pane", () => {
       expect(screen.getByText("服务器状态")).toBeInTheDocument();
     });
     expect(screen.queryByText("格式化 JSON")).not.toBeInTheDocument();
+  });
+
+  it("点击控制台按钮从状态面板切回请求工作区", async () => {
+    renderConsolePage(CONSOLE_STATUS_PATH);
+
+    await waitFor(() => {
+      expect(screen.getByText("服务器状态")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "控制台" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("格式化 JSON")).toBeInTheDocument();
+    });
+    expect(screen.getByText("请求内容")).toBeInTheDocument();
+    expect(screen.getByText("返回内容")).toBeInTheDocument();
+    expect(screen.queryByText("服务器状态")).not.toBeInTheDocument();
+  });
+
+  it("点击连接页按钮进入连接管理页", async () => {
+    renderConsolePage("/console");
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "连接页" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "连接页" }));
+
+    expect(screen.getByText("connections-page")).toBeInTheDocument();
   });
 });

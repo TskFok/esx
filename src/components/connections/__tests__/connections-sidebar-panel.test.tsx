@@ -67,10 +67,11 @@ function renderSidebar(overrides: Partial<Parameters<typeof ConnectionsSidebarPa
 }
 
 describe("ConnectionsSidebarPanel", () => {
-  it("不展示连接页、状态、治理和错误日志导航按钮", () => {
+  it("不展示连接页、控制台、状态、治理和错误日志导航按钮", () => {
     renderSidebar();
 
     expect(screen.queryByRole("button", { name: "连接页" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "控制台" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "状态" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "治理" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "错误日志" })).not.toBeInTheDocument();
