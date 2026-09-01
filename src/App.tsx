@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { HashRouter, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { AdminPage } from "./pages/admin-page";
 import { ConnectionsPage } from "./pages/connections-page";
@@ -50,7 +50,7 @@ export default function App() {
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/status" element={<StatusPage />} />
           <Route path="/logs" element={<ErrorLogsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<RootRedirect />} />
         </Routes>
       ) : (
         <div className="flex min-h-screen items-center justify-center">
