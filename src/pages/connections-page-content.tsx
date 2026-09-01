@@ -605,9 +605,6 @@ export function ConnectionsPage() {
       currentConnectionId={currentConnection?.id ?? null}
       testingConnectionId={testingConnectionId}
       getSshProfileForConnection={getSshProfileForConnection}
-      onNavigateStatus={() => navigate("/status")}
-      onNavigateAdmin={() => navigate("/admin")}
-      onNavigateLogs={() => navigate("/logs")}
       onCreateConnection={openCreateConnection}
       onExportClick={() => setExportDialogOpen(true)}
       onImportFileSelected={(file) => {

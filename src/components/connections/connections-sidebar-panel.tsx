@@ -2,10 +2,8 @@ import { useRef } from "react";
 import {
   CirclePlus,
   Download,
-  Hammer,
   PanelLeftClose,
   Pencil,
-  Server,
   Trash2,
   Upload,
   Zap,
@@ -18,9 +16,6 @@ export type ConnectionsSidebarPanelProps = {
   currentConnectionId: string | null;
   testingConnectionId: string | null;
   getSshProfileForConnection: (connection: ConnectionProfile) => SshProfile | null;
-  onNavigateStatus: () => void;
-  onNavigateAdmin: () => void;
-  onNavigateLogs: () => void;
   onCreateConnection: () => void;
   onExportClick: () => void;
   onImportFileSelected: (file: File) => void;
@@ -33,17 +28,11 @@ export type ConnectionsSidebarPanelProps = {
   className?: string;
 };
 
-const NAV_BUTTON_CLASS =
-  "h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white";
-
 export function ConnectionsSidebarPanel({
   connections,
   currentConnectionId,
   testingConnectionId,
   getSshProfileForConnection,
-  onNavigateStatus,
-  onNavigateAdmin,
-  onNavigateLogs,
   onCreateConnection,
   onExportClick,
   onImportFileSelected,
@@ -77,23 +66,6 @@ export function ConnectionsSidebarPanel({
               <PanelLeftClose className="h-4 w-4" />
             </Button>
           ) : null}
-        </div>
-
-        <div className="flex flex-wrap gap-1">
-          <Button variant="ghost" size="sm" className={`${NAV_BUTTON_CLASS} bg-white/10 font-semibold`}>
-            连接页
-          </Button>
-          <Button variant="ghost" size="sm" className={NAV_BUTTON_CLASS} onClick={onNavigateStatus}>
-            <Server className="mr-1 h-3.5 w-3.5" />
-            状态
-          </Button>
-          <Button variant="ghost" size="sm" className={NAV_BUTTON_CLASS} onClick={onNavigateAdmin}>
-            <Hammer className="mr-1 h-3.5 w-3.5" />
-            治理
-          </Button>
-          <Button variant="ghost" size="sm" className={NAV_BUTTON_CLASS} onClick={onNavigateLogs}>
-            错误日志
-          </Button>
         </div>
       </div>
 

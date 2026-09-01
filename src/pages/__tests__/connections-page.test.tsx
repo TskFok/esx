@@ -137,6 +137,15 @@ describe("ConnectionsPage", () => {
     expect(screen.queryByRole("heading", { name: "已保存 SSH 通道" })).not.toBeInTheDocument();
   });
 
+  it("侧栏不展示连接页、状态、治理和错误日志按钮", () => {
+    renderConnectionsPage();
+
+    expect(screen.queryByRole("button", { name: "连接页" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "状态" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "治理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "错误日志" })).not.toBeInTheDocument();
+  });
+
   it("点击连接名称会选中并进入 Console", () => {
     renderConnectionsPage();
 

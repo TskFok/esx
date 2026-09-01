@@ -6,8 +6,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { ConnectionProfile, SshProfile } from "../../../types/connections";
 import { ConnectionsSidebarPanel } from "../connections-sidebar-panel";
 
-const SIDEBAR_NAV_GHOST_CLASSES = ["text-slate-200", "hover:bg-white/10", "hover:text-white"];
-
 const connection: ConnectionProfile = {
   id: "conn-1",
   name: "开发集群",
@@ -55,9 +53,6 @@ function renderSidebar(overrides: Partial<Parameters<typeof ConnectionsSidebarPa
     currentConnectionId: "conn-1",
     testingConnectionId: null,
     getSshProfileForConnection: () => null,
-    onNavigateStatus: vi.fn(),
-    onNavigateAdmin: vi.fn(),
-    onNavigateLogs: vi.fn(),
     onCreateConnection: vi.fn(),
     onExportClick: vi.fn(),
     onImportFileSelected: vi.fn(),
@@ -72,24 +67,13 @@ function renderSidebar(overrides: Partial<Parameters<typeof ConnectionsSidebarPa
 }
 
 describe("ConnectionsSidebarPanel", () => {
-  it("导航按钮使用深色栏 ghost 样式，连接页不用 secondary", () => {
+  it("不展示连接页、状态、治理和错误日志导航按钮", () => {
     renderSidebar();
-    const connectionsButton = screen.getByRole("button", { name: "连接页" });
-    expect(connectionsButton).not.toHaveClass("bg-secondary");
-    expect(connectionsButton).toHaveClass(...SIDEBAR_NAV_GHOST_CLASSES);
-    expect(screen.getByRole("button", { name: "状态" })).toHaveClass(...SIDEBAR_NAV_GHOST_CLASSES);
-  });
 
-  it("调用状态、治理和错误日志导航回调", () => {
-    const { props } = renderSidebar();
-
-    fireEvent.click(screen.getByRole("button", { name: "状态" }));
-    fireEvent.click(screen.getByRole("button", { name: "治理" }));
-    fireEvent.click(screen.getByRole("button", { name: "错误日志" }));
-
-    expect(props.onNavigateStatus).toHaveBeenCalledOnce();
-    expect(props.onNavigateAdmin).toHaveBeenCalledOnce();
-    expect(props.onNavigateLogs).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "连接页" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "状态" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "治理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "错误日志" })).not.toBeInTheDocument();
   });
 
   it("单击新建连接调用回调", () => {
