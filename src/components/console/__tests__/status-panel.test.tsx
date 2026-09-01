@@ -303,4 +303,118 @@ describe("StatusPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "关闭状态" }));
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it("运维探测存在 partialFailures 时不写入趋势快照，后续真正成功才写入", async () => {
+    const failedProbeSnapshot = {
+      ...operationsSnapshot,
+      partialFailures: ["节点运维指标：请求失败"],
+    } satisfies OperationsStatusSnapshot;
+
+    fetchOperationsStatusMock
+      .mockReset()
+      .mockResolvedValueOnce(failedProbeSnapshot)
+      .mockResolvedValueOnce(operationsSnapshot);
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(fetchClusterOverviewMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "运维" }));
+
+    await waitFor(() => {
+      expect(fetchOperationsStatusMock).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(screen.getByText("状态指标不完整")).toBeInTheDocument();
+    });
+    expect(recordStatusSnapshot).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /刷新状态/ }));
+
+    await waitFor(() => {
+      expect(fetchOperationsStatusMock).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(recordStatusSnapshot).toHaveBeenCalledWith(connection.id, operationsSnapshot);
+    });
+    expect(recordStatusSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it("nodeCount 为 0 的运维快照同样不写入趋势", async () => {
+    const emptyProbeSnapshot = {
+      ...operationsSnapshot,
+      operations: { ...operationsSnapshot.operations, nodeCount: 0 },
+      partialFailures: [],
+    } satisfies OperationsStatusSnapshot;
+
+    fetchOperationsStatusMock.mockReset().mockResolvedValueOnce(emptyProbeSnapshot);
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(fetchClusterOverviewMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "运维" }));
+
+    await waitFor(() => {
+      expect(fetchOperationsStatusMock).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(screen.getByText("节点运维指标未返回")).toBeInTheDocument();
+    });
+    expect(recordStatusSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("标签重新激活成功后会清除错误抑制标记，之后的失败仍会通知", async () => {
+    // 用标签切换（而非刷新按钮，它会主动清空抑制标记）触发重新拉取，
+    // 才能验证「成功后清除抑制标记」这条逻辑本身是否生效。
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-01T08:00:00.000Z"));
+
+    fetchClusterOverviewMock
+      .mockReset()
+      .mockRejectedValueOnce(new Error("概览读取失败"))
+      .mockResolvedValueOnce(overviewSnapshot)
+      .mockRejectedValueOnce(new Error("概览读取失败二次"));
+
+    renderPanel();
+
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledTimes(1);
+      expect(recordErrorLog).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "运维" }));
+    await waitFor(() => {
+      expect(fetchOperationsStatusMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "概览" }));
+    await waitFor(() => {
+      expect(fetchClusterOverviewMock).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByText("esx-cluster")).toBeInTheDocument();
+    });
+    expect(toastErrorMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date("2026-09-01T08:00:30.001Z"));
+
+    fireEvent.click(screen.getByRole("button", { name: "运维" }));
+    await waitFor(() => {
+      expect(fetchOperationsStatusMock).toHaveBeenCalledTimes(2);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "概览" }));
+    await waitFor(() => {
+      expect(fetchClusterOverviewMock).toHaveBeenCalledTimes(3);
+    });
+    await waitFor(() => {
+      expect(toastErrorMock).toHaveBeenCalledTimes(2);
+      expect(recordErrorLog).toHaveBeenCalledTimes(2);
+    });
+  });
 });

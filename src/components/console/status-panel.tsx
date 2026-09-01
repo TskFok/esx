@@ -107,7 +107,21 @@ export function StatusPanel({
   }, [activeTab, currentQuery.isError, currentQuery.error, currentQuery.errorUpdatedAt]);
 
   useEffect(() => {
+    if (!currentConnection || !currentQuery.isSuccess) {
+      return;
+    }
+
+    suppressNextReactivationErrorRef.current[activeTab] = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, currentQuery.isSuccess, currentQuery.dataUpdatedAt]);
+
+  useEffect(() => {
     if (!currentConnection || !operationsQuery.isSuccess || !operationsQuery.data) {
+      return;
+    }
+
+    const { partialFailures, operations } = operationsQuery.data;
+    if (partialFailures.length > 0 || operations.nodeCount === 0) {
       return;
     }
 
