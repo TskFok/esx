@@ -15,9 +15,7 @@ import type {
 type ServerStatusInput = {
   clusterHealthText: string;
   indicesText: string;
-  shardsText?: string | null;
   nodesStatsText?: string | null;
-  shardDiagnostics?: string[];
   nodesStatsDiagnostics?: string[];
   fetchedAt?: string;
 };
@@ -445,40 +443,45 @@ function parseNodesStats(nodesStatsText?: string | null): ServerOperationStatus 
   return operations;
 }
 
-function buildShardSummaries(shardsText?: string | null) {
+function buildShardSummariesFromClusterHealth(clusterHealthText: string) {
   const summaries: Record<string, ShardStateSummary> = {};
-  const value = shardsText ? parseJsonValue(shardsText) : null;
-  if (!Array.isArray(value)) {
+  const record = toRecord(parseJsonValue(clusterHealthText));
+  const indices = record ? toRecord(record.indices) : null;
+  if (!indices) {
     return summaries;
   }
 
-  value.forEach((entry) => {
-    const record = toRecord(entry);
-    if (!record) {
+  Object.entries(indices).forEach(([name, value]) => {
+    const indexName = name.trim();
+    const index = toRecord(value);
+    if (!indexName || !index) {
       return;
     }
 
-    const indexName = readString(record, "index")?.trim();
-    if (!indexName) {
-      return;
-    }
-
-    const summary = summaries[indexName] ??= emptyShardSummary();
-    const state = readString(record, "state")?.trim().toUpperCase();
-    if (state === "STARTED") {
-      summary.started += 1;
-    } else if (state === "RELOCATING") {
-      summary.relocating += 1;
-    } else if (state === "INITIALIZING") {
-      summary.initializing += 1;
-    } else if (state === "UNASSIGNED") {
-      summary.unassigned += 1;
-    } else {
-      summary.other += 1;
-    }
+    summaries[indexName] = {
+      started: parseNumberValue(index.active_shards) ?? 0,
+      relocating: parseNumberValue(index.relocating_shards) ?? 0,
+      initializing: parseNumberValue(index.initializing_shards) ?? 0,
+      unassigned: parseNumberValue(index.unassigned_shards) ?? 0,
+      other: 0,
+    };
   });
 
   return summaries;
+}
+
+function shardSummaryFromCluster(cluster: ClusterStatus): ShardStateSummary {
+  return {
+    started: cluster.activeShards ?? 0,
+    relocating: cluster.relocatingShards ?? 0,
+    initializing: cluster.initializingShards ?? 0,
+    unassigned: cluster.unassignedShards ?? 0,
+    other: 0,
+  };
+}
+
+function hasShardCounts(summary: ShardStateSummary) {
+  return summary.started + summary.relocating + summary.initializing + summary.unassigned + summary.other > 0;
 }
 
 function parseIndices(indicesText: string, shardSummaries: Record<string, ShardStateSummary>) {
@@ -674,7 +677,7 @@ function buildRiskFindings({
 }
 
 export function buildServerStatus(input: ServerStatusInput): ServerStatusSnapshot {
-  const shardSummaries = buildShardSummaries(input.shardsText);
+  const shardSummaries = buildShardSummariesFromClusterHealth(input.clusterHealthText);
   const indices = parseIndices(input.indicesText, shardSummaries);
   const cluster = parseClusterStatus(input.clusterHealthText);
   const healthCounts = indices.reduce<Record<ServerHealth, number>>(
@@ -684,13 +687,14 @@ export function buildServerStatus(input: ServerStatusInput): ServerStatusSnapsho
     }),
     { green: 0, yellow: 0, red: 0, unknown: 0 },
   );
+  const indexShardCounts = summarizeShardCounts(indices);
   const summary = {
     totalIndices: indices.length,
     systemIndices: indices.filter((index) => index.name.startsWith(".")).length,
     visibleStoreBytes: sumKnownNumbers(indices, (index) => index.storeBytes),
     visibleDocsCount: sumKnownNumbers(indices, (index) => index.docsCount),
     healthCounts,
-    shardCounts: summarizeShardCounts(indices),
+    shardCounts: hasShardCounts(indexShardCounts) ? indexShardCounts : shardSummaryFromCluster(cluster),
   };
   const operations = parseNodesStats(input.nodesStatsText);
 
@@ -701,7 +705,7 @@ export function buildServerStatus(input: ServerStatusInput): ServerStatusSnapsho
     operations,
     risks: buildRiskFindings({ cluster, indices, summary, operations }),
     fetchedAt: input.fetchedAt ?? new Date().toISOString(),
-    partialFailures: [...(input.shardDiagnostics ?? []), ...(input.nodesStatsDiagnostics ?? [])],
+    partialFailures: [...(input.nodesStatsDiagnostics ?? [])],
   };
 }
 

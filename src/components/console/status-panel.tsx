@@ -735,7 +735,7 @@ export function StatusPanel({
           <Card className="flex min-h-[240px] items-center justify-center p-5">
             <div className="text-center">
               <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-600" />
-              <p className="mt-2 text-xs font-semibold text-slate-700 sm:text-sm">正在读取集群、索引、分片和节点指标...</p>
+              <p className="mt-2 text-xs font-semibold text-slate-700 sm:text-sm">正在读取集群、索引和节点指标...</p>
             </div>
           </Card>
         ) : status ? (

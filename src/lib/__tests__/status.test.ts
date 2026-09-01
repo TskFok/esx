@@ -17,6 +17,22 @@ describe("server status parsing", () => {
         relocating_shards: 1,
         initializing_shards: 2,
         unassigned_shards: 4,
+        indices: {
+          "orders-2026": {
+            status: "green",
+            active_shards: 1,
+            relocating_shards: 1,
+            initializing_shards: 0,
+            unassigned_shards: 0,
+          },
+          users: {
+            status: "yellow",
+            active_shards: 0,
+            relocating_shards: 0,
+            initializing_shards: 1,
+            unassigned_shards: 1,
+          },
+        },
       }),
       indicesText: JSON.stringify([
         {
@@ -41,12 +57,6 @@ describe("server status parsing", () => {
           "store.size": "512",
           "pri.store.size": "256",
         },
-      ]),
-      shardsText: JSON.stringify([
-        { index: "orders-2026", state: "STARTED" },
-        { index: "orders-2026", state: "RELOCATING" },
-        { index: "users", state: "UNASSIGNED" },
-        { index: "users", state: "INITIALIZING" },
       ]),
       fetchedAt: "2026-05-01T10:00:00.000Z",
     });
@@ -82,7 +92,7 @@ describe("server status parsing", () => {
     });
   });
 
-  it("handles red health, closed indices, missing numbers, and partial shard failures", () => {
+  it("handles red health, closed indices, missing numbers, and partial node stats failures", () => {
     const status = buildServerStatus({
       clusterHealthText: JSON.stringify({
         cluster_name: "broken",
@@ -103,8 +113,7 @@ describe("server status parsing", () => {
           "pri.store.size": undefined,
         },
       ]),
-      shardsText: null,
-      shardDiagnostics: ["分片接口返回 403"],
+      nodesStatsDiagnostics: ["节点运维指标接口返回 403"],
       fetchedAt: "2026-05-01T10:00:00.000Z",
     });
 
@@ -119,7 +128,13 @@ describe("server status parsing", () => {
       storeBytes: null,
       primaryStoreBytes: null,
     });
-    expect(status.partialFailures).toEqual(["分片接口返回 403"]);
+    expect(status.partialFailures).toEqual(["节点运维指标接口返回 403"]);
+    expect(status.summary.shardCounts).toMatchObject({
+      started: 7,
+      relocating: 0,
+      initializing: 0,
+      unassigned: 0,
+    });
   });
 
   it("summarizes node stats for operational metrics", () => {
@@ -278,6 +293,15 @@ describe("server status parsing", () => {
         status: "red",
         number_of_nodes: 2,
         unassigned_shards: 3,
+        indices: {
+          orders: {
+            status: "red",
+            active_shards: 0,
+            relocating_shards: 0,
+            initializing_shards: 0,
+            unassigned_shards: 2,
+          },
+        },
       }),
       indicesText: JSON.stringify([
         {
@@ -288,10 +312,6 @@ describe("server status parsing", () => {
           "docs.deleted": "80",
           "store.size": "1024",
         },
-      ]),
-      shardsText: JSON.stringify([
-        { index: "orders", state: "UNASSIGNED" },
-        { index: "orders", state: "UNASSIGNED" },
       ]),
       nodesStatsText: JSON.stringify({
         nodes: {

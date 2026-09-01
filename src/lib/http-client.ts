@@ -750,7 +750,7 @@ export async function fetchServerStatus(
     connection,
     credentials,
     {
-      path: "/_cluster/health",
+      path: "/_cluster/health?level=indices",
       label: "集群健康",
     },
     sshTunnelOverride,
@@ -778,21 +778,11 @@ export async function fetchServerStatus(
     );
   }
 
-  const shardsAttempt = await runServerStatusProbe(
-    connection,
-    credentials,
-    {
-      path: "/_cat/shards?format=json&bytes=b&h=index,shard,prirep,state,unassigned.reason",
-      label: "分片状态",
-    },
-    sshTunnelOverride,
-  );
-
   const nodesStatsAttempt = await runServerStatusProbe(
     connection,
     credentials,
     {
-      path: "/_nodes/stats/os,jvm,fs,thread_pool,breaker,indices",
+      path: "/_nodes/stats/os,jvm,fs,thread_pool,breaker,indices/indexing,search,merge,refresh,segments",
       label: "节点运维指标",
     },
     sshTunnelOverride,
@@ -801,9 +791,7 @@ export async function fetchServerStatus(
   return buildServerStatus({
     clusterHealthText: clusterAttempt.bodyText,
     indicesText: indicesAttempt.bodyText,
-    shardsText: shardsAttempt.snapshot.ok ? shardsAttempt.bodyText : null,
     nodesStatsText: nodesStatsAttempt.snapshot.ok ? nodesStatsAttempt.bodyText : null,
-    shardDiagnostics: shardsAttempt.snapshot.ok ? [] : buildServerStatusDiagnostics([shardsAttempt]),
     nodesStatsDiagnostics: nodesStatsAttempt.snapshot.ok ? [] : buildServerStatusDiagnostics([nodesStatsAttempt]),
     fetchedAt: new Date().toISOString(),
   });
