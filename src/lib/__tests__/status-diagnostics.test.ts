@@ -1,32 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   appendStatusHistorySnapshot,
-  buildDiagnosticActions,
+  buildOperationsDiagnosticActions,
+  buildOverviewDiagnosticActions,
   buildStatusTrendSummary,
 } from "../status-diagnostics";
-import type { ServerStatusSnapshot } from "../../types/status";
+import type {
+  ClusterOverviewSnapshot,
+  OperationsStatusSnapshot,
+} from "../../types/status";
 
-function createStatus(overrides: Partial<ServerStatusSnapshot>): ServerStatusSnapshot {
+function createOperationsSnapshot(
+  overrides: Partial<OperationsStatusSnapshot> = {},
+): OperationsStatusSnapshot {
   return {
-    cluster: {
-      name: "prod",
-      health: "green",
-      nodes: 3,
-      activePrimaryShards: 3,
-      activeShards: 6,
-      relocatingShards: 0,
-      initializingShards: 0,
-      unassignedShards: 0,
-    },
-    indices: [],
-    summary: {
-      totalIndices: 0,
-      systemIndices: 0,
-      visibleStoreBytes: 0,
-      visibleDocsCount: 0,
-      healthCounts: { green: 0, yellow: 0, red: 0, unknown: 0 },
-      shardCounts: { started: 6, relocating: 0, initializing: 0, unassigned: 0, other: 0 },
-    },
     operations: {
       nodeCount: 3,
       avgCpuPercent: 20,
@@ -58,29 +45,58 @@ function createStatus(overrides: Partial<ServerStatusSnapshot>): ServerStatusSna
   };
 }
 
+function createOverview(overrides: Partial<ClusterOverviewSnapshot> = {}): ClusterOverviewSnapshot {
+  return {
+    cluster: {
+      name: "prod",
+      health: "green",
+      nodes: 3,
+      activePrimaryShards: 3,
+      activeShards: 6,
+      relocatingShards: 0,
+      initializingShards: 0,
+      unassignedShards: 0,
+    },
+    summary: {
+      totalIndices: 0,
+      systemIndices: 0,
+      healthCounts: { green: 0, yellow: 0, red: 0, unknown: 0 },
+      shardCounts: { started: 6, relocating: 0, initializing: 0, unassigned: 0, other: 0 },
+    },
+    risks: [],
+    fetchedAt: "2026-06-03T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 describe("status diagnostics", () => {
-  it("suggests diagnostic actions for unhealthy clusters and node pressure", () => {
-    const status = createStatus({
+  it("suggests overview diagnostic actions for unhealthy clusters", () => {
+    expect(buildOverviewDiagnosticActions(createOverview({
       cluster: {
-        ...createStatus({}).cluster,
+        ...createOverview().cluster,
         health: "red",
         unassignedShards: 2,
       },
       summary: {
-        ...createStatus({}).summary,
+        ...createOverview().summary,
         shardCounts: { started: 4, relocating: 0, initializing: 0, unassigned: 2, other: 0 },
       },
+    })).map((item) => item.path)).toEqual([
+      "/_cluster/allocation/explain",
+      "/_cat/recovery?format=json&bytes=b",
+    ]);
+  });
+
+  it("suggests operations diagnostic actions from operations signals", () => {
+    expect(buildOperationsDiagnosticActions(createOperationsSnapshot({
       operations: {
-        ...createStatus({}).operations,
+        ...createOperationsSnapshot().operations,
         diskWatermark: "high",
+        maxCpuPercent: 80,
         threadPools: { active: 0, queue: 2, rejected: 3, completed: 100 },
         breakers: { estimatedBytes: 10, limitBytes: 100, tripped: 1 },
       },
-    });
-
-    expect(buildDiagnosticActions(status).map((item) => item.path)).toEqual([
-      "/_cluster/allocation/explain",
-      "/_cat/recovery?format=json&bytes=b",
+    })).map((item) => item.path)).toEqual([
       "/_cluster/pending_tasks",
       "/_nodes/hot_threads",
     ]);
@@ -88,17 +104,20 @@ describe("status diagnostics", () => {
 
   it("keeps the most recent 200 status history snapshots", () => {
     const history = Array.from({ length: 200 }, (_, index) =>
-      createStatus({ fetchedAt: new Date(index).toISOString() }),
+      createOperationsSnapshot({ fetchedAt: new Date(index).toISOString() }),
     );
-    const next = appendStatusHistorySnapshot(history, createStatus({ fetchedAt: "2026-06-03T00:00:00.000Z" }));
+    const next = appendStatusHistorySnapshot(
+      history,
+      createOperationsSnapshot({ fetchedAt: "2026-06-03T00:00:00.000Z" }),
+    );
 
     expect(next).toHaveLength(200);
     expect(next[0]?.fetchedAt).toBe("2026-06-03T00:00:00.000Z");
   });
 
   it("computes deltas between adjacent status snapshots", () => {
-    const previous = createStatus({ fetchedAt: "2026-06-03T00:00:00.000Z" });
-    const current = createStatus({
+    const previous = createOperationsSnapshot({ fetchedAt: "2026-06-03T00:00:00.000Z" });
+    const current = createOperationsSnapshot({
       fetchedAt: "2026-06-03T00:01:00.000Z",
       operations: {
         ...previous.operations,

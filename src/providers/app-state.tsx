@@ -85,7 +85,7 @@ import type {
   ResponseSnapshot,
   SavedRequest,
 } from "../types/requests";
-import type { ServerStatusSnapshot } from "../types/status";
+import type { OperationsStatusSnapshot } from "../types/status";
 
 type AppStateShape = ReturnType<typeof createEmptyStorage>;
 
@@ -126,7 +126,7 @@ type AppStateContextValue = {
   aiApiKeyConfigured: boolean;
   aiAnalysisHistory: AiAnalysisHistoryEntry[];
   errorLogs: ErrorLogEntry[];
-  statusHistoryByConnection: Record<string, ServerStatusSnapshot[]>;
+  statusHistoryByConnection: Record<string, OperationsStatusSnapshot[]>;
   setCurrentConnection: (connectionId: string) => void;
   setErrorLoggingEnabled: (enabled: boolean) => void;
   setResponsePreviewBytes: (bytes: number) => void;
@@ -145,7 +145,7 @@ type AppStateContextValue = {
   }) => void;
   clearAiAnalysisHistory: () => void;
   clearErrorLogs: () => void;
-  recordStatusSnapshot: (connectionId: string, snapshot: ServerStatusSnapshot) => void;
+  recordStatusSnapshot: (connectionId: string, snapshot: OperationsStatusSnapshot) => void;
   recordErrorLog: (payload: {
     scope: ErrorLogEntry["scope"];
     title: string;
