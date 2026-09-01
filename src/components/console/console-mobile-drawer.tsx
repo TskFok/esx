@@ -5,6 +5,7 @@ type ConsoleMobileDrawerProps = {
   onClose: () => void;
   children: ReactNode;
   closeLabel?: string;
+  side?: "left" | "right";
 };
 
 export function ConsoleMobileDrawer({
@@ -12,6 +13,7 @@ export function ConsoleMobileDrawer({
   onClose,
   children,
   closeLabel = "关闭连接与请求抽屉",
+  side = "left",
 }: ConsoleMobileDrawerProps) {
   useEffect(() => {
     if (!open) {
@@ -43,7 +45,13 @@ export function ConsoleMobileDrawer({
         aria-label={closeLabel}
         onClick={onClose}
       />
-      <aside className="absolute inset-y-0 left-0 flex w-[min(calc(100vw-3rem),320px)] max-w-full flex-col overflow-hidden rounded-r-2xl bg-slate-950 px-3 py-3 text-slate-50 shadow-xl shadow-slate-900/25">
+      <aside
+        className={
+          side === "right"
+            ? "absolute inset-y-0 right-0 flex w-[min(calc(100vw-2rem),400px)] max-w-full flex-col overflow-hidden rounded-l-2xl bg-white px-3 py-3 text-slate-900 shadow-xl shadow-slate-900/20"
+            : "absolute inset-y-0 left-0 flex w-[min(calc(100vw-3rem),320px)] max-w-full flex-col overflow-hidden rounded-r-2xl bg-slate-950 px-3 py-3 text-slate-50 shadow-xl shadow-slate-900/25"
+        }
+      >
         {children}
       </aside>
     </div>

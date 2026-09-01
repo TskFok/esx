@@ -28,6 +28,7 @@ export type ConsoleSidebarPanelProps = {
   onNavigateStatus: () => void;
   onNavigateAdmin: () => void;
   onNavigateLogs: () => void;
+  logsPanelOpen?: boolean;
   onCreateRequest: () => void;
   onExportClick: () => void;
   onImportFileSelected: (file: File) => void;
@@ -56,6 +57,7 @@ export function ConsoleSidebarPanel({
   onNavigateStatus,
   onNavigateAdmin,
   onNavigateLogs,
+  logsPanelOpen = false,
   onCreateRequest,
   onExportClick,
   onImportFileSelected,
@@ -166,7 +168,10 @@ export function ConsoleSidebarPanel({
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+            className={`h-8 rounded-lg px-2 text-xs hover:bg-white/10 hover:text-white ${
+              logsPanelOpen ? "bg-white/10 text-white" : "text-slate-200"
+            }`}
+            aria-pressed={logsPanelOpen}
             onClick={onNavigateLogs}
           >
             错误日志
