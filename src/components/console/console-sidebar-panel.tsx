@@ -137,7 +137,12 @@ export function ConsoleSidebarPanel({
           </Button>
         </div>
         <div className="flex flex-wrap gap-1">
-          <Button variant="secondary" size="sm" className="h-8 rounded-lg px-2.5 text-xs" onClick={onNavigateConnections}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+            onClick={onNavigateConnections}
+          >
             连接页
           </Button>
           <Button
