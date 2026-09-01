@@ -6,22 +6,9 @@ import { AdminPage } from "./pages/admin-page";
 import { ConnectionsPage } from "./pages/connections-page";
 import { ConsolePage } from "./pages/console-page";
 import { ErrorLogsPage } from "./pages/error-logs-page";
+import { RootRedirect } from "./pages/root-redirect";
 import { StatusPage } from "./pages/status-page";
 import { useAppState } from "./providers/app-state";
-
-function RootRedirect() {
-  const { ready, currentConnection, connections } = useAppState();
-
-  if (!ready) {
-    return null;
-  }
-
-  if (!connections.length) {
-    return <Navigate to="/connections" replace />;
-  }
-
-  return <Navigate to={currentConnection ? "/console" : "/connections"} replace />;
-}
 
 function GlobalGuards() {
   useEffect(() => {
