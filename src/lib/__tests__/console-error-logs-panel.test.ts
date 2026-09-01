@@ -1,19 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CONSOLE_ERROR_LOGS_VISIBLE_STORAGE_KEY,
-  CONSOLE_ERROR_LOGS_WIDTH_DEFAULT,
-  CONSOLE_ERROR_LOGS_WIDTH_MAX,
-  CONSOLE_ERROR_LOGS_WIDTH_MIN,
-  CONSOLE_ERROR_LOGS_WIDTH_STORAGE_KEY,
-  clampConsoleErrorLogsWidth,
-  computeErrorLogsWidthFromDrag,
+  getConsoleWorkspaceRightPane,
   readStoredConsoleErrorLogsVisible,
-  readStoredConsoleErrorLogsWidth,
   removeConsoleErrorLogsOpenParam,
-  resetConsoleErrorLogsWidth,
   shouldOpenConsoleErrorLogs,
   writeStoredConsoleErrorLogsVisible,
-  writeStoredConsoleErrorLogsWidth,
 } from "../console-error-logs-panel";
 
 function createLocalStorageMock() {
@@ -68,84 +60,10 @@ describe("console error logs visibility storage", () => {
   });
 });
 
-describe("console error logs width storage", () => {
-  let localStorageMock: ReturnType<typeof createLocalStorageMock>;
-
-  beforeEach(() => {
-    localStorageMock = createLocalStorageMock();
-    vi.stubGlobal("window", { localStorage: localStorageMock });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("defaults to standard width when storage is empty", () => {
-    expect(readStoredConsoleErrorLogsWidth()).toBe(CONSOLE_ERROR_LOGS_WIDTH_DEFAULT);
-  });
-
-  it("reads persisted width", () => {
-    localStorageMock.setItem(CONSOLE_ERROR_LOGS_WIDTH_STORAGE_KEY, "420");
-    expect(readStoredConsoleErrorLogsWidth()).toBe(420);
-  });
-
-  it("writes clamped width to storage", () => {
-    writeStoredConsoleErrorLogsWidth(999);
-    expect(localStorageMock.getItem(CONSOLE_ERROR_LOGS_WIDTH_STORAGE_KEY)).toBe(String(CONSOLE_ERROR_LOGS_WIDTH_MAX));
-  });
-});
-
-describe("clampConsoleErrorLogsWidth", () => {
-  it("clamps below minimum", () => {
-    expect(clampConsoleErrorLogsWidth(100)).toBe(CONSOLE_ERROR_LOGS_WIDTH_MIN);
-  });
-
-  it("clamps above maximum", () => {
-    expect(clampConsoleErrorLogsWidth(900)).toBe(CONSOLE_ERROR_LOGS_WIDTH_MAX);
-  });
-
-  it("leaves in-range values unchanged", () => {
-    expect(clampConsoleErrorLogsWidth(400)).toBe(400);
-  });
-});
-
-describe("computeErrorLogsWidthFromDrag", () => {
-  it("increases width when dragging the handle left", () => {
-    expect(
-      computeErrorLogsWidthFromDrag({
-        startWidth: 380,
-        startClientX: 800,
-        currentClientX: 740,
-      }),
-    ).toBe(440);
-  });
-
-  it("respects clamp when dragging far left", () => {
-    expect(
-      computeErrorLogsWidthFromDrag({
-        startWidth: 540,
-        startClientX: 100,
-        currentClientX: 0,
-      }),
-    ).toBe(CONSOLE_ERROR_LOGS_WIDTH_MAX);
-  });
-});
-
-describe("resetConsoleErrorLogsWidth", () => {
-  let localStorageMock: ReturnType<typeof createLocalStorageMock>;
-
-  beforeEach(() => {
-    localStorageMock = createLocalStorageMock();
-    vi.stubGlobal("window", { localStorage: localStorageMock });
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
-  it("writes default width to storage", () => {
-    expect(resetConsoleErrorLogsWidth()).toBe(CONSOLE_ERROR_LOGS_WIDTH_DEFAULT);
-    expect(localStorageMock.getItem(CONSOLE_ERROR_LOGS_WIDTH_STORAGE_KEY)).toBe(String(CONSOLE_ERROR_LOGS_WIDTH_DEFAULT));
+describe("getConsoleWorkspaceRightPane", () => {
+  it("replaces the whole workspace when logs are open", () => {
+    expect(getConsoleWorkspaceRightPane(false)).toBe("workspace");
+    expect(getConsoleWorkspaceRightPane(true)).toBe("error-logs");
   });
 });
 

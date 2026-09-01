@@ -22,6 +22,7 @@ import { ConsoleRequestToolbar } from "../components/console/console-request-too
 import { ConsoleMobileDrawer } from "../components/console/console-mobile-drawer";
 import { ConsoleShortcutsDialog } from "../components/console/console-shortcuts-dialog";
 import { ConsoleSidebarPanel } from "../components/console/console-sidebar-panel";
+import { ConsoleWorkspaceRightPane } from "../components/console/console-workspace-right-pane";
 import { ErrorLogsPanel } from "../components/console/error-logs-panel";
 import { ResponseViewer } from "../components/console/response-viewer";
 import { Button } from "../components/ui/button";
@@ -46,14 +47,10 @@ import {
   type ConsoleContextBreadcrumbSegment,
 } from "../lib/console-sidebar";
 import {
-  computeErrorLogsWidthFromDrag,
   readStoredConsoleErrorLogsVisible,
-  readStoredConsoleErrorLogsWidth,
   removeConsoleErrorLogsOpenParam,
-  resetConsoleErrorLogsWidth,
   shouldOpenConsoleErrorLogs,
   writeStoredConsoleErrorLogsVisible,
-  writeStoredConsoleErrorLogsWidth,
 } from "../lib/console-error-logs-panel";
 import {
   CONSOLE_EDITOR_SPLIT_STORAGE_KEY,
@@ -272,16 +269,11 @@ export function ConsolePage() {
   const [sidebarWidth, setSidebarWidth] = useState(readStoredConsoleSidebarWidth);
   const [sidebarDragging, setSidebarDragging] = useState(false);
   const [logsVisible, setLogsVisible] = useState(readStoredConsoleErrorLogsVisible);
-  const [logsWidth, setLogsWidth] = useState(readStoredConsoleErrorLogsWidth);
-  const [logsDragging, setLogsDragging] = useState(false);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const sidebarWidthRef = useRef(sidebarWidth);
   sidebarWidthRef.current = sidebarWidth;
   const sidebarDragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
-  const logsWidthRef = useRef(logsWidth);
-  logsWidthRef.current = logsWidth;
-  const logsDragRef = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null);
   const [responseExpanded, setResponseExpanded] = useState(true);
   const [editorFraction, setEditorFraction] = useState(readStoredConsoleEditorFraction);
   const [isLgSplit, setIsLgSplit] = useState(
@@ -405,7 +397,7 @@ export function ConsolePage() {
     );
   }, [location.pathname, location.search, navigate]);
 
-  const isPanelDragging = sidebarDragging || splitDragging || logsDragging;
+  const isPanelDragging = sidebarDragging || splitDragging;
 
   useEffect(() => {
     if (!isPanelDragging) {
@@ -464,57 +456,6 @@ export function ConsolePage() {
     const next = resetConsoleSidebarWidth();
     sidebarWidthRef.current = next;
     setSidebarWidth(next);
-  }, []);
-
-  const endLogsDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    const drag = logsDragRef.current;
-    if (!drag || event.pointerId !== drag.pointerId) {
-      return;
-    }
-
-    logsDragRef.current = null;
-    setLogsDragging(false);
-    writeStoredConsoleErrorLogsWidth(logsWidthRef.current);
-  }, []);
-
-  const handleLogsPointerDown = useCallback(
-    (event: PointerEvent<HTMLDivElement>) => {
-      if (!isLgSplit || event.button !== 0) {
-        return;
-      }
-
-      event.preventDefault();
-
-      logsDragRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startWidth: logsWidthRef.current,
-      };
-      setLogsDragging(true);
-      event.currentTarget.setPointerCapture(event.pointerId);
-    },
-    [isLgSplit],
-  );
-
-  const handleLogsPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    const drag = logsDragRef.current;
-    if (!drag || event.pointerId !== drag.pointerId) {
-      return;
-    }
-
-    const next = computeErrorLogsWidthFromDrag({
-      startWidth: drag.startWidth,
-      startClientX: drag.startX,
-      currentClientX: event.clientX,
-    });
-    logsWidthRef.current = next;
-    setLogsWidth(next);
-  }, []);
-
-  const handleLogsDoubleClick = useCallback(() => {
-    const next = resetConsoleErrorLogsWidth();
-    logsWidthRef.current = next;
-    setLogsWidth(next);
   }, []);
 
   const endSplitDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
@@ -1438,7 +1379,6 @@ export function ConsolePage() {
   });
 
   const showDockedSidebar = sidebarVisible && isLgSplit;
-  const showDockedErrorLogs = logsVisible && isLgSplit;
   const showContextBar = !isLgSplit || !sidebarVisible;
 
   const sidebarPanel = (
@@ -1479,10 +1419,10 @@ export function ConsolePage() {
   return (
     <div className="h-dvh overflow-hidden p-4 sm:p-6" onContextMenu={(event) => event.preventDefault()}>
       <div
-        className={`flex h-full min-h-0 gap-3 ${showDockedSidebar || showDockedErrorLogs ? "lg:flex-row" : ""} ${
-          sidebarDragging || logsDragging ? "select-none" : ""
+        className={`flex h-full min-h-0 gap-3 ${showDockedSidebar ? "lg:flex-row" : ""} ${
+          sidebarDragging ? "select-none" : ""
         }`}
-        style={sidebarDragging || logsDragging ? { cursor: "col-resize" } : undefined}
+        style={sidebarDragging ? { cursor: "col-resize" } : undefined}
       >
         {showDockedSidebar ? (
           <>
@@ -1537,6 +1477,15 @@ export function ConsolePage() {
                 />
               </div>
             ) : null}
+            <ConsoleWorkspaceRightPane
+              logsVisible={logsVisible}
+              errorLogs={
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <ErrorLogsPanel onClose={() => setErrorLogsOpen(false)} />
+                </div>
+              }
+              workspace={
+                <>
             <ConsoleRequestToolbar
               requestName={activeDraftState.name}
               isAnalyzing={isAnalyzing}
@@ -1679,46 +1628,11 @@ export function ConsolePage() {
                 ) : null}
               </Card>
             </div>
+                </>
+              }
+            />
           </Card>
         </main>
-
-        {showDockedErrorLogs ? (
-          <>
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="拖动调整错误日志宽度，双击恢复默认宽度"
-              title="拖动调整宽度，双击恢复默认宽度"
-              className={`hidden w-2 shrink-0 cursor-col-resize select-none lg:flex lg:items-stretch lg:justify-center lg:active:bg-slate-100 ${
-                logsDragging ? "lg:bg-emerald-50" : "lg:hover:bg-slate-50"
-              }`}
-              onPointerDown={handleLogsPointerDown}
-              onPointerMove={handleLogsPointerMove}
-              onPointerUp={endLogsDrag}
-              onPointerCancel={endLogsDrag}
-              onLostPointerCapture={endLogsDrag}
-              onDoubleClick={handleLogsDoubleClick}
-            >
-              <div className="pointer-events-none my-3 w-px flex-1 rounded-full bg-slate-200 shadow-sm lg:hover:bg-emerald-400" />
-            </div>
-
-            <aside
-              className="hidden min-h-0 shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-xl shadow-slate-900/10 lg:flex"
-              style={{ width: logsWidth }}
-            >
-              <ErrorLogsPanel onClose={() => setErrorLogsOpen(false)} />
-            </aside>
-          </>
-        ) : null}
-
-        <ConsoleMobileDrawer
-          open={logsVisible && !isLgSplit && !mobileDrawerOpen}
-          onClose={() => setErrorLogsOpen(false)}
-          closeLabel="关闭错误日志"
-          side="right"
-        >
-          <ErrorLogsPanel onClose={() => setErrorLogsOpen(false)} />
-        </ConsoleMobileDrawer>
       </div>
 
       <AiAnalysisDialog
