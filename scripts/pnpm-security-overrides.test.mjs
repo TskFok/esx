@@ -84,4 +84,18 @@ describe("pnpm 安全 override", () => {
   it("不再忽略已修补的 React Router GHSA", () => {
     expect(yaml).not.toMatch(/GHSA-qwww-vcr4-c8h2/);
   });
+
+  it("browserslist 锁定在 4.28.7+ 且不超过 5", () => {
+    const entry = findOverride(overrides, "browserslist@");
+    expect(entry?.[1]).toBe(">=4.28.7 <5");
+    expect(lockfile).toMatch(/^ {2}browserslist@4\.28\.(?:[7-9]|\d{2,}):/m);
+    expect(lockfile).not.toMatch(/^ {2}browserslist@[5-9]\./m);
+  });
+
+  it("postcss-selector-parser 锁定在 6.1.3+ 且不超过 7", () => {
+    const entry = findOverride(overrides, "postcss-selector-parser@");
+    expect(entry?.[1]).toBe(">=6.1.3 <7");
+    expect(lockfile).toMatch(/^ {2}postcss-selector-parser@6\.1\.(?:[3-9]|\d{2,}):/m);
+    expect(lockfile).not.toMatch(/^ {2}postcss-selector-parser@[7-9]\./m);
+  });
 });
