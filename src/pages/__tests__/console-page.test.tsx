@@ -6,6 +6,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CONSOLE_ADMIN_PATH,
+  CONSOLE_ERROR_LOGS_PATH,
   CONSOLE_STATUS_PATH,
   CONSOLE_STATUS_VISIBLE_STORAGE_KEY,
   CONSOLE_WORKSPACE_PATH,
@@ -13,6 +15,7 @@ import {
 import { createDefaultDraft } from "../../lib/storage";
 import { DEFAULT_AI_ANALYSIS_SETTINGS } from "../../types/ai-settings";
 import type { ConnectionProfile } from "../../types/connections";
+import type { SavedRequest } from "../../types/requests";
 
 const connection = {
   id: "conn-1",
@@ -30,6 +33,21 @@ const connection = {
   lastUsedAt: "2026-09-01T00:00:00.000Z",
 } satisfies ConnectionProfile;
 
+const savedRequest = {
+  id: "req-1",
+  connectionId: connection.id,
+  name: "健康检查",
+  method: "GET",
+  path: "/_cluster/health",
+  body: "",
+  tags: [],
+  sortOrder: 0,
+  lastResponse: null,
+  lastStatus: null,
+  lastDurationMs: null,
+  updatedAt: "2026-09-01T00:00:00.000Z",
+} satisfies SavedRequest;
+
 vi.mock("../../providers/app-state", () => ({
   useAppState: vi.fn(),
 }));
@@ -43,7 +61,7 @@ vi.mock("../../components/console/admin-panel", () => ({
 }));
 
 vi.mock("../../components/console/error-logs-panel", () => ({
-  ErrorLogsPanel: () => <div>错误日志</div>,
+  ErrorLogsPanel: () => <div>错误日志面板</div>,
 }));
 
 vi.mock("../../components/console/console-editor", () => ({
@@ -114,7 +132,7 @@ beforeEach(() => {
     currentConnection: connection,
     currentDraft: createDefaultDraft(connection.id),
     connections: [connection],
-    requestsForCurrentConnection: [],
+    requestsForCurrentConnection: [savedRequest],
     searchMetadataByConnection: {},
     responsePreviewBytes: 256 * 1024,
     updateDraft: vi.fn(),
@@ -204,5 +222,97 @@ describe("ConsolePage right pane", () => {
     fireEvent.click(screen.getByRole("button", { name: "连接页" }));
 
     expect(screen.getByText("connections-page")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["状态", CONSOLE_STATUS_PATH, "服务器状态"],
+    ["治理", CONSOLE_ADMIN_PATH, "治理工作台"],
+    ["错误日志", CONSOLE_ERROR_LOGS_PATH, "错误日志面板"],
+  ] as const)("在%s页点击已保存请求时切回控制台", async (_label, path, panelText) => {
+    const selectSavedRequest = vi.fn();
+    useAppStateMock.mockReturnValue({
+      ...useAppStateMock(),
+      selectSavedRequest,
+    } as unknown as ReturnType<typeof useAppState>);
+
+    renderConsolePage(path);
+
+    await waitFor(() => {
+      expect(screen.getByText(panelText)).toBeInTheDocument();
+    });
+    expect(screen.queryByText("格式化 JSON")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("健康检查"));
+
+    await waitFor(() => {
+      expect(screen.getByText("格式化 JSON")).toBeInTheDocument();
+    });
+    expect(screen.getByText("请求内容")).toBeInTheDocument();
+    expect(screen.queryByText(panelText)).not.toBeInTheDocument();
+    expect(selectSavedRequest).toHaveBeenCalledWith(savedRequest.id);
+  });
+
+  it("在状态页点击新建时切回控制台", async () => {
+    const createdRequest = {
+      ...savedRequest,
+      id: "req-new",
+      name: "未命名请求",
+    } satisfies SavedRequest;
+    const selectSavedRequest = vi.fn();
+    const saveRequestFromDraft = vi.fn().mockReturnValue(createdRequest);
+    useAppStateMock.mockReturnValue({
+      ...useAppStateMock(),
+      selectSavedRequest,
+      saveRequestFromDraft,
+    } as unknown as ReturnType<typeof useAppState>);
+
+    renderConsolePage(CONSOLE_STATUS_PATH);
+
+    await waitFor(() => {
+      expect(screen.getByText("服务器状态")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("格式化 JSON")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "新建" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("格式化 JSON")).toBeInTheDocument();
+    });
+    expect(screen.getByText("请求内容")).toBeInTheDocument();
+    expect(screen.queryByText("服务器状态")).not.toBeInTheDocument();
+    expect(saveRequestFromDraft).toHaveBeenCalledOnce();
+    expect(selectSavedRequest).toHaveBeenCalledWith(createdRequest.id);
+  });
+
+  it("在状态页点击复制请求时切回控制台", async () => {
+    const duplicatedRequest = {
+      ...savedRequest,
+      id: "req-copy",
+      name: "健康检查 副本",
+    } satisfies SavedRequest;
+    const selectSavedRequest = vi.fn();
+    const duplicateRequest = vi.fn().mockReturnValue(duplicatedRequest);
+    useAppStateMock.mockReturnValue({
+      ...useAppStateMock(),
+      selectSavedRequest,
+      duplicateRequest,
+    } as unknown as ReturnType<typeof useAppState>);
+
+    renderConsolePage(CONSOLE_STATUS_PATH);
+
+    await waitFor(() => {
+      expect(screen.getByText("服务器状态")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("格式化 JSON")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "复制请求" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("格式化 JSON")).toBeInTheDocument();
+    });
+    expect(screen.getByText("请求内容")).toBeInTheDocument();
+    expect(screen.queryByText("服务器状态")).not.toBeInTheDocument();
+    expect(duplicateRequest).toHaveBeenCalledWith(savedRequest.id, "健康检查 副本");
+    expect(selectSavedRequest).toHaveBeenCalledWith(duplicatedRequest.id);
   });
 });

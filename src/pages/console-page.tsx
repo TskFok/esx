@@ -1110,12 +1110,14 @@ export function ConsolePage() {
     });
 
     selectSavedRequest(request.id);
+    applyRightPaneMode("workspace");
     toast.success("已新建请求。");
   }
 
   function handleSelectSavedRequest(requestId: string) {
     flushEditorContent();
     selectSavedRequest(requestId);
+    applyRightPaneMode("workspace");
   }
 
   function handleDuplicateRequest(requestId: string, requestNameValue: string) {
@@ -1129,6 +1131,7 @@ export function ConsolePage() {
         ),
       );
       selectSavedRequest(duplicated.id);
+      applyRightPaneMode("workspace");
       toast.success(`已复制为“${duplicated.name}”。`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "复制失败");
