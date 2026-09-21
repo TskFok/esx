@@ -80,9 +80,16 @@ describe("resolveChatCompletionsUrl", () => {
   it("rejects invalid protocol", () => {
     expect(() => resolveChatCompletionsUrl("api.openai.com/v1")).toThrow("http://");
   });
+
+  it.each([resolveChatCompletionsUrl, resolveModelsUrl])("rejects embedded credentials before resolving an AI endpoint", (resolveUrl) => {
+    expect(() => resolveUrl("https://demo-user:demo-password@ai.example.invalid/v1")).toThrow();
+  });
 });
 
 describe("isAiAnalysisConfigured", () => {
+  it.each(["https://", "https://demo-user:demo-password@ai.example.invalid/v1"])("does not enable AI requests for an invalid credential scope: %s", (baseUrl) => {
+    expect(isAiAnalysisConfigured({ ...kimiSettings, baseUrl }, "demo-key")).toBe(false);
+  });
   it("returns true when ai settings and api key are complete", () => {
     expect(
       isAiAnalysisConfigured(

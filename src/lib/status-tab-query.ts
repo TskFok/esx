@@ -1,6 +1,7 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { fetchClusterOverview, fetchIndicesStatus, fetchOperationsStatus } from "./http-client";
 import { useAppState } from "../providers/app-state";
+import { getSshTunnelForProfile } from "./connection-security";
 import type { ConnectionProfile } from "../types/connections";
 import type {
   ClusterOverviewSnapshot,
@@ -45,7 +46,7 @@ export function useStatusTabQuery<T extends StatusTab>(
       }
 
       const credentials = { password, sshSecret };
-      const sshTunnel = sshProfile?.tunnel ?? null;
+      const sshTunnel = getSshTunnelForProfile(sshProfile);
 
       if (tab === "overview") {
         return fetchClusterOverview(connection, credentials, sshTunnel) as Promise<StatusTabSnapshot<T>>;

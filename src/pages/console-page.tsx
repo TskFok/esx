@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { getSshTunnelForProfile } from "../lib/connection-security";
 import { ConsoleBulkTagsDialog } from "../components/console/console-bulk-tags-dialog";
 import { ConsoleContextBreadcrumb } from "../components/console/console-context-breadcrumb";
 import { ConsoleExportDialog } from "../components/console/console-export-dialog";
@@ -622,7 +623,7 @@ export function ConsolePage() {
           }
         }
 
-        lastResponse = await executeConsoleRequest(payload.connection, { password, sshSecret }, request, sshProfile?.tunnel ?? null, {
+        lastResponse = await executeConsoleRequest(payload.connection, { password, sshSecret }, request, getSshTunnelForProfile(sshProfile), {
           responsePreviewBytes,
         });
         if (!lastResponse.ok) {

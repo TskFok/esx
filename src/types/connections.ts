@@ -24,6 +24,8 @@ export type SshTunnelConfig = {
   username: string;
   authMethod: SshAuthMethod;
   privateKeyPath: string;
+  hostKeyPolicy?: SshHostKeyPolicy;
+  trustedHostKeySha256?: string | null;
 };
 
 export type SshProfile = {

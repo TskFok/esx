@@ -11,6 +11,8 @@ import type {
   SavedRequest,
 } from "../types/requests";
 import { DEFAULT_ERROR_LOG_SETTINGS } from "./error-log-settings";
+import { sanitizeStoredConnectionUrl } from "./connection-url";
+import { redactSensitiveText, redactSensitiveValue } from "./log-redaction";
 
 type AppStorageState = {
   connections: ConnectionProfile[];
@@ -58,11 +60,39 @@ export function createEmptyStorage(): AppStorageState {
   };
 }
 
+function sanitizeStorage(state: AppStorageState): AppStorageState {
+  return {
+    ...state,
+    connections: state.connections?.map((connection) => ({
+      ...connection,
+      baseUrl: typeof connection.baseUrl === "string" ? sanitizeStoredConnectionUrl(connection.baseUrl) : connection.baseUrl,
+      name: typeof connection.name === "string" ? redactSensitiveText(connection.name) : connection.name,
+    })),
+    aiSettings: state.aiSettings ? {
+      ...state.aiSettings,
+      baseUrl: sanitizeStoredConnectionUrl(state.aiSettings.baseUrl),
+    } : state.aiSettings,
+    errorLogs: redactSensitiveValue(state.errorLogs),
+  };
+}
+
 export async function readAppStorage() {
-  return (await store.get<AppStorageState>(STORE_KEY)) ?? createEmptyStorage();
+  const stored = await store.get<AppStorageState>(STORE_KEY);
+  if (!stored) {
+    return createEmptyStorage();
+  }
+  const sanitized = sanitizeStorage(stored);
+  if (JSON.stringify(stored) !== JSON.stringify(sanitized)) {
+    try {
+      await writeAppStorage(sanitized);
+    } catch {
+      console.warn("敏感数据迁移暂未保存，将在后续存储更新时重试。");
+    }
+  }
+  return sanitized;
 }
 
 export async function writeAppStorage(state: AppStorageState) {
-  await store.set(STORE_KEY, state);
+  await store.set(STORE_KEY, sanitizeStorage(state));
   await store.save();
 }

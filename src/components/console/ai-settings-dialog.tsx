@@ -10,6 +10,7 @@ import type { AiConnectionTestResult } from "../../lib/ai-analysis-client";
 import {
   AI_PROVIDER_PRESETS,
   applyAiProviderPreset,
+  getAiCredentialScope,
   supportsKimiThinkingMode,
   type AiAnalysisSettings,
   type AiProviderPreset,
@@ -44,6 +45,9 @@ export function AiSettingsDialog({
   const [fetchingModels, setFetchingModels] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [manualModelInput, setManualModelInput] = useState(false);
+  const credentialScope = getAiCredentialScope(formValues);
+  const storedCredentialScope = getAiCredentialScope(settings);
+  const canReuseStoredApiKey = apiKeyConfigured && !clearApiKey && credentialScope !== null && credentialScope === storedCredentialScope;
 
   useEffect(() => {
     if (!open) {
@@ -58,15 +62,11 @@ export function AiSettingsDialog({
   }, [open, settings]);
 
   async function resolveApiKeyForAction() {
-    if (clearApiKey) {
-      throw new Error("已勾选清除 API Key，请先取消勾选或重新输入。");
-    }
-
     if (apiKeyInput.trim()) {
       return apiKeyInput.trim();
     }
 
-    if (apiKeyConfigured) {
+    if (canReuseStoredApiKey) {
       const stored = await onLoadStoredApiKey();
       if (stored?.trim()) {
         return stored.trim();
@@ -100,7 +100,7 @@ export function AiSettingsDialog({
       await onSave({
         settings: formValues,
         apiKey: apiKeyInput.trim() ? apiKeyInput.trim() : null,
-        clearApiKey,
+        clearApiKey: !apiKeyInput.trim() && (clearApiKey || credentialScope !== storedCredentialScope),
       });
       onClose();
     } finally {
@@ -154,24 +154,31 @@ export function AiSettingsDialog({
     }
   }
 
-  function handleSelectPreset(preset: AiProviderPreset) {
-    setFormValues((current) => applyAiProviderPreset(current, preset));
+  function changeService(next: AiAnalysisSettings) {
+    if (getAiCredentialScope(next) !== credentialScope) {
+      setApiKeyInput("");
+    }
+    setFormValues(next);
     setAvailableModels([]);
     setManualModelInput(false);
   }
 
+  function handleSelectPreset(preset: AiProviderPreset) {
+    changeService(applyAiProviderPreset(formValues, preset));
+  }
+
   const canSave =
-    formValues.baseUrl.trim().length > 0 &&
+    credentialScope !== null &&
     formValues.model.trim().length > 0 &&
     (!formValues.enabled ||
       clearApiKey ||
       apiKeyInput.trim().length > 0 ||
-      apiKeyConfigured ||
+      canReuseStoredApiKey ||
       !formValues.apiKeyRequired);
 
   const canConnect =
-    formValues.baseUrl.trim().length > 0 &&
-    (apiKeyInput.trim().length > 0 || apiKeyConfigured || !formValues.apiKeyRequired);
+    credentialScope !== null &&
+    (apiKeyInput.trim().length > 0 || canReuseStoredApiKey || !formValues.apiKeyRequired);
 
   const canTest = canConnect && formValues.model.trim().length > 0;
   const showModelSelect = availableModels.length > 0 && !manualModelInput;
@@ -254,12 +261,11 @@ export function AiSettingsDialog({
             placeholder="https://api.openai.com/v1"
             value={formValues.baseUrl}
             onChange={(event) => {
-              setAvailableModels([]);
-              setFormValues((current) => ({
-                ...current,
+              changeService({
+                ...formValues,
                 baseUrl: event.target.value,
                 providerId: "custom",
-              }));
+              });
             }}
           />
           <p className="mt-2 text-xs leading-5 text-slate-500">支持 OpenAI 兼容接口，会自动追加 /chat/completions。</p>
@@ -356,7 +362,7 @@ export function AiSettingsDialog({
             type="password"
             placeholder={
               formValues.apiKeyRequired
-                ? apiKeyConfigured && !clearApiKey
+                ? canReuseStoredApiKey
                   ? "已保存，输入新值可覆盖"
                   : AI_PROVIDER_PRESETS.find((item) => item.id === formValues.providerId)?.apiKeyPlaceholder ?? "sk-..."
                 : "本地 Ollama 通常无需填写"
@@ -364,6 +370,9 @@ export function AiSettingsDialog({
             value={apiKeyInput}
             onChange={(event) => setApiKeyInput(event.target.value)}
           />
+          {credentialScope !== storedCredentialScope && formValues.apiKeyRequired ? (
+            <p className="mt-2 text-xs leading-5 text-slate-500">服务地址已更改，请为当前服务填写 API Key。</p>
+          ) : null}
           {apiKeyConfigured ? (
             <label className="mt-3 flex items-center gap-2 text-xs text-slate-500">
               <input

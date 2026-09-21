@@ -1,6 +1,7 @@
 export type SecretsMigrationHint = {
   connections: Array<{ connectionId: string; username: string }>;
   sshProfileIds: string[];
+  aiBaseUrl?: string;
 };
 
 export type SecretsVaultStatus = {
@@ -11,6 +12,7 @@ export type SecretsVaultStatus = {
 type MigrationSource = {
   connections: Array<{ id: string; username: string }>;
   sshProfiles: Array<{ id: string }>;
+  aiBaseUrl?: string;
 };
 
 export function buildSecretsMigrationHint(source: MigrationSource): SecretsMigrationHint {
@@ -20,5 +22,6 @@ export function buildSecretsMigrationHint(source: MigrationSource): SecretsMigra
       username: connection.username,
     })),
     sshProfileIds: source.sshProfiles.map((profile) => profile.id),
+    ...(source.aiBaseUrl ? { aiBaseUrl: source.aiBaseUrl } : {}),
   };
 }

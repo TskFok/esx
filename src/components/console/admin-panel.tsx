@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { getSshTunnelForProfile } from "../../lib/connection-security";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Input } from "../ui/input";
@@ -497,7 +498,7 @@ export function AdminPanel({
       throw new Error("当前连接未找到已保存密码，请回到连接页重新保存。");
     }
 
-    return executeAdminOperation(targetConnection, { password, sshSecret }, operation, sshProfile?.tunnel ?? null);
+    return executeAdminOperation(targetConnection, { password, sshSecret }, operation, getSshTunnelForProfile(sshProfile));
   }
 
   const executeMutation = useMutation({

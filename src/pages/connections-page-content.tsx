@@ -13,6 +13,7 @@ import { ConsoleMobileDrawer } from "../components/console/console-mobile-drawer
 import { Dialog } from "../components/ui/dialog";
 import {
   getAuthSecretFromForm,
+  getSshTunnelForProfile,
   validateConnectionSecurity,
   validateSshHostKey,
 } from "../lib/connection-security";
@@ -175,7 +176,11 @@ export function ConnectionsPage() {
       const sshTunnel = buildSshTunnelConfig(payload);
       const sshSecret = getSshSecretFromForm(payload) || null;
       const result = await validateSshTunnel({
-        sshTunnel,
+        sshTunnel: {
+          ...sshTunnel,
+          hostKeyPolicy: editingSshProfile?.hostKeyPolicy ?? "trustOnFirstUse",
+          trustedHostKeySha256: editingSshProfile?.trustedHostKeySha256 ?? null,
+        },
         sshSecret,
       });
 
@@ -267,7 +272,7 @@ export function ConnectionsPage() {
         },
         getAuthSecretFromForm(payload),
         sshSecret,
-        sshProfile?.tunnel ?? null,
+        getSshTunnelForProfile(sshProfile),
       );
 
       return upsertConnection(payload, editingConnection?.id);
@@ -388,7 +393,7 @@ export function ConnectionsPage() {
     try {
       const sshSecret = await getSshSecret(profile);
       const result = await validateSshTunnel({
-        sshTunnel: profile.tunnel,
+        sshTunnel: getSshTunnelForProfile(profile)!,
         sshSecret,
       });
 
@@ -445,7 +450,7 @@ export function ConnectionsPage() {
         },
         password,
         sshSecret,
-        sshProfile?.tunnel ?? null,
+        getSshTunnelForProfile(sshProfile),
       );
       toast.success("连接测试成功。");
     } catch (error) {

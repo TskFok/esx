@@ -1,5 +1,5 @@
 import type { AiAnalysisSettings } from "../types/ai-settings";
-import { supportsKimiThinkingMode } from "../types/ai-settings";
+import { getAiCredentialScope, supportsKimiThinkingMode } from "../types/ai-settings";
 import { readOpenAiSseStream, type AiStreamDelta } from "./ai-sse";
 import { executeAiHttpRequest, type TauriHttpResponse } from "./tauri";
 import { ensureTrailingSlashless } from "./utils";
@@ -49,6 +49,9 @@ export function resolveChatCompletionsUrl(baseUrl: string) {
   if (!/^https?:\/\//i.test(trimmed)) {
     throw new Error("AI 服务地址必须以 http:// 或 https:// 开头。");
   }
+  if (!getAiCredentialScope({ baseUrl: trimmed })) {
+    throw new Error("AI 服务地址无效，且不能包含用户名或密码。");
+  }
 
   if (trimmed.endsWith("/chat/completions")) {
     return trimmed;
@@ -65,6 +68,9 @@ export function resolveModelsUrl(baseUrl: string) {
 
   if (!/^https?:\/\//i.test(trimmed)) {
     throw new Error("AI 服务地址必须以 http:// 或 https:// 开头。");
+  }
+  if (!getAiCredentialScope({ baseUrl: trimmed })) {
+    throw new Error("AI 服务地址无效，且不能包含用户名或密码。");
   }
 
   const withoutChatCompletions = trimmed.replace(/\/chat\/completions$/, "");
@@ -434,7 +440,7 @@ export async function analyzeRequestContentWithAiStream(
 }
 
 export function isAiAnalysisConfigured(settings: AiAnalysisSettings, apiKey: string | null | undefined) {
-  if (!settings.enabled || settings.baseUrl.trim().length === 0 || settings.model.trim().length === 0) {
+  if (!settings.enabled || !getAiCredentialScope(settings) || settings.model.trim().length === 0) {
     return false;
   }
 

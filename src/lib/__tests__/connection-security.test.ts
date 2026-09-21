@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AUTH_SECRET_KEYS,
   buildAuthorizationHeader,
+  getSshTunnelForProfile,
   normalizeConnectionProfileSecurity,
   normalizeSshProfileSecurity,
   validateConnectionSecurity,
@@ -45,6 +46,15 @@ function legacySshProfile(overrides: Partial<SshProfile> = {}) {
 }
 
 describe("connection security helpers", () => {
+  it("carries the saved SSH trust policy into the transport config", () => {
+    const profile = normalizeSshProfileSecurity(legacySshProfile({
+      hostKeyPolicy: "strict", trustedHostKeySha256: "SHA256:saved-pin",
+    }));
+    expect(getSshTunnelForProfile(profile)).toEqual({
+      ...profile.tunnel, hostKeyPolicy: "strict", trustedHostKeySha256: "SHA256:saved-pin",
+    });
+    expect(getSshTunnelForProfile(null)).toBeNull();
+  });
   it("migrates legacy basic connections into schema v2 security fields", () => {
     const normalized = normalizeConnectionProfileSecurity(legacyConnection({ insecureTls: true }));
 

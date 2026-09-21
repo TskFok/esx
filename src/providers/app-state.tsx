@@ -25,11 +25,12 @@ import { buildSshTunnelConfig, getSshSecretFromForm } from "../lib/connections";
 import {
   getAuthSecretFromForm,
   getAuthSecretKey,
+  getSshTunnelForProfile,
   normalizeConnectionProfileSecurity,
   normalizeSshProfileSecurity,
 } from "../lib/connection-security";
 import type { AiAnalysisSettings } from "../types/ai-settings";
-import { DEFAULT_AI_ANALYSIS_SETTINGS } from "../types/ai-settings";
+import { DEFAULT_AI_ANALYSIS_SETTINGS, getAiCredentialScope } from "../types/ai-settings";
 import type { AiAnalysisHistoryEntry } from "../types/ai-analysis-history";
 import { createAiAnalysisHistoryEntry, prependAiAnalysisHistory } from "../types/ai-analysis-history";
 import type { RequestAnalysisResult } from "../lib/request-analyzer";
@@ -63,7 +64,7 @@ import {
 } from "../lib/request-state-mutations";
 import { mergeTagChanges, normalizeRequestTags } from "../lib/request-tags";
 import { isErrorLoggingEnabled, normalizeErrorLogSettings } from "../lib/error-log-settings";
-import { redactSensitiveList, redactSensitiveText } from "../lib/log-redaction";
+import { redactSensitiveList, redactSensitiveText, redactSensitiveValue } from "../lib/log-redaction";
 import { buildSecretsMigrationHint } from "../lib/secrets-vault";
 import { appendStatusHistorySnapshot } from "../lib/status-diagnostics";
 import { normalizeBaseUrl } from "../lib/http-client";
@@ -130,7 +131,7 @@ type AppStateContextValue = {
   setCurrentConnection: (connectionId: string) => void;
   setErrorLoggingEnabled: (enabled: boolean) => void;
   setResponsePreviewBytes: (bytes: number) => void;
-  updateAiSettings: (settings: AiAnalysisSettings) => void;
+  updateAiSettings: (settings: AiAnalysisSettings) => Promise<void>;
   saveAiSettings: (payload: {
     settings: AiAnalysisSettings;
     apiKey: string | null;
@@ -245,6 +246,7 @@ function now() {
 }
 
 function buildLocalLogEntry(payload: LogPayload, responsePreviewBytes: number) {
+  payload = redactSensitiveValue(payload);
   return {
     id: crypto.randomUUID(),
     createdAt: now(),
@@ -291,6 +293,7 @@ function normalizeStoredDraft(draft: LegacyStoredDraft): ConsoleDraft {
 }
 
 function normalizeStoredErrorLog(log: ErrorLogEntry, responsePreviewBytes: number) {
+  log = redactSensitiveValue(log);
   return {
     ...log,
     diagnostics: (log.diagnostics ?? []).map((item) => createTextPreview(item, responsePreviewBytes).text),
@@ -534,6 +537,8 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
   const [state, setState] = useState<AppStateShape>(createEmptyStorage());
   const [aiApiKeyConfigured, setAiApiKeyConfigured] = useState(false);
+  const aiKeyScope = useRef<string | null>(null);
+  const aiSettingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const indexFieldFetchInFlight = useRef(new Map<string, Promise<string[] | null>>());
 
   useEffect(() => {
@@ -546,19 +551,24 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         }
 
         const normalized = normalizeState(loaded);
-        const vaultStatus = await loadSecretsVault(
-          buildSecretsMigrationHint({
-            connections: normalized.connections,
-            sshProfiles: normalized.sshProfiles,
-          }),
-        );
-
-        if (cancelled) {
-          return;
-        }
-
         setState(normalized);
-        setAiApiKeyConfigured(vaultStatus.aiApiKeyConfigured);
+        try {
+          const vaultStatus = await loadSecretsVault(
+            buildSecretsMigrationHint({
+              connections: normalized.connections,
+              sshProfiles: normalized.sshProfiles,
+              aiBaseUrl: normalized.aiSettings.baseUrl,
+            }),
+          );
+          if (cancelled) return;
+          aiKeyScope.current = vaultStatus.aiApiKeyConfigured ? getAiCredentialScope(normalized.aiSettings) : null;
+          setAiApiKeyConfigured(vaultStatus.aiApiKeyConfigured);
+        } catch {
+          if (cancelled) return;
+          aiKeyScope.current = null;
+          setAiApiKeyConfigured(false);
+          toast.error("系统钥匙串暂不可用，已保留本地数据，请解锁后重新启动。");
+        }
         setReady(true);
       })
       .catch((error) => {
@@ -599,6 +609,31 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     [currentConnection, state.requests],
   );
   const responsePreviewBytes = normalizeResponsePreviewBytes(state.settings.responsePreviewBytes);
+
+  function persistAiSettings(payload: Parameters<AppStateContextValue["saveAiSettings"]>[0]) {
+    const task = aiSettingsSaveQueue.current.catch(() => undefined).then(async () => {
+      const nextSettings = normalizeAiSettings({ ...payload.settings, baseUrl: normalizeBaseUrl(payload.settings.baseUrl) });
+      const nextScope = getAiCredentialScope(nextSettings);
+      if (!nextScope) throw new Error("AI 服务地址无效，不能保存凭据。");
+      const replacement = payload.apiKey?.trim();
+      const shouldClear = payload.clearApiKey || (!replacement && nextScope !== aiKeyScope.current);
+      if (shouldClear || replacement) {
+        // 解绑发生在钥匙串写入之前，避免旧回调读到另一个服务的密钥。
+        aiKeyScope.current = null;
+        setAiApiKeyConfigured(false);
+        if (shouldClear) {
+          await deleteAiApiKey();
+        } else {
+          await saveAiApiKey(replacement!, nextScope);
+          aiKeyScope.current = nextScope;
+          setAiApiKeyConfigured(true);
+        }
+      }
+      setState((current) => normalizeState({ ...current, aiSettings: nextSettings }));
+    });
+    aiSettingsSaveQueue.current = task;
+    return task;
+  }
 
   const value = useMemo<AppStateContextValue>(
     () => ({
@@ -647,33 +682,17 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           }),
         );
       },
-      updateAiSettings(settings) {
-        setState((current) =>
-          normalizeState({
-            ...current,
-            aiSettings: settings,
-          }),
-        );
+      async updateAiSettings(settings) {
+        await persistAiSettings({ settings, apiKey: null, clearApiKey: false });
       },
       async saveAiSettings(payload) {
-        const nextSettings = normalizeAiSettings(payload.settings);
-        if (payload.clearApiKey) {
-          await deleteAiApiKey();
-          setAiApiKeyConfigured(false);
-        } else if (payload.apiKey) {
-          await saveAiApiKey(payload.apiKey);
-          setAiApiKeyConfigured(true);
-        }
-
-        setState((current) =>
-          normalizeState({
-            ...current,
-            aiSettings: nextSettings,
-          }),
-        );
+        await persistAiSettings(payload);
       },
       async getAiApiKey() {
-        return getAiApiKey();
+        const scope = getAiCredentialScope(state.aiSettings);
+        if (!scope || scope !== aiKeyScope.current) return null;
+        const key = await getAiApiKey(scope);
+        return scope === aiKeyScope.current ? key : null;
       },
       recordAiAnalysisHistory(payload) {
         setState((current) =>
@@ -949,7 +968,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         const metadata = await fetchConnectionSearchMetadata(
           connection,
           { password, sshSecret },
-          sshProfile?.tunnel ?? null,
+          getSshTunnelForProfile(sshProfile),
         );
         const cache = buildSearchMetadataCache(connection.id, metadata);
 
@@ -1017,7 +1036,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
             connection,
             { password, sshSecret },
             trimmedName,
-            sshProfile?.tunnel ?? null,
+            getSshTunnelForProfile(sshProfile),
           );
 
           const fetchedIndexNames = Object.keys(result.fieldsByIndex);

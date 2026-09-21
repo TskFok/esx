@@ -10,6 +10,7 @@ import {
   normalizeConnectionProfileSecurity,
   normalizeTlsConfig,
 } from "./connection-security";
+import { normalizeConnectionBaseUrl } from "./connection-url";
 import type {
   ConnectionAuthConfig,
   ConnectionEnvironment,
@@ -134,7 +135,7 @@ function normalizeConnectionEntry(value: unknown, index: number): ConnectionExpo
 
   return {
     name,
-    baseUrl,
+    baseUrl: normalizeConnectionBaseUrl(baseUrl),
     username,
     auth,
     tls,
@@ -318,7 +319,7 @@ export function buildConnectionImportPlan(
     return {
       id: nextId,
       name: connection.name,
-      baseUrl: connection.baseUrl,
+      baseUrl: normalizeConnectionBaseUrl(connection.baseUrl),
       username: connection.username,
       auth: connection.auth,
       tls: connection.tls,

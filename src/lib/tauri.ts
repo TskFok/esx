@@ -64,12 +64,12 @@ export async function deleteConnectionSshSecret(connectionId: string) {
   await deleteConnectionSecret(connectionId, SSH_AUTH_SECRET_KEY);
 }
 
-export async function saveAiApiKey(apiKey: string) {
-  await invoke("save_ai_api_key", { apiKey });
+export async function saveAiApiKey(apiKey: string, baseUrl: string) {
+  await invoke("save_ai_api_key", { apiKey, baseUrl });
 }
 
-export async function getAiApiKey() {
-  return invoke<string | null>("get_ai_api_key");
+export async function getAiApiKey(baseUrl: string) {
+  return invoke<string | null>("get_ai_api_key", { baseUrl });
 }
 
 export async function deleteAiApiKey() {
@@ -77,6 +77,7 @@ export async function deleteAiApiKey() {
 }
 
 type ExecuteSshHttpRequestPayload = {
+  baseUrl: string;
   url: string;
   method: string;
   auth: ConnectionAuthConfig;
@@ -86,11 +87,13 @@ type ExecuteSshHttpRequestPayload = {
   bodyText: string;
   contentType?: string | null;
   insecureTls: boolean;
+  tls: ConnectionTlsConfig;
   sshTunnel: SshTunnelConfig;
   sshSecret?: string | null;
 };
 
 type ExecuteEsHttpRequestPayload = {
+  baseUrl: string;
   url: string;
   method: string;
   auth: ConnectionAuthConfig;

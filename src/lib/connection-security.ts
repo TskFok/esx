@@ -6,6 +6,7 @@ import type {
   ConnectionTlsConfig,
   SshHostKeyPolicy,
   SshProfile,
+  SshTunnelConfig,
 } from "../types/connections";
 import { toBase64 } from "./utils";
 
@@ -120,6 +121,16 @@ export function normalizeSshProfileSecurity(profile: SshProfile): SshProfile {
       typeof profile.trustedHostKeySha256 === "string" && profile.trustedHostKeySha256.trim()
         ? profile.trustedHostKeySha256.trim()
         : null,
+  };
+}
+
+export function getSshTunnelForProfile(profile: SshProfile | null | undefined): SshTunnelConfig | null {
+  if (!profile) return null;
+  const normalized = normalizeSshProfileSecurity(profile);
+  return {
+    ...normalized.tunnel,
+    hostKeyPolicy: normalized.hostKeyPolicy,
+    trustedHostKeySha256: normalized.trustedHostKeySha256,
   };
 }
 

@@ -53,6 +53,15 @@ function createSshProfile(overrides: Partial<SshProfile> = {}): SshProfile {
 }
 
 describe("connection import export", () => {
+  it("rejects embedded URL credentials when importing connections", async () => {
+    const payload = await buildConnectionExportPayload({
+      connections: [createConnection()], sshProfiles: [],
+      getConnectionSecret: async () => "test-only-secret", getSshSecret: async () => null,
+    });
+    payload.connections[0]!.baseUrl = "https://user:fake-password@es.example.com:9200";
+    expect(() => parseConnectionImportPayload(payload)).toThrow();
+    expect(() => buildConnectionImportPlan(payload)).toThrow();
+  });
   it("builds and parses export payload with secrets", async () => {
     const payload = await buildConnectionExportPayload({
       connections: [createConnection()],

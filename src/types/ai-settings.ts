@@ -7,6 +7,18 @@ export type AiAnalysisSettings = {
   thinkingModeEnabled: boolean;
 };
 
+export function getAiCredentialScope(settings: Pick<AiAnalysisSettings, "baseUrl">): string | null {
+  try {
+    const url = new URL(settings.baseUrl.trim());
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 export const DEFAULT_AI_ANALYSIS_SETTINGS: AiAnalysisSettings = {
   enabled: false,
   baseUrl: "https://api.openai.com/v1",

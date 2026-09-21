@@ -4,12 +4,18 @@ use std::{
     io::{Read, Write},
     net::TcpStream,
     path::Path,
-    sync::{LazyLock, Mutex},
+    sync::{Arc, LazyLock, Mutex},
     time::Duration,
 };
 
 use keyring::{Entry, Error as KeyringError};
 use reqwest::{Method, StatusCode, Url};
+use rustls::{
+    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+    crypto::{verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms},
+    pki_types::{CertificateDer, ServerName, UnixTime},
+    DigitallySignedStruct, SignatureScheme,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ssh2::Session;
@@ -54,6 +60,7 @@ struct ConnectionPasswordHint {
 struct SecretsMigrationHint {
     connections: Vec<ConnectionPasswordHint>,
     ssh_profile_ids: Vec<String>,
+    ai_base_url: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -85,6 +92,10 @@ fn secret_vault_key(connection_id: &str, secret_key: &str) -> String {
 
 fn ai_api_key_vault_key() -> String {
     "ai:api-key".into()
+}
+
+fn ai_api_key_origin_vault_key() -> String {
+    "ai:api-key-origin".into()
 }
 
 fn read_vault_from_keychain() -> Result<Option<SecretsVault>, String> {
@@ -219,14 +230,13 @@ fn load_secrets_vault(hint: SecretsMigrationHint) -> Result<SecretsVaultStatus, 
     ensure_vault_loaded(&mut cache)?;
 
     let migrated_legacy_entries = migrate_legacy_entries(&mut cache.vault, &hint)?;
-    if migrated_legacy_entries > 0 {
+    let bound_ai_origin = bind_legacy_ai_api_key_origin(&mut cache.vault, hint.ai_base_url.as_deref());
+    if migrated_legacy_entries > 0 || bound_ai_origin {
         write_vault_to_keychain(&cache.vault)?;
     }
 
-    let ai_api_key_configured = cache
-        .vault
-        .values
-        .get(&ai_api_key_vault_key())
+    let ai_api_key_configured = hint.ai_base_url.as_deref()
+        .and_then(|url| ai_api_key_for_url(&cache.vault, url).ok().flatten())
         .map(|value| !value.trim().is_empty())
         .unwrap_or(false);
 
@@ -237,26 +247,14 @@ fn load_secrets_vault(hint: SecretsMigrationHint) -> Result<SecretsVaultStatus, 
 }
 
 fn save_secret(connection_id: &str, account: &str, secret: &str) -> Result<(), String> {
-    if connection_id == AI_CONFIG_SCOPE && account == AI_API_KEY_ACCOUNT {
-        return vault_set(ai_api_key_vault_key(), secret.to_string());
-    }
-
     vault_set(secret_vault_key(connection_id, account), secret.to_string())
 }
 
 fn get_secret(connection_id: &str, account: &str) -> Result<Option<String>, String> {
-    if connection_id == AI_CONFIG_SCOPE && account == AI_API_KEY_ACCOUNT {
-        return vault_get(&ai_api_key_vault_key());
-    }
-
     vault_get(&secret_vault_key(connection_id, account))
 }
 
 fn delete_secret(connection_id: &str, account: &str) -> Result<(), String> {
-    if connection_id == AI_CONFIG_SCOPE && account == AI_API_KEY_ACCOUNT {
-        return vault_delete(&ai_api_key_vault_key());
-    }
-
     vault_delete(&secret_vault_key(connection_id, account))
 }
 
@@ -291,18 +289,48 @@ fn delete_connection_secret(connection_id: String, secret_key: String) -> Result
 }
 
 #[tauri::command]
-fn save_ai_api_key(api_key: String) -> Result<(), String> {
-    save_secret(AI_CONFIG_SCOPE, AI_API_KEY_ACCOUNT, &api_key)
+fn save_ai_api_key(api_key: String, base_url: String) -> Result<(), String> {
+    with_vault_mut(|vault| set_ai_api_key_in_vault(vault, api_key, &base_url))
 }
 
 #[tauri::command]
-fn get_ai_api_key() -> Result<Option<String>, String> {
-    get_secret(AI_CONFIG_SCOPE, AI_API_KEY_ACCOUNT)
+fn get_ai_api_key(base_url: String) -> Result<Option<String>, String> {
+    with_vault_read(|vault| ai_api_key_for_url(vault, &base_url))?
+}
+
+fn set_ai_api_key_in_vault(vault: &mut SecretsVault, api_key: String, base_url: &str) -> Result<(), String> {
+    let origin = validate_http_url(base_url)?.origin().ascii_serialization();
+    vault.values.insert(ai_api_key_vault_key(), api_key);
+    vault.values.insert(ai_api_key_origin_vault_key(), origin);
+    Ok(())
+}
+
+fn ai_api_key_for_url(vault: &SecretsVault, base_url: &str) -> Result<Option<String>, String> {
+    let origin = validate_http_url(base_url)?.origin().ascii_serialization();
+    if vault.values.get(&ai_api_key_origin_vault_key()) != Some(&origin) {
+        return Ok(None);
+    }
+    Ok(vault.values.get(&ai_api_key_vault_key()).cloned())
+}
+
+fn bind_legacy_ai_api_key_origin(vault: &mut SecretsVault, base_url: Option<&str>) -> bool {
+    if !vault.values.contains_key(&ai_api_key_vault_key()) || vault.values.contains_key(&ai_api_key_origin_vault_key()) {
+        return false;
+    }
+    let Some(origin) = base_url.and_then(|url| validate_http_url(url).ok()).map(|url| url.origin().ascii_serialization()) else {
+        return false;
+    };
+    vault.values.insert(ai_api_key_origin_vault_key(), origin);
+    true
 }
 
 #[tauri::command]
 fn delete_ai_api_key() -> Result<(), String> {
-    delete_secret(AI_CONFIG_SCOPE, AI_API_KEY_ACCOUNT)
+    with_vault_mut(|vault| {
+        vault.values.remove(&ai_api_key_vault_key());
+        vault.values.remove(&ai_api_key_origin_vault_key());
+        Ok(())
+    })
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -314,12 +342,21 @@ enum SshAuthMethod {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+enum SshHostKeyPolicy {
+    TrustOnFirstUse,
+    Strict,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SshTunnelConfig {
     host: String,
     port: u16,
     username: String,
     auth_method: SshAuthMethod,
     private_key_path: String,
+    host_key_policy: Option<SshHostKeyPolicy>,
+    trusted_host_key_sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -357,6 +394,7 @@ struct ConnectionTlsConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecuteEsHttpRequestPayload {
+    base_url: String,
     url: String,
     method: String,
     auth: Option<ConnectionAuthConfig>,
@@ -395,6 +433,7 @@ struct ExecuteAiHttpRequestPayload {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecuteSshHttpRequestPayload {
+    base_url: String,
     url: String,
     method: String,
     auth: Option<ConnectionAuthConfig>,
@@ -404,6 +443,7 @@ struct ExecuteSshHttpRequestPayload {
     body_text: String,
     content_type: Option<String>,
     insecure_tls: bool,
+    tls: Option<ConnectionTlsConfig>,
     ssh_tunnel: SshTunnelConfig,
     ssh_secret: Option<String>,
 }
@@ -486,10 +526,44 @@ fn base64_encode(bytes: &[u8]) -> String {
     output
 }
 
-fn ssh_host_key_sha256(session: &Session) -> Option<String> {
-    session
-        .host_key_hash(ssh2::HashType::Sha256)
-        .map(|hash| format!("SHA256:{}", base64_encode(hash)))
+fn require_ssh_trusted_key(config: &SshTunnelConfig, allow_first_use: bool) -> Result<(), String> {
+    let has_pin = config.trusted_host_key_sha256.as_deref().is_some_and(|value| !value.trim().is_empty());
+    if !has_pin && (!allow_first_use || matches!(config.host_key_policy, Some(SshHostKeyPolicy::Strict))) {
+        return Err("SSH 连接缺少可信指纹，请先验证并保存 SSH 主机。".into());
+    }
+    Ok(())
+}
+
+fn verify_ssh_host_key(config: &SshTunnelConfig, digest: Option<&[u8]>, allow_first_use: bool) -> Result<String, String> {
+    require_ssh_trusted_key(config, allow_first_use)?;
+    let digest = digest.ok_or_else(|| "SSH 服务端未返回可校验的主机指纹。".to_string())?;
+    if let Some(expected) = config.trusted_host_key_sha256.as_deref().filter(|value| !value.trim().is_empty()) {
+        if !fingerprint_matches(expected, digest) {
+            return Err("SSH 主机指纹发生变化，已在发送认证凭据前终止连接。".into());
+        }
+    }
+    Ok(format!("SHA256:{}", base64_encode(digest)))
+}
+
+fn validate_http_url(input: &str) -> Result<Url, String> {
+    let parsed = Url::parse(input).map_err(|_| "请求地址无效。".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err("请求地址必须使用 HTTP 或 HTTPS。".into());
+    }
+    let authority = input.split_once("://").map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or(""));
+    if !parsed.username().is_empty() || parsed.password().is_some() || authority.is_some_and(|value| value.contains('@')) {
+        return Err("请求地址不能包含用户名或密码。".into());
+    }
+    Ok(parsed)
+}
+
+fn validate_es_request_url(base_url: &str, request_url: &str) -> Result<Url, String> {
+    let base = validate_http_url(base_url)?;
+    let request = validate_http_url(request_url)?;
+    if request.origin() != base.origin() {
+        return Err("请求地址必须与当前 Elasticsearch 连接同源。".into());
+    }
+    Ok(request)
 }
 
 fn resolve_auth_type(auth: Option<&ConnectionAuthConfig>) -> ConnectionAuthType {
@@ -536,8 +610,7 @@ fn fingerprint_matches(input: &str, digest: &[u8]) -> bool {
     }
 
     let expected_base64 = base64_encode(digest);
-    if trimmed.len() >= "SHA256:".len()
-        && trimmed[.."SHA256:".len()].eq_ignore_ascii_case("SHA256:")
+    if trimmed.get(.."SHA256:".len()).is_some_and(|prefix| prefix.eq_ignore_ascii_case("SHA256:"))
         && trimmed["SHA256:".len()..] == expected_base64
     {
         return true;
@@ -551,58 +624,74 @@ fn fingerprint_matches(input: &str, digest: &[u8]) -> bool {
         == compact_hex(digest)
 }
 
-fn validate_certificate_fingerprint(url: &str, expected_fingerprint: &str) -> Result<String, String> {
-    let parsed = Url::parse(url).map_err(|error| format!("证书指纹校验失败，URL 无效：{error}"))?;
-    if parsed.scheme() != "https" {
-        return Err("证书指纹 TLS 模式仅支持 HTTPS Elasticsearch 地址。".into());
+#[derive(Debug)]
+struct FingerprintVerifier {
+    expected_fingerprint: String,
+    algorithms: WebPkiSupportedAlgorithms,
+}
+
+impl ServerCertVerifier for FingerprintVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        if !fingerprint_matches(&self.expected_fingerprint, &Sha256::digest(end_entity.as_ref())) {
+            return Err(rustls::Error::General("服务端证书指纹不匹配。".into()));
+        }
+        // 指纹明确指定受信叶证书；后续握手签名仍必须证明对端持有对应私钥。
+        Ok(ServerCertVerified::assertion())
     }
 
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| "证书指纹校验失败，URL 缺少主机名。".to_string())?;
-    let port = parsed
-        .port_or_known_default()
-        .ok_or_else(|| "证书指纹校验失败，URL 缺少端口。".to_string())?;
-    let tcp_stream = TcpStream::connect((host, port))
-        .map_err(|error| format!("证书指纹校验失败，无法连接 {host}:{port}：{error}"))?;
-    let connector = native_tls::TlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .danger_accept_invalid_hostnames(true)
-        .build()
-        .map_err(|error| format!("证书指纹校验失败，无法创建 TLS 连接器：{error}"))?;
-    let tls_stream = connector
-        .connect(host, tcp_stream)
-        .map_err(|error| format!("证书指纹校验失败，TLS 握手失败：{error}"))?;
-    let certificate = tls_stream
-        .peer_certificate()
-        .map_err(|error| format!("证书指纹校验失败，无法读取服务端证书：{error}"))?
-        .ok_or_else(|| "证书指纹校验失败，服务端没有返回证书。".to_string())?;
-    let der = certificate
-        .to_der()
-        .map_err(|error| format!("证书指纹校验失败，无法解析服务端证书：{error}"))?;
-    let digest = Sha256::digest(&der);
-    let current_fingerprint = format!("SHA256:{}", base64_encode(&digest));
+    fn verify_tls12_signature(&self, message: &[u8], cert: &CertificateDer<'_>, dss: &DigitallySignedStruct) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_tls12_signature(message, cert, dss, &self.algorithms)
+    }
 
-    if fingerprint_matches(expected_fingerprint, &digest) {
-        Ok(current_fingerprint)
-    } else {
-        Err(format!(
-            "证书指纹不匹配，当前服务端指纹为 {current_fingerprint}。"
-        ))
+    fn verify_tls13_signature(&self, message: &[u8], cert: &CertificateDer<'_>, dss: &DigitallySignedStruct) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_tls13_signature(message, cert, dss, &self.algorithms)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.algorithms.supported_schemes()
     }
 }
 
-fn build_es_http_client(
+fn build_fingerprint_tls_config(expected_fingerprint: &str) -> Result<rustls::ClientConfig, String> {
+    if expected_fingerprint.trim().is_empty() {
+        return Err("证书指纹模式需要提供 SHA256 指纹。".into());
+    }
+    let provider = Arc::new(rustls::crypto::ring::default_provider());
+    let verifier = FingerprintVerifier {
+        expected_fingerprint: expected_fingerprint.trim().to_string(),
+        algorithms: provider.signature_verification_algorithms,
+    };
+    Ok(rustls::ClientConfig::builder_with_provider(provider)
+        .with_safe_default_protocol_versions()
+        .map_err(|error| format!("无法创建证书指纹 TLS 配置：{error}"))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(verifier))
+        .with_no_client_auth())
+}
+
+fn es_http_client_builder(
     tls: Option<&ConnectionTlsConfig>,
     insecure_tls: bool,
-) -> Result<reqwest::blocking::Client, String> {
+) -> Result<reqwest::blocking::ClientBuilder, String> {
     let mode = resolve_tls_mode(tls, insecure_tls);
     let mut builder = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(60))
-        .connect_timeout(Duration::from_secs(15));
+        .connect_timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none());
 
     match mode {
-        ConnectionTlsMode::Default | ConnectionTlsMode::CertificateFingerprint => {}
+        ConnectionTlsMode::Default => {}
+        ConnectionTlsMode::CertificateFingerprint => {
+            let fingerprint = tls.and_then(|value| value.fingerprint.as_deref()).unwrap_or("");
+            builder = builder.use_preconfigured_tls(build_fingerprint_tls_config(fingerprint)?);
+        }
         ConnectionTlsMode::Insecure => {
             builder = builder
                 .danger_accept_invalid_certs(true)
@@ -622,10 +711,16 @@ fn build_es_http_client(
         }
     }
 
-    builder.build().map_err(|error| format!("无法创建 Elasticsearch HTTP 客户端：{error}"))
+    Ok(builder)
+}
+
+fn build_es_http_client(tls: Option<&ConnectionTlsConfig>, insecure_tls: bool) -> Result<reqwest::blocking::Client, String> {
+    es_http_client_builder(tls, insecure_tls)?.build()
+        .map_err(|error| format!("无法创建 Elasticsearch HTTP 客户端：{error}"))
 }
 
 fn map_reqwest_error(error: reqwest::Error) -> String {
+    let error = error.without_url();
     if error.is_timeout() {
         return "请求超时，请检查 SSH 通道、网络或 Elasticsearch 响应时间。".into();
     }
@@ -686,6 +781,7 @@ fn perform_ssh_validation(payload: ValidateSshTunnelPayload) -> TunnelValidation
     )];
 
     let result = (|| -> Result<(), String> {
+        require_ssh_trusted_key(&payload.ssh_tunnel, true)?;
         let tcp_stream = TcpStream::connect((payload.ssh_tunnel.host.as_str(), payload.ssh_tunnel.port))
             .map_err(|error| format!("无法连接 SSH 主机 {}:{}：{error}", payload.ssh_tunnel.host, payload.ssh_tunnel.port))?;
         diagnostics.push("SSH TCP 连接已建立。".into());
@@ -695,10 +791,8 @@ fn perform_ssh_validation(payload: ValidateSshTunnelPayload) -> TunnelValidation
         session.handshake().map_err(|error| format!("SSH 握手失败：{error}"))?;
         diagnostics.push("SSH 握手成功。".into());
 
-        let host_key_sha256 = ssh_host_key_sha256(&session);
-        if let Some(fingerprint) = &host_key_sha256 {
-            diagnostics.push(format!("SSH 主机指纹：{fingerprint}"));
-        }
+        let fingerprint = verify_ssh_host_key(&payload.ssh_tunnel, session.host_key_hash(ssh2::HashType::Sha256), true)?;
+        diagnostics.push(format!("SSH 主机指纹：{fingerprint}"));
         authenticate_ssh(&session, &payload.ssh_tunnel, payload.ssh_secret.as_deref())?;
         diagnostics.push("SSH 认证成功。".into());
 
@@ -848,26 +942,16 @@ fn parse_remote_curl_output(stdout: &str) -> Result<(u16, String), String> {
 }
 
 fn perform_es_http_request(payload: ExecuteEsHttpRequestPayload) -> Result<HttpResponsePayload, DiagnosticFailure> {
-    let mut diagnostics = vec![format!("开始执行 Elasticsearch 请求：{} {}", payload.method, payload.url)];
+    let url = validate_es_request_url(&payload.base_url, &payload.url)
+        .map_err(|error| DiagnosticFailure::new(error, vec![]))?;
+    let mut diagnostics = vec![format!("开始执行 Elasticsearch 请求：{} {}{}", payload.method, url.origin().ascii_serialization(), url.path())];
     if matches!(
         resolve_tls_mode(payload.tls.as_ref(), payload.insecure_tls),
         ConnectionTlsMode::CertificateFingerprint
     ) {
-        let expected_fingerprint = payload
-            .tls
-            .as_ref()
-            .and_then(|value| value.fingerprint.as_deref())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .ok_or_else(|| {
-                diagnostics.push("证书指纹模式缺少 SHA256 指纹。".into());
-                DiagnosticFailure::new("证书指纹模式需要提供 SHA256 指纹。", diagnostics.clone())
-            })?;
-        let current_fingerprint = validate_certificate_fingerprint(&payload.url, expected_fingerprint).map_err(|error| {
-            diagnostics.push(error.clone());
-            DiagnosticFailure::new(error, diagnostics.clone())
-        })?;
-        diagnostics.push(format!("服务端证书指纹校验通过：{current_fingerprint}"));
+        if url.scheme() != "https" {
+            return Err(DiagnosticFailure::new("证书指纹 TLS 模式仅支持 HTTPS Elasticsearch 地址。", diagnostics));
+        }
     }
 
     let client = build_es_http_client(payload.tls.as_ref(), payload.insecure_tls).map_err(|error| {
@@ -879,7 +963,7 @@ fn perform_es_http_request(payload: ExecuteEsHttpRequestPayload) -> Result<HttpR
         DiagnosticFailure::new(format!("HTTP 方法无效：{error}"), diagnostics.clone())
     })?;
     let mut request = client
-        .request(method, &payload.url)
+        .request(method, url)
         .header("Accept", "application/json, text/plain, */*")
         .header(
             "Authorization",
@@ -944,12 +1028,16 @@ fn looks_like_elasticsearch_probe_response(path: &str, body_text: &str) -> bool 
 }
 
 fn perform_es_connection_validation(payload: ValidateEsConnectionPayload) -> HttpResponsePayload {
+    if let Err(error) = validate_http_url(&payload.base_url) {
+        return build_request_failed_payload(error, vec![]);
+    }
     let probes = ["/", "/_cluster/health", "/_security/_authenticate"];
     let mut diagnostics = vec![format!("开始验证 Elasticsearch 连接：{}", payload.base_url)];
     let mut last_response: Option<HttpResponsePayload> = None;
 
     for path in probes {
         let probe_payload = ExecuteEsHttpRequestPayload {
+            base_url: payload.base_url.clone(),
             url: resolve_es_request_url(&payload.base_url, path),
             method: "GET".into(),
             auth: payload.auth.clone(),
@@ -988,22 +1076,13 @@ fn perform_es_connection_validation(payload: ValidateEsConnectionPayload) -> Htt
 }
 
 fn perform_ai_http_request(payload: ExecuteAiHttpRequestPayload) -> Result<HttpResponsePayload, DiagnosticFailure> {
-    let mut diagnostics = vec![format!("开始执行 AI HTTP 请求：{} {}", payload.method, payload.url)];
-    let parsed_url = Url::parse(&payload.url).map_err(|error| {
-        diagnostics.push(error.to_string());
-        DiagnosticFailure::new(format!("AI 请求地址无效：{error}"), diagnostics.clone())
-    })?;
-    if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
-        diagnostics.push("AI 请求地址协议不受支持。".into());
-        return Err(DiagnosticFailure::new(
-            "AI 请求地址必须以 http:// 或 https:// 开头。",
-            diagnostics,
-        ));
-    }
+    let parsed_url = validate_http_url(&payload.url).map_err(|error| DiagnosticFailure::new(error, vec![]))?;
+    let mut diagnostics = vec![format!("开始执行 AI HTTP 请求：{} {}{}", payload.method, parsed_url.origin().ascii_serialization(), parsed_url.path())];
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(120))
         .connect_timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| {
             diagnostics.push(error.to_string());
@@ -1053,24 +1132,26 @@ fn perform_ai_http_request(payload: ExecuteAiHttpRequestPayload) -> Result<HttpR
 }
 
 fn perform_ssh_http_request(payload: ExecuteSshHttpRequestPayload) -> Result<HttpResponsePayload, DiagnosticFailure> {
+    let url = validate_es_request_url(&payload.base_url, &payload.url)
+        .map_err(|error| DiagnosticFailure::new(error, vec![]))?;
+    if matches!(resolve_tls_mode(payload.tls.as_ref(), payload.insecure_tls), ConnectionTlsMode::CaCertificate | ConnectionTlsMode::CertificateFingerprint) {
+        return Err(DiagnosticFailure::new("SSH 远程请求暂不支持 CA 证书或证书指纹 TLS 模式，请使用直连。", vec![]));
+    }
+    require_ssh_trusted_key(&payload.ssh_tunnel, false)
+        .map_err(|error| DiagnosticFailure::new(error, vec![]))?;
     let auth_label = match payload.ssh_tunnel.auth_method {
         SshAuthMethod::Password => "密码",
         SshAuthMethod::PrivateKey => "私钥",
     };
     let mut diagnostics = vec![format!(
         "准备通过 SSH 通道访问 {}，SSH 主机 {}@{}:{}，认证方式：{}",
-        payload.url,
+        format!("{}{}", url.origin().ascii_serialization(), url.path()),
         payload.ssh_tunnel.username,
         payload.ssh_tunnel.host,
         payload.ssh_tunnel.port,
         auth_label
     )];
 
-    let url = Url::parse(&payload.url).map_err(|error| {
-        diagnostics.push("解析 Elasticsearch 地址失败。".into());
-        diagnostics.push(error.to_string());
-        DiagnosticFailure::new(format!("请求地址无效：{error}"), diagnostics.clone())
-    })?;
     let host = url
         .host_str()
         .ok_or_else(|| {
@@ -1105,6 +1186,8 @@ fn perform_ssh_http_request(payload: ExecuteSshHttpRequestPayload) -> Result<Htt
         diagnostics.push(error.to_string());
         DiagnosticFailure::new(format!("SSH 握手失败：{error}"), diagnostics.clone())
     })?;
+    verify_ssh_host_key(&payload.ssh_tunnel, session.host_key_hash(ssh2::HashType::Sha256), false)
+        .map_err(|error| DiagnosticFailure::new(error, diagnostics.clone()))?;
     authenticate_ssh(&session, &payload.ssh_tunnel, payload.ssh_secret.as_deref()).map_err(|error| {
         diagnostics.push(error.clone());
         DiagnosticFailure::new(error, diagnostics.clone())
@@ -1258,8 +1341,76 @@ pub fn run() {
 }
 
 #[cfg(test)]
+mod security_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    fn request_payload(url: &str, base_url: &str) -> ExecuteEsHttpRequestPayload {
+        serde_json::from_value(serde_json::json!({
+            "url": url, "baseUrl": base_url, "method": "GET",
+            "username": "fixture-user", "password": "fixture-password",
+            "bodyText": "", "insecureTls": false
+        })).unwrap()
+    }
+
+    fn ssh_payload(tls_mode: Option<&str>) -> ExecuteSshHttpRequestPayload {
+        serde_json::from_value(serde_json::json!({
+            "url": "https://es.example.invalid/", "baseUrl": "https://es.example.invalid",
+            "method": "GET", "username": "fixture-user", "password": "fixture-password",
+            "bodyText": "", "insecureTls": false,
+            "tls": tls_mode.map(|mode| serde_json::json!({ "mode": mode, "fingerprint": "00".repeat(32), "caPath": "/fixture/ca.pem" })),
+            "sshTunnel": { "host": "127.0.0.1", "port": 0, "username": "fixture-user",
+                "authMethod": "password", "privateKeyPath": "", "hostKeyPolicy": "strict" },
+            "sshSecret": "fixture-password"
+        })).unwrap()
+    }
+
+    #[test]
+    fn rejects_cross_origin_requests_before_sending_credentials() {
+        let failure = perform_es_http_request(request_payload("http://127.0.0.1:0/", "https://es.example.invalid"))
+            .unwrap_err();
+        assert!(failure.message.contains("同源"), "{}", failure.message);
+    }
+
+    #[test]
+    fn rejects_url_credentials_without_echoing_them() {
+        let failure = perform_es_http_request(request_payload(
+            "http://fixture-user:fixture-password@127.0.0.1:0/", "http://127.0.0.1:0"
+        )).unwrap_err();
+        assert!(failure.message.contains("用户名或密码"), "{}", failure.message);
+        assert!(!format!("{failure:?}").contains("fixture-password"));
+    }
+
+    #[test]
+    fn rejects_missing_ssh_pin_before_connecting() {
+        let failure = perform_ssh_http_request(ssh_payload(None)).unwrap_err();
+        assert!(failure.message.contains("可信指纹"), "{}", failure.message);
+    }
+
+    #[test]
+    fn rejects_strict_ssh_validation_without_pin_before_connecting() {
+        let payload = ssh_payload(None);
+        let result = perform_ssh_validation(ValidateSshTunnelPayload {
+            ssh_tunnel: payload.ssh_tunnel, ssh_secret: payload.ssh_secret,
+        });
+        assert!(result.error_message.unwrap().contains("可信指纹"));
+    }
+
+    #[test]
+    fn rejects_unsupported_ssh_tls_modes_before_connecting() {
+        for mode in ["caCertificate", "certificateFingerprint"] {
+            let failure = perform_ssh_http_request(ssh_payload(Some(mode))).unwrap_err();
+            assert!(failure.message.contains("SSH") && failure.message.contains("TLS"), "{}", failure.message);
+        }
+    }
+
+    #[test]
+    fn rejects_missing_tls_fingerprint_when_building_client() {
+        let tls = ConnectionTlsConfig { mode: Some(ConnectionTlsMode::CertificateFingerprint), ca_path: None, fingerprint: None };
+        assert!(build_es_http_client(Some(&tls), false).is_err());
+    }
 
     #[test]
     fn builds_authorization_headers_for_supported_auth_types() {
@@ -1327,6 +1478,7 @@ mod tests {
     #[test]
     fn remote_curl_command_does_not_expose_authorization_secret() {
         let payload = ExecuteSshHttpRequestPayload {
+            base_url: "https://es.example.com:9200".into(),
             url: "https://es.example.com:9200/orders/_bulk".into(),
             method: "POST".into(),
             auth: Some(ConnectionAuthConfig {
@@ -1339,12 +1491,15 @@ mod tests {
             body_text: "{\"index\":{}}\n{\"id\":1}".into(),
             content_type: Some("application/x-ndjson".into()),
             insecure_tls: false,
+            tls: None,
             ssh_tunnel: SshTunnelConfig {
                 host: "jump.example.com".into(),
                 port: 22,
                 username: "ops".into(),
                 auth_method: SshAuthMethod::Password,
                 private_key_path: String::new(),
+                host_key_policy: None,
+                trusted_host_key_sha256: None,
             },
             ssh_secret: Some("ssh-password".into()),
         };

@@ -20,6 +20,7 @@ import type {
 } from "../types/status";
 import { flattenMappingFields, flattenMappingFieldsByIndex } from "./console-autocomplete";
 import { normalizeConnectionProfileSecurity } from "./connection-security";
+import { normalizeConnectionBaseUrl } from "./connection-url";
 
 type ConnectionProbe = {
   path: string;
@@ -40,20 +41,26 @@ type RequestCredentials = {
 };
 
 export function normalizeBaseUrl(baseUrl: string) {
-  const trimmed = ensureTrailingSlashless(baseUrl.trim());
-  if (!/^https?:\/\//i.test(trimmed)) {
-    throw new Error("地址必须以 http:// 或 https:// 开头。");
-  }
-  return trimmed;
+  return ensureTrailingSlashless(normalizeConnectionBaseUrl(baseUrl));
 }
 
 function resolveRequestUrl(baseUrl: string, path: string) {
-  if (/^https?:\/\//i.test(path)) {
-    return path;
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+  if (path.startsWith("//") || path.includes("\\") || /[\u0000-\u001f\u007f]/.test(path)) {
+    throw new Error("请求路径无效，请使用当前连接下的路径。");
   }
-
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${ensureTrailingSlashless(baseUrl)}${normalizedPath}`;
+  const target = /^https?:\/\//i.test(path) ? path : `${normalizedBaseUrl}${normalizedPath}`;
+  let url: URL;
+  try {
+    url = new URL(target);
+  } catch {
+    throw new Error("请求地址无效。");
+  }
+  if (url.username || url.password || url.origin !== new URL(normalizedBaseUrl).origin) {
+    throw new Error("请求地址必须与当前连接使用相同的协议、主机和端口，且不能内嵌凭据。");
+  }
+  return target;
 }
 
 function buildSnapshot(
@@ -641,6 +648,7 @@ async function executeConsoleRequestRaw(
   try {
     if (sshTunnel) {
       const response = await executeSshHttpRequest({
+        baseUrl: normalizeBaseUrl(connection.baseUrl),
         url: resolveRequestUrl(connection.baseUrl, parsed.path),
         method: parsed.method,
         auth: normalizedConnection.auth,
@@ -650,6 +658,7 @@ async function executeConsoleRequestRaw(
         bodyText: parsed.bodyText,
         contentType: parsed.contentType,
         insecureTls: isInsecureTls(normalizedConnection),
+        tls: normalizedConnection.tls,
         sshTunnel,
         sshSecret: credentials.sshSecret ?? null,
       });
@@ -662,6 +671,7 @@ async function executeConsoleRequestRaw(
     }
 
     const response = await executeEsHttpRequest({
+      baseUrl: normalizeBaseUrl(connection.baseUrl),
       url: resolveRequestUrl(connection.baseUrl, parsed.path),
       method: parsed.method,
       auth: normalizedConnection.auth,
