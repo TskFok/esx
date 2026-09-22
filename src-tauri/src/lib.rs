@@ -1318,6 +1318,7 @@ pub fn run() {
                 .with_flags(Flags::CONTEXT_MENU)
                 .build(),
         )
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             load_secrets_vault,

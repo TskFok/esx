@@ -1,4 +1,5 @@
-import { Loader2 } from "lucide-react";
+import { FolderOpen, Loader2 } from "lucide-react";
+import { pickSshPrivateKeyPath } from "../../lib/native-file-dialog";
 import type { SshProfileFormValues } from "../../types/connections";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
@@ -30,6 +31,16 @@ export function SshProfileDialog({
       return;
     }
     onClose();
+  }
+
+  async function handlePickPrivateKey() {
+    if (saving) {
+      return;
+    }
+    const path = await pickSshPrivateKeyPath();
+    if (path) {
+      onChange({ ...values, sshPrivateKeyPath: path });
+    }
   }
 
   return (
@@ -122,14 +133,28 @@ export function SshProfileDialog({
           </label>
         ) : (
           <>
-            <label className="block sm:col-span-2">
+            <div className="sm:col-span-2">
               <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">SSH 私钥路径</span>
-              <Input
-                placeholder="~/.ssh/id_rsa"
-                value={values.sshPrivateKeyPath}
-                onChange={(event) => onChange({ ...values, sshPrivateKeyPath: event.target.value })}
-              />
-            </label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="~/.ssh/id_rsa"
+                  value={values.sshPrivateKeyPath}
+                  onChange={(event) => onChange({ ...values, sshPrivateKeyPath: event.target.value })}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 shrink-0 rounded-2xl px-4"
+                  disabled={saving}
+                  onClick={() => {
+                    void handlePickPrivateKey();
+                  }}
+                >
+                  <FolderOpen className="mr-1 h-4 w-4" />
+                  选择文件
+                </Button>
+              </div>
+            </div>
 
             <label className="block sm:col-span-2">
               <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">私钥口令（可选）</span>
