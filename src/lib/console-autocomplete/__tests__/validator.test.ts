@@ -35,4 +35,54 @@ describe("validateConsoleContent", () => {
     expect(validateConsoleContent("GET /_search")).toEqual([]);
     expect(validateConsoleContent("GET /_search\n  \n")).toEqual([]);
   });
+
+  it("keeps exact positions for 200 unclosed arrays across CRLF lines", () => {
+    const content = `GET /_search\r\n${Array.from({ length: 200 }, (_, index) => `  [${index}`).join("\r\n")}`;
+    const diagnostics = validateConsoleContent(content);
+    expect(diagnostics).toHaveLength(200);
+    expect(diagnostics[0]).toMatchObject({
+      message: "未闭合的 [ 数组",
+      startLineNumber: 2,
+      startColumn: 3,
+      endLineNumber: 2,
+      endColumn: 4,
+    });
+    expect(diagnostics[199]).toMatchObject({
+      message: "未闭合的 [ 数组",
+      startLineNumber: 201,
+      startColumn: 3,
+      endLineNumber: 201,
+      endColumn: 4,
+    });
+  });
+
+  it("keeps trailing comma position and message", () => {
+    expect(validateConsoleContent('POST /_search\n{\n  "size": 10,\n}')[0]).toMatchObject({
+      message: "JSON 不允许尾随逗号",
+      startLineNumber: 3,
+      startColumn: 13,
+      endLineNumber: 3,
+      endColumn: 14,
+    });
+  });
+
+  it("marks an unclosed string before the next line", () => {
+    expect(validateConsoleContent('POST /_search\n{\n  "name": "abc\n}')[0]).toMatchObject({
+      message: "字符串未闭合",
+      startLineNumber: 3,
+      startColumn: 11,
+      endLineNumber: 3,
+      endColumn: 15,
+    });
+  });
+
+  it("marks an extra closing bracket at its own column", () => {
+    expect(validateConsoleContent('POST /_search\n{}\r\n  ]')[0]).toMatchObject({
+      message: "多余的 ]",
+      startLineNumber: 3,
+      startColumn: 3,
+      endLineNumber: 3,
+      endColumn: 4,
+    });
+  });
 });

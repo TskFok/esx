@@ -9,22 +9,6 @@ export type ConsoleBodyDiagnostic = {
 
 const WHITESPACE = /\s/;
 
-function positionAt(text: string, offset: number) {
-  let line = 1;
-  let column = 1;
-  const limit = Math.min(offset, text.length);
-  for (let index = 0; index < limit; index += 1) {
-    const char = text[index];
-    if (char === "\n") {
-      line += 1;
-      column = 1;
-    } else {
-      column += 1;
-    }
-  }
-  return { line, column };
-}
-
 function nextMeaningfulOffset(text: string, from: number) {
   let index = from;
   while (index < text.length && WHITESPACE.test(text[index] ?? "")) {
@@ -35,7 +19,8 @@ function nextMeaningfulOffset(text: string, from: number) {
 
 type Frame = {
   kind: "object" | "array";
-  startOffset: number;
+  line: number;
+  column: number;
 };
 
 export function validateConsoleBody(body: string, bodyStartOffset = 0): ConsoleBodyDiagnostic[] {
@@ -47,11 +32,22 @@ export function validateConsoleBody(body: string, bodyStartOffset = 0): ConsoleB
   const stack: Frame[] = [];
   let insideString = false;
   let escaped = false;
-  let stringStart = -1;
+  let stringStartLine = 1;
+  let stringStartColumn = 1;
   let sawValue = false;
+  let line = 1;
+  let column = 1;
 
   for (let index = 0; index < body.length; index += 1) {
     const char = body[index] ?? "";
+    const currentLine = line;
+    const currentColumn = column;
+    if (char === "\n") {
+      line += 1;
+      column = 1;
+    } else {
+      column += 1;
+    }
 
     if (insideString) {
       if (escaped) {
@@ -66,19 +62,15 @@ export function validateConsoleBody(body: string, bodyStartOffset = 0): ConsoleB
         insideString = false;
       }
       if (char === "\n") {
-        const absolute = bodyStartOffset + stringStart;
-        const start = positionAt(body, stringStart);
-        const end = positionAt(body, index);
         diagnostics.push({
           message: "字符串未闭合",
-          startLineNumber: start.line,
-          startColumn: start.column,
-          endLineNumber: end.line,
-          endColumn: end.column,
+          startLineNumber: stringStartLine,
+          startColumn: stringStartColumn,
+          endLineNumber: currentLine,
+          endColumn: currentColumn,
           severity: "error",
         });
         insideString = false;
-        void absolute;
       }
       continue;
     }
@@ -89,19 +81,20 @@ export function validateConsoleBody(body: string, bodyStartOffset = 0): ConsoleB
 
     if (char === '"') {
       insideString = true;
-      stringStart = index;
+      stringStartLine = currentLine;
+      stringStartColumn = currentColumn;
       sawValue = true;
       continue;
     }
 
     if (char === "{") {
-      stack.push({ kind: "object", startOffset: index });
+      stack.push({ kind: "object", line: currentLine, column: currentColumn });
       sawValue = false;
       continue;
     }
 
     if (char === "[") {
-      stack.push({ kind: "array", startOffset: index });
+      stack.push({ kind: "array", line: currentLine, column: currentColumn });
       sawValue = false;
       continue;
     }
@@ -109,13 +102,12 @@ export function validateConsoleBody(body: string, bodyStartOffset = 0): ConsoleB
     if (char === "}") {
       const frame = stack.pop();
       if (!frame || frame.kind !== "object") {
-        const pos = positionAt(body, index);
         diagnostics.push({
           message: "多余的 }",
-          startLineNumber: pos.line,
-          startColumn: pos.column,
-          endLineNumber: pos.line,
-          endColumn: pos.column + 1,
+          startLineNumber: currentLine,
+          startColumn: currentColumn,
+          endLineNumber: currentLine,
+          endColumn: currentColumn + 1,
           severity: "error",
         });
       }
@@ -126,13 +118,12 @@ export function validateConsoleBody(body: string, bodyStartOffset = 0): ConsoleB
     if (char === "]") {
       const frame = stack.pop();
       if (!frame || frame.kind !== "array") {
-        const pos = positionAt(body, index);
         diagnostics.push({
           message: "多余的 ]",
-          startLineNumber: pos.line,
-          startColumn: pos.column,
-          endLineNumber: pos.line,
-          endColumn: pos.column + 1,
+          startLineNumber: currentLine,
+          startColumn: currentColumn,
+          endLineNumber: currentLine,
+          endColumn: currentColumn + 1,
           severity: "error",
         });
       }
@@ -144,13 +135,12 @@ export function validateConsoleBody(body: string, bodyStartOffset = 0): ConsoleB
       const next = nextMeaningfulOffset(body, index + 1);
       const nextChar = body[next] ?? "";
       if (nextChar === "}" || nextChar === "]" || next >= body.length) {
-        const pos = positionAt(body, index);
         diagnostics.push({
           message: "JSON 不允许尾随逗号",
-          startLineNumber: pos.line,
-          startColumn: pos.column,
-          endLineNumber: pos.line,
-          endColumn: pos.column + 1,
+          startLineNumber: currentLine,
+          startColumn: currentColumn,
+          endLineNumber: currentLine,
+          endColumn: currentColumn + 1,
           severity: "error",
         });
       }
@@ -165,25 +155,23 @@ export function validateConsoleBody(body: string, bodyStartOffset = 0): ConsoleB
   }
 
   stack.forEach((frame) => {
-    const pos = positionAt(body, frame.startOffset);
     diagnostics.push({
       message: frame.kind === "object" ? "未闭合的 { 对象" : "未闭合的 [ 数组",
-      startLineNumber: pos.line,
-      startColumn: pos.column,
-      endLineNumber: pos.line,
-      endColumn: pos.column + 1,
+      startLineNumber: frame.line,
+      startColumn: frame.column,
+      endLineNumber: frame.line,
+      endColumn: frame.column + 1,
       severity: "error",
     });
   });
 
   if (insideString) {
-    const pos = positionAt(body, stringStart);
     diagnostics.push({
       message: "字符串未闭合",
-      startLineNumber: pos.line,
-      startColumn: pos.column,
-      endLineNumber: pos.line,
-      endColumn: pos.column + 1,
+      startLineNumber: stringStartLine,
+      startColumn: stringStartColumn,
+      endLineNumber: stringStartLine,
+      endColumn: stringStartColumn + 1,
       severity: "error",
     });
   }
@@ -205,6 +193,7 @@ export function validateConsoleBody(body: string, bodyStartOffset = 0): ConsoleB
   }
 
   void sawValue;
+  void bodyStartOffset;
   return diagnostics;
 }
 

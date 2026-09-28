@@ -5,9 +5,11 @@ import {
   DEFAULT_CLUSTER_METADATA,
   type ConsoleAutocompleteContext,
   provideConsoleCompletionItems,
+  type ConsoleBodyDiagnostic,
   validateConsoleContent,
 } from "../../lib/console-autocomplete";
 import { parseConsoleRequestContext } from "../../lib/console-autocomplete/request-context";
+import { createConsoleValidationScheduler } from "../../lib/console-autocomplete/validation-scheduler";
 
 loader.config({ monaco: monacoEditor });
 
@@ -48,8 +50,10 @@ function getOverflowWidgetsDomNode(): HTMLElement | undefined {
 
 const MARKER_OWNER = "es-console-validator";
 
-function runConsoleValidation(model: monacoEditor.editor.ITextModel) {
-  const diagnostics = validateConsoleContent(model.getValue());
+function publishConsoleDiagnostics(
+  model: monacoEditor.editor.ITextModel,
+  diagnostics: ConsoleBodyDiagnostic[],
+) {
   monacoEditor.editor.setModelMarkers(
     model,
     MARKER_OWNER,
@@ -65,6 +69,10 @@ function runConsoleValidation(model: monacoEditor.editor.ITextModel) {
           : monacoEditor.MarkerSeverity.Warning,
     })),
   );
+}
+
+function runConsoleValidation(model: monacoEditor.editor.ITextModel) {
+  publishConsoleDiagnostics(model, validateConsoleContent(model.getValue()));
 }
 
 function registerLanguage(monacoInstance: Monaco) {
@@ -205,8 +213,47 @@ export function ConsoleEditor({
   onAnalyzeShortcut,
 }: ConsoleEditorProps) {
   const modelRef = useRef<monacoEditor.editor.ITextModel | null>(null);
+  const validationRef = useRef<{
+    model: monacoEditor.editor.ITextModel;
+    dispose: () => void;
+  } | null>(null);
   const runShortcutRef = useRef(onRunShortcut);
   const analyzeShortcutRef = useRef(onAnalyzeShortcut);
+
+  const updateValidation = (model: monacoEditor.editor.ITextModel | null, editable: boolean) => {
+    if (validationRef.current && (validationRef.current.model !== model || !editable)) {
+      validationRef.current.dispose();
+      validationRef.current = null;
+    }
+    if (!model || !editable || validationRef.current) {
+      return;
+    }
+
+    const scheduler = createConsoleValidationScheduler(model, (diagnostics) => {
+      if (modelRef.current === model && validationRef.current?.model === model) {
+        publishConsoleDiagnostics(model, diagnostics);
+      }
+    });
+    const subscription = model.onDidChangeContent(() => scheduler.schedule());
+    const modelDisposal = model.onWillDispose(() => {
+      if (validationRef.current?.model === model) {
+        validationRef.current.dispose();
+        validationRef.current = null;
+      }
+      if (modelRef.current === model) {
+        modelRef.current = null;
+      }
+    });
+    validationRef.current = {
+      model,
+      dispose: () => {
+        scheduler.dispose();
+        subscription.dispose();
+        modelDisposal.dispose();
+      },
+    };
+    runConsoleValidation(model);
+  };
   const options = useMemo(
     () => ({
       automaticLayout: true,
@@ -257,6 +304,16 @@ export function ConsoleEditor({
   }, [onAnalyzeShortcut]);
 
   useEffect(() => {
+    updateValidation(modelRef.current, !readOnly);
+  }, [readOnly]);
+
+  useEffect(() => () => {
+    validationRef.current?.dispose();
+    validationRef.current = null;
+    modelRef.current = null;
+  }, []);
+
+  useEffect(() => {
     const model = modelRef.current;
     if (!model) {
       return;
@@ -273,12 +330,16 @@ export function ConsoleEditor({
         modelRef.current = model;
         if (model) {
           modelAutocompleteContext.set(model, autocompleteContext ?? EMPTY_AUTOCOMPLETE_CONTEXT);
-
-          if (!readOnly) {
-            runConsoleValidation(model);
-            const disposable = model.onDidChangeContent(() => runConsoleValidation(model));
-            editor.onDidDispose(() => disposable.dispose());
-          }
+          updateValidation(model, !readOnly);
+          editor.onDidDispose(() => {
+            if (validationRef.current?.model === model) {
+              validationRef.current.dispose();
+              validationRef.current = null;
+            }
+            if (modelRef.current === model) {
+              modelRef.current = null;
+            }
+          });
         }
 
         const textarea = editor.getDomNode()?.querySelector("textarea");
