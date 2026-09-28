@@ -17,9 +17,10 @@ import { DEFAULT_AI_ANALYSIS_SETTINGS } from "../../types/ai-settings";
 import type { ConnectionProfile } from "../../types/connections";
 import type { ConnectionSearchMetadata, SavedRequest } from "../../types/requests";
 
-const { staticBuildSpy, editorContextRefs } = vi.hoisted(() => ({
+const { staticBuildSpy, editorContextRefs, requestListRenderSpy } = vi.hoisted(() => ({
   staticBuildSpy: vi.fn(),
   editorContextRefs: [] as unknown[],
+  requestListRenderSpy: vi.fn(),
 }));
 
 const connection = {
@@ -64,6 +65,17 @@ vi.mock("../../lib/console-autocomplete", async (importOriginal) => {
     buildConsoleAutocompleteStaticContext: (...args: Parameters<typeof actual.buildConsoleAutocompleteStaticContext>) => {
       staticBuildSpy();
       return actual.buildConsoleAutocompleteStaticContext(...args);
+    },
+  };
+});
+
+vi.mock("../../components/console/console-request-list", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../components/console/console-request-list")>();
+  return {
+    ...actual,
+    ConsoleRequestList: (props: Parameters<typeof actual.ConsoleRequestList>[0]) => {
+      requestListRenderSpy();
+      return <actual.ConsoleRequestList {...props} />;
     },
   };
 });
@@ -144,6 +156,7 @@ function createLocalStorageMock() {
 
 beforeEach(() => {
   staticBuildSpy.mockClear();
+  requestListRenderSpy.mockClear();
   editorContextRefs.length = 0;
   Object.defineProperty(window, "localStorage", {
     configurable: true,
@@ -198,6 +211,19 @@ beforeEach(() => {
 });
 
 describe("ConsolePage 补全上下文", () => {
+  it("正文输入不会重新渲染请求列表", () => {
+    renderConsolePage(CONSOLE_WORKSPACE_PATH);
+    const initialRenders = requestListRenderSpy.mock.calls.length;
+    expect(initialRenders).toBeGreaterThan(0);
+
+    const input = screen.getByRole("textbox", { name: "测试请求内容" });
+    for (let index = 0; index < 20; index++) {
+      fireEvent.change(input, { target: { value: `POST /items/_search\n{"size":${index}}` } });
+    }
+
+    expect(requestListRenderSpy).toHaveBeenCalledTimes(initialRenders);
+  });
+
   it("正文连续编辑不重建静态元数据，连接与 metadata 更新时重建", () => {
     const initialMetadata: ConnectionSearchMetadata = {
       connectionId: connection.id,

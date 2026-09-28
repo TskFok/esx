@@ -6,7 +6,7 @@ import {
   Loader2,
   PanelLeftOpen,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { getSshTunnelForProfile } from "../lib/connection-security";
@@ -22,7 +22,7 @@ import { AiGenerateDialog } from "../components/console/ai-generate-dialog";
 import { ConsoleRequestToolbar } from "../components/console/console-request-toolbar";
 import { ConsoleMobileDrawer } from "../components/console/console-mobile-drawer";
 import { ConsoleShortcutsDialog } from "../components/console/console-shortcuts-dialog";
-import { ConsoleSidebarPanel } from "../components/console/console-sidebar-panel";
+import { ConsoleSidebarPanel, type ConsoleSidebarPanelProps } from "../components/console/console-sidebar-panel";
 import { ConsoleWorkspaceRightPane } from "../components/console/console-workspace-right-pane";
 import { ErrorLogsPanel } from "../components/console/error-logs-panel";
 import { StatusPanel } from "../components/console/status-panel";
@@ -237,6 +237,42 @@ function buildSuccessfulRequestAudit(content: string, connection: ConnectionProf
   } catch {
     return null;
   }
+}
+
+type SidebarActions = Pick<
+  ConsoleSidebarPanelProps,
+  | "onClose" | "onNavigateConnections" | "onNavigateConsole" | "onNavigateStatus"
+  | "onNavigateAdmin" | "onNavigateLogs" | "onCreateRequest" | "onExportClick"
+  | "onImportFileSelected" | "onSelectSavedRequest" | "onEditRequest"
+  | "onDuplicateRequest" | "onDeleteRequest" | "onReorderRequests"
+  | "onToggleSelectionMode" | "onToggleRequestSelection" | "onSelectAllVisible"
+  | "onClearSelection" | "onOpenBulkTags"
+>;
+
+function useStableSidebarActions(actions: SidebarActions): SidebarActions {
+  const latest = useRef(actions);
+  useLayoutEffect(() => { latest.current = actions; });
+  return useMemo<SidebarActions>(() => ({
+    onClose: () => latest.current.onClose(),
+    onNavigateConnections: () => latest.current.onNavigateConnections(),
+    onNavigateConsole: () => latest.current.onNavigateConsole(),
+    onNavigateStatus: () => latest.current.onNavigateStatus(),
+    onNavigateAdmin: () => latest.current.onNavigateAdmin(),
+    onNavigateLogs: () => latest.current.onNavigateLogs(),
+    onCreateRequest: () => latest.current.onCreateRequest(),
+    onExportClick: () => latest.current.onExportClick(),
+    onImportFileSelected: (file) => latest.current.onImportFileSelected(file),
+    onSelectSavedRequest: (id) => latest.current.onSelectSavedRequest(id),
+    onEditRequest: (request) => latest.current.onEditRequest(request),
+    onDuplicateRequest: (id, name) => latest.current.onDuplicateRequest(id, name),
+    onDeleteRequest: (request) => latest.current.onDeleteRequest(request),
+    onReorderRequests: (ids) => latest.current.onReorderRequests(ids),
+    onToggleSelectionMode: () => latest.current.onToggleSelectionMode(),
+    onToggleRequestSelection: (id) => latest.current.onToggleRequestSelection(id),
+    onSelectAllVisible: (ids) => latest.current.onSelectAllVisible(ids),
+    onClearSelection: () => latest.current.onClearSelection(),
+    onOpenBulkTags: () => latest.current.onOpenBulkTags(),
+  }), []);
 }
 
 export function ConsolePage() {
@@ -979,6 +1015,32 @@ export function ConsolePage() {
     selectedConnection,
   ]);
 
+  const sidebarActions = useStableSidebarActions({
+    onClose: closeSidebar,
+    onNavigateConnections: () => navigate("/connections"),
+    onNavigateConsole: () => applyRightPaneMode("workspace"),
+    onNavigateStatus: toggleStatus,
+    onNavigateAdmin: toggleAdmin,
+    onNavigateLogs: toggleErrorLogs,
+    onCreateRequest: handleCreateRequest,
+    onExportClick: handleExportClick,
+    onImportFileSelected: handleImportFileSelected,
+    onSelectSavedRequest: (requestId) => {
+      handleSelectSavedRequest(requestId);
+      if (!isLgSplit) setMobileDrawerOpen(false);
+    },
+    onEditRequest: openEditRequestDialog,
+    onDuplicateRequest: handleDuplicateRequest,
+    onDeleteRequest: handleDeleteRequest,
+    onReorderRequests: handleReorderRequests,
+    onToggleSelectionMode: handleToggleSelectionMode,
+    onToggleRequestSelection: handleToggleRequestSelection,
+    onSelectAllVisible: (requestIds) => setSelectedRequestIds(requestIds),
+    onClearSelection: () => setSelectedRequestIds([]),
+    onOpenBulkTags: () => setBulkTagsDialogOpen(true),
+  });
+
+
   if (!activeConnection || !draft) {
     return <Navigate to="/connections" replace />;
   }
@@ -1419,41 +1481,19 @@ export function ConsolePage() {
   const showDockedSidebar = sidebarVisible && isLgSplit;
   const showContextBar = !isLgSplit || !sidebarVisible;
 
+
   const sidebarPanel = (
     <ConsoleSidebarPanel
+      {...sidebarActions}
       connectionName={selectedConnection.name}
       requests={connectionRequests}
       activeSavedRequestId={activeDraftState.activeSavedRequestId}
       closeTitle={isLgSplit ? "隐藏侧边栏 (⌘B)" : "关闭抽屉 (⌘B)"}
-      onClose={closeSidebar}
-      onNavigateConnections={() => navigate("/connections")}
-      onNavigateConsole={() => applyRightPaneMode("workspace")}
-      onNavigateStatus={toggleStatus}
-      onNavigateAdmin={toggleAdmin}
-      onNavigateLogs={toggleErrorLogs}
       logsPanelOpen={logsVisible}
       statusPanelOpen={statusVisible}
       adminPanelOpen={adminVisible}
-      onCreateRequest={handleCreateRequest}
-      onExportClick={handleExportClick}
-      onImportFileSelected={handleImportFileSelected}
-      onSelectSavedRequest={(requestId) => {
-        handleSelectSavedRequest(requestId);
-        if (!isLgSplit) {
-          setMobileDrawerOpen(false);
-        }
-      }}
-      onEditRequest={openEditRequestDialog}
-      onDuplicateRequest={handleDuplicateRequest}
-      onDeleteRequest={handleDeleteRequest}
-      onReorderRequests={handleReorderRequests}
       selectionMode={selectionMode}
       selectedRequestIds={selectedRequestIds}
-      onToggleSelectionMode={handleToggleSelectionMode}
-      onToggleRequestSelection={handleToggleRequestSelection}
-      onSelectAllVisible={(requestIds) => setSelectedRequestIds(requestIds)}
-      onClearSelection={() => setSelectedRequestIds([])}
-      onOpenBulkTags={() => setBulkTagsDialogOpen(true)}
     />
   );
 

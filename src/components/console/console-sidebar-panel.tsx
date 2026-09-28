@@ -1,15 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   CirclePlus,
-  CopyPlus,
   Download,
-  GripVertical,
   Hammer,
   PanelLeftClose,
-  Pencil,
   Server,
   Tags,
-  Trash2,
   Upload,
 } from "lucide-react";
 import { filterConnectionRequests } from "../../lib/request-list";
@@ -17,6 +13,7 @@ import { collectConnectionTags, type RequestTagFilter } from "../../lib/request-
 import type { SavedRequest } from "../../types/requests";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { ConsoleRequestList } from "./console-request-list";
 
 export type ConsoleSidebarPanelProps = {
   connectionName: string;
@@ -50,7 +47,13 @@ export type ConsoleSidebarPanelProps = {
   className?: string;
 };
 
-export function ConsoleSidebarPanel({
+function useStableEvent<Args extends unknown[]>(callback: (...args: Args) => void) {
+  const callbackRef = useRef(callback);
+  useLayoutEffect(() => { callbackRef.current = callback; });
+  return useCallback((...args: Args) => callbackRef.current(...args), []);
+}
+
+function ConsoleSidebarPanelInner({
   connectionName,
   requests,
   activeSavedRequestId,
@@ -83,11 +86,15 @@ export function ConsoleSidebarPanel({
 }: ConsoleSidebarPanelProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [tagFilter, setTagFilter] = useState<RequestTagFilter>("all");
-  const [draggedRequestId, setDraggedRequestId] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
-  const selectedIdSet = useMemo(() => new Set(selectedRequestIds), [selectedRequestIds]);
 
   const availableTags = useMemo(() => collectConnectionTags(requests), [requests]);
+  const selectRequest = useStableEvent(onSelectSavedRequest);
+  const toggleRequestSelection = useStableEvent(onToggleRequestSelection);
+  const editRequest = useStableEvent(onEditRequest);
+  const duplicateRequest = useStableEvent(onDuplicateRequest);
+  const deleteRequest = useStableEvent(onDeleteRequest);
+  const reorderRequests = useStableEvent(onReorderRequests);
   const canReorder = !selectionMode && !searchQuery.trim() && tagFilter === "all";
   const consolePanelOpen = !statusPanelOpen && !adminPanelOpen && !logsPanelOpen;
 
@@ -95,36 +102,6 @@ export function ConsoleSidebarPanel({
     () => filterConnectionRequests(requests, { searchQuery, tagFilter }),
     [requests, searchQuery, tagFilter],
   );
-
-  function handleDrop(targetRequestId: string) {
-    if (!draggedRequestId || !canReorder) {
-      return;
-    }
-
-    const sourceIds = requests.map((request) => request.id);
-    const draggedIndex = sourceIds.indexOf(draggedRequestId);
-    const targetIndex = sourceIds.indexOf(targetRequestId);
-
-    if (draggedIndex < 0 || targetIndex < 0 || draggedIndex === targetIndex) {
-      setDraggedRequestId(null);
-      return;
-    }
-
-    const next = [...sourceIds];
-    next.splice(draggedIndex, 1);
-    next.splice(targetIndex, 0, draggedRequestId);
-    onReorderRequests(next);
-    setDraggedRequestId(null);
-  }
-
-  function handleRequestClick(requestId: string) {
-    if (selectionMode) {
-      onToggleRequestSelection(requestId);
-      return;
-    }
-
-    onSelectSavedRequest(requestId);
-  }
 
   return (
     <div className={className}>
@@ -205,7 +182,8 @@ export function ConsoleSidebarPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+      <div className="min-h-0 flex-1 flex flex-col overflow-hidden pr-0.5">
+        <div className="shrink-0 max-h-[60%] overflow-y-auto">
         <div className="rounded-xl border border-white/10 bg-white/5 p-2.5">
           <p className="text-xs font-semibold text-emerald-300">当前连接</p>
           <p className="mt-1 text-sm font-bold leading-snug text-white">{connectionName}</p>
@@ -336,154 +314,40 @@ export function ConsoleSidebarPanel({
           </div>
         ) : null}
 
-        <div className="mt-2">
-          {requests.length === 0 ? (
-            <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-xs leading-5 text-slate-400">
-              当前连接还没有请求。点击「新建」或运行并保存第一条请求。
-            </div>
-          ) : visibleRequests.length === 0 ? (
-            <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-xs leading-5 text-slate-400">
-              没有匹配的请求，请调整搜索或标签筛选。
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              {!canReorder ? (
-                <p className="px-1 text-[10px] text-slate-500">
-                  {selectionMode ? "多选模式下无法拖拽排序。" : "清除搜索和标签筛选后可拖拽排序。"}
-                </p>
-              ) : null}
-              {visibleRequests.map((request) => {
-                const isActive = !selectionMode && activeSavedRequestId === request.id;
-                const isSelected = selectedIdSet.has(request.id);
-                const isDragging = draggedRequestId === request.id;
-
-                return (
-                  <div
-                    key={request.id}
-                    draggable={canReorder}
-                    onDragStart={() => setDraggedRequestId(request.id)}
-                    onDragEnd={() => setDraggedRequestId(null)}
-                    onDragOver={(event) => {
-                      if (!canReorder) {
-                        return;
-                      }
-                      event.preventDefault();
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      handleDrop(request.id);
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    className={`cursor-pointer rounded-lg border p-2 text-xs transition ${
-                      isActive || (selectionMode && isSelected)
-                        ? "border-white/30 bg-white text-slate-950"
-                        : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-                    } ${isDragging ? "opacity-50" : ""}`}
-                    onClick={() => handleRequestClick(request.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        handleRequestClick(request.id);
-                      }
-                    }}
-                  >
-                    <div className="flex items-start gap-1.5">
-                      {selectionMode ? (
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          className="mt-1"
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={() => onToggleRequestSelection(request.id)}
-                        />
-                      ) : null}
-                      {canReorder ? (
-                        <span
-                          className="mt-0.5 cursor-grab text-slate-400 active:cursor-grabbing"
-                          title="拖拽排序"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <GripVertical className="h-3.5 w-3.5" />
-                        </span>
-                      ) : null}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="truncate font-bold leading-snug">{request.name}</p>
-                          {request.lastStatus ? (
-                            <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-slate-700">
-                              {request.lastStatus}
-                            </span>
-                          ) : null}
-                        </div>
-                        {request.tags.length > 0 ? (
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {request.tags.map((tag) => (
-                              <span
-                                key={tag}
-                                className={`rounded-full px-1.5 py-px text-[9px] font-semibold ${
-                                  isActive || (selectionMode && isSelected)
-                                    ? "bg-slate-200 text-slate-700"
-                                    : "bg-white/10 text-slate-300"
-                                }`}
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                    {!selectionMode ? (
-                      <div className="mt-1.5 flex justify-end gap-0.5">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 px-0 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                          title="编辑请求"
-                          aria-label="编辑请求"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onEditRequest(request);
-                          }}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 px-0 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                          title="复制请求"
-                          aria-label="复制请求"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDuplicateRequest(request.id, request.name);
-                          }}
-                        >
-                          <CopyPlus className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 px-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                          title="删除请求"
-                          aria-label="删除请求"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDeleteRequest(request);
-                          }}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
+        {requests.length === 0 ? (
+          <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2 text-xs leading-5 text-slate-400">
+            当前连接还没有请求。点击「新建」或运行并保存第一条请求。
+          </div>
+        ) : visibleRequests.length === 0 ? (
+          <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2 text-xs leading-5 text-slate-400">
+            没有匹配的请求，请调整搜索或标签筛选。
+          </div>
+        ) : (
+          <>
+            {!canReorder ? (
+              <p className="mt-2 px-1 text-[10px] text-slate-500">
+                {selectionMode ? "多选模式下无法拖拽排序。" : "清除搜索和标签筛选后可拖拽排序。"}
+              </p>
+            ) : null}
+            <ConsoleRequestList
+              requests={visibleRequests}
+              activeSavedRequestId={activeSavedRequestId}
+              selectionMode={selectionMode}
+              selectedRequestIds={selectedRequestIds}
+              canReorder={canReorder}
+              onSelectSavedRequest={selectRequest}
+              onToggleRequestSelection={toggleRequestSelection}
+              onEditRequest={editRequest}
+              onDuplicateRequest={duplicateRequest}
+              onDeleteRequest={deleteRequest}
+              onReorderRequests={reorderRequests}
+            />
+          </>
+        )}
       </div>
     </div>
   );
 }
+
+export const ConsoleSidebarPanel = memo(ConsoleSidebarPanelInner);
