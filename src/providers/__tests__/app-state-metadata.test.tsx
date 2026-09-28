@@ -87,6 +87,36 @@ describe("target field provider cache", () => {
     expect(hook.result.current.searchMetadataByConnection.a.fields).toEqual([]);
   });
 
+  it.each(["empty", "forbidden"])("clears previously cached fields after %s mapping", async (outcome) => {
+    seed({ ...metadata(), fields: ["removed"], fieldsByIndex: { one: ["removed"] }, fieldsFetchedAtByIndex: { one: new Date().toISOString() } });
+    if (outcome === "empty") fetchTargets.mockResolvedValue({ requestedNames: ["one"], fieldsByIndex: { one: [] } });
+    else fetchTargets.mockRejectedValue(new Error("Forbidden"));
+    const hook = await openState();
+    await act(async () => { await hook.result.current.ensureTargetFields(connection, ["one"], { force: true }); });
+    expect(hook.result.current.searchMetadataByConnection.a.fields).toEqual([]);
+    expect(hook.result.current.searchMetadataByConnection.a.fieldsByIndex.one).toBeUndefined();
+  });
+
+  it("isolates mappings started during a name refresh from requests after its completion", async () => {
+    let finishNames!: (value: ConnectionSearchMetadata) => void;
+    let finishOldFields!: (value: { requestedNames: string[]; fieldsByIndex: Record<string, string[]> }) => void;
+    fetchMetadata.mockReturnValue(new Promise((done) => { finishNames = done; }));
+    fetchTargets.mockImplementationOnce(() => new Promise((done) => { finishOldFields = done; }))
+      .mockResolvedValueOnce({ requestedNames: ["one"], fieldsByIndex: { one: ["new-field"] } });
+    const hook = await openState();
+    let names!: Promise<ConnectionSearchMetadata>; let oldFields!: Promise<string[] | null>;
+    act(() => { names = hook.result.current.refreshSearchMetadata(connection, { force: true }); });
+    await waitFor(() => expect(fetchMetadata).toHaveBeenCalledOnce());
+    act(() => { oldFields = hook.result.current.ensureTargetFields(connection, ["one"]); });
+    await waitFor(() => expect(fetchTargets).toHaveBeenCalledOnce());
+    await act(async () => { finishNames(metadata()); await names; });
+    let newFields!: Promise<string[] | null>;
+    act(() => { newFields = hook.result.current.ensureTargetFields(connection, ["one"]); });
+    await waitFor(() => expect(fetchTargets).toHaveBeenCalledTimes(2));
+    await act(async () => { await newFields; finishOldFields({ requestedNames: ["one"], fieldsByIndex: { one: ["stale-field"] } }); await oldFields; });
+    expect(hook.result.current.searchMetadataByConnection.a.fields).toEqual(["new-field"]);
+  });
+
   it("preserves stored truncation metadata and invalidates fields on name refresh", async () => {
     seed({ ...metadata(), fields: ["limited"], fieldsByIndex: { one: ["limited"] }, fieldsFetchedAtByIndex: { one: new Date().toISOString() }, fieldsTruncatedByIndex: { one: true } });
     const hook = await openState();

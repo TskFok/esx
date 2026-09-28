@@ -28,6 +28,7 @@ export function normalizeFieldCache(cache: ConnectionSearchMetadata): Connection
     fields: sortedUnique(Object.values(fieldsByIndex).flat()),
     fieldsFetchedAtByIndex,
     fieldsTruncatedByIndex,
+    fieldsCacheTruncated: Object.keys(cache.fieldsByIndex ?? {}).length > MAX_CACHED_INDICES || cache.fieldsCacheTruncated === true,
   };
 }
 
@@ -70,5 +71,13 @@ export function mergeTargetFields(
   return normalizeFieldCache({
     ...cache, fieldsByIndex, fieldsFetchedAtByIndex, fieldsTruncatedByIndex, aliasToIndices,
     indices: sortedUnique([...cache.indices, ...names]),
+  });
+}
+
+export function clearTargetFields(cache: ConnectionSearchMetadata, targets: string[]) {
+  const removed = new Set(resolveFieldTargets(cache, targets));
+  return normalizeFieldCache({
+    ...cache,
+    fieldsByIndex: Object.fromEntries(Object.entries(cache.fieldsByIndex).filter(([name]) => !removed.has(name))),
   });
 }

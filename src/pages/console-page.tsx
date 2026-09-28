@@ -1119,7 +1119,7 @@ export function ConsolePage() {
       : hasMetadataAutoAttempted
         ? "索引元数据自动拉取失败，可手动重试。"
         : "首次进入时会自动拉取索引 / alias 元数据。") +
-    (Object.values(connectionSearchMetadata?.fieldsTruncatedByIndex ?? {}).some(Boolean) ? " · 字段候选不完整（已限制缓存字段数量）" : "");
+    (connectionSearchMetadata?.fieldsCacheTruncated || Object.values(connectionSearchMetadata?.fieldsTruncatedByIndex ?? {}).some(Boolean) ? " · 字段候选不完整（已限制缓存字段数量）" : "");
 
   function handleFormatJson() {
     const content = editorContentRef.current;

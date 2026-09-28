@@ -14,7 +14,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
 import { buildConsoleContent, parseConsoleRequest } from "../lib/console-parser";
-import { hasFreshTargetFields, mergeTargetFields, normalizeFieldCache, resolveFieldTargets } from "../lib/search-metadata-cache";
+import { clearTargetFields, hasFreshTargetFields, mergeTargetFields, normalizeFieldCache, resolveFieldTargets } from "../lib/search-metadata-cache";
 import { createPersistQueue } from "../lib/persist-queue";
 import { fetchConnectionSearchMetadata, fetchTargetMappingFields } from "../lib/http-client";
 import {
@@ -361,6 +361,7 @@ function normalizeStoredSearchMetadata(
     fieldsByIndex: normalizeStringRecordOfLists(cache.fieldsByIndex),
     fieldsFetchedAtByIndex: cache.fieldsFetchedAtByIndex,
     fieldsTruncatedByIndex: cache.fieldsTruncatedByIndex,
+    fieldsCacheTruncated: cache.fieldsCacheTruncated,
     connectionUpdatedAt: cache.connectionUpdatedAt,
     aliasToIndices: normalizeStringRecordOfLists(cache.aliasToIndices),
     cluster: normalizeClusterMetadata(cache.cluster),
@@ -742,19 +743,24 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         if (!password || !valid()) return null;
         const result = await fetchTargetMappingFields(connection, { password, sshSecret }, names, getSshTunnelForProfile(sshProfile));
         if (!valid()) return null;
-        if (!Object.values(result.fieldsByIndex).some((fields) => fields.length)) return [];
         const emptyCache = { ...buildSearchMetadataCache(connection.id, { indices: [], aliases: [], fields: [] }), expiresAt: new Date(0).toISOString(), connectionUpdatedAt: connection.updatedAt };
         const timestamp = Date.now();
-        const merged = mergeTargetFields(cache ?? emptyCache, result, timestamp);
+        const merged = mergeTargetFields(clearTargetFields(cache ?? emptyCache, names), result, timestamp);
         setState((current) => {
           if (!current.connections.some((item) => item.id === connection.id && item.updatedAt === connection.updatedAt)
             || (metadataGeneration.current.get(connection.id) ?? 0) !== generation) return current;
           const latest = current.searchMetadata[connection.id];
-          const next = mergeTargetFields(latest?.connectionUpdatedAt === connection.updatedAt ? latest : emptyCache, result, timestamp);
+          const next = mergeTargetFields(clearTargetFields(latest?.connectionUpdatedAt === connection.updatedAt ? latest : emptyCache, names), result, timestamp);
           return { ...current, searchMetadata: { ...current.searchMetadata, [connection.id]: next } };
         });
         return fieldsForTargets(merged);
       } catch {
+        if (valid()) setState((current) => {
+          const existingCache = current.searchMetadata[connection.id];
+          if (!existingCache || existingCache.connectionUpdatedAt !== connection.updatedAt
+            || (metadataGeneration.current.get(connection.id) ?? 0) !== generation) return current;
+          return { ...current, searchMetadata: { ...current.searchMetadata, [connection.id]: clearTargetFields(existingCache, names) } };
+        });
         return null;
       }
     })();
@@ -1097,9 +1103,12 @@ export function AppStateProvider({ children }: PropsWithChildren) {
           if (!password) throw new Error("当前连接未找到已保存密码，请回到连接页重新保存。");
           const metadata = await fetchConnectionSearchMetadata(connection, { password, sshSecret }, getSshTunnelForProfile(sshProfile));
           const cache = { ...buildSearchMetadataCache(connection.id, metadata), connectionUpdatedAt: connection.updatedAt };
+          const completedGeneration = generation + 1;
+          if (metadataGeneration.current.get(connection.id) !== generation) return cache;
+          metadataGeneration.current.set(connection.id, completedGeneration);
           setState((current) => {
             if (!current.connections.some((item) => item.id === connection.id && item.updatedAt === connection.updatedAt)
-              || metadataGeneration.current.get(connection.id) !== generation) return current;
+              || metadataGeneration.current.get(connection.id) !== completedGeneration) return current;
             return { ...current, searchMetadata: { ...current.searchMetadata, [connection.id]: cache } };
           });
           return cache;

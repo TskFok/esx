@@ -71,6 +71,7 @@ export type ConnectionSearchMetadata = {
   fieldsByIndex: Record<string, string[]>;
   fieldsFetchedAtByIndex?: Record<string, string>;
   fieldsTruncatedByIndex?: Record<string, boolean>;
+  fieldsCacheTruncated?: boolean;
   connectionUpdatedAt?: string;
   aliasToIndices: Record<string, string[]>;
   cluster: ConnectionSearchClusterMetadata;

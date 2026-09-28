@@ -42,6 +42,15 @@ describe("bounded target field cache", () => {
     expect(result.aliasToIndices).toEqual({});
   });
 
+  it("marks an alias spanning more than 100 indices incomplete after persistence normalization", () => {
+    const names = Array.from({ length: 101 }, (_, i) => `index-${i}`);
+    const result = normalizeFieldCache(mergeTargetFields({ ...cache(), aliasToIndices: { alias: names } }, {
+      requestedNames: ["alias"], fieldsByIndex: Object.fromEntries(names.map((name) => [name, [name]])),
+    }, 1000));
+    expect(Object.keys(result.fieldsByIndex)).toHaveLength(100);
+    expect(result.fieldsCacheTruncated).toBe(true);
+  });
+
   it("resolves known aliases to all concrete indices for freshness", () => {
     const base = { ...cache(), aliasToIndices: { alias: ["a", "b"] } };
     const first = mergeTargetFields(base, { requestedNames: ["alias"], fieldsByIndex: { a: ["field"] } }, 1000);
