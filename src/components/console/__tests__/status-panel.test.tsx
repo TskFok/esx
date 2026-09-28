@@ -26,16 +26,20 @@ vi.mock("../../../lib/http-client", () => ({
 
 vi.mock("../../../providers/app-state", () => ({
   useAppState: vi.fn(),
+  useAppStateField: vi.fn(),
+  useAppActions: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({
   toast: { error: toastErrorMock },
 }));
 
-import { useAppState } from "../../../providers/app-state";
+import { useAppActions, useAppState, useAppStateField } from "../../../providers/app-state";
 import { StatusPanel } from "../status-panel";
 
 const useAppStateMock = vi.mocked(useAppState);
+const useAppStateFieldMock = vi.mocked(useAppStateField);
+const useAppActionsMock = vi.mocked(useAppActions);
 
 const connection = {
   id: "conn-1",
@@ -161,6 +165,8 @@ describe("StatusPanel", () => {
       recordStatusSnapshot,
       statusHistoryByConnection: {},
     } as unknown as ReturnType<typeof useAppState>);
+    useAppStateFieldMock.mockImplementation((key) => useAppStateMock()[key]);
+    useAppActionsMock.mockImplementation(() => useAppStateMock());
   });
 
   afterEach(() => {
@@ -271,6 +277,24 @@ describe("StatusPanel", () => {
     });
 
     expect(screen.queryByText("Shards")).not.toBeInTheDocument();
+  });
+
+  it("千条索引仅渲染当前 100 行，汇总仍计算完整筛选结果", async () => {
+    fetchIndicesStatusMock.mockResolvedValue({
+      ...indicesSnapshot,
+      indices: Array.from({ length: 1000 }, (_, index) => ({
+        ...indicesSnapshot.indices[0], name: `orders-${String(index).padStart(4, "0")}`, docsCount: 10,
+      })),
+    });
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "索引" }));
+    await waitFor(() => expect(screen.getByText(/当前筛选共 1,000 个 index，文档 10,000/)).toBeInTheDocument());
+    expect(screen.getAllByTestId("status-index-row")).toHaveLength(100);
+    fireEvent.click(screen.getByRole("button", { name: "下一页索引" }));
+    expect(screen.getAllByTestId("status-index-row")).toHaveLength(100);
+    fireEvent.change(screen.getByPlaceholderText("搜索 index 名称"), { target: { value: "orders-0999" } });
+    expect(screen.getByText(/当前筛选共 1 个 index，文档 10/)).toBeInTheDocument();
+    expect(screen.getByText("orders-0999")).toBeInTheDocument();
   });
 
   it("缓存过期后切回已访问标签会重新请求", async () => {

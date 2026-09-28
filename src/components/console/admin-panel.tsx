@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Braces,
@@ -17,7 +17,7 @@ import {
   Trash2,
   Workflow,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { getSshTunnelForProfile } from "../../lib/connection-security";
 import { Button } from "../ui/button";
@@ -50,6 +50,7 @@ import {
   parseAnalyzeTokens,
 } from "../../lib/admin-operations";
 import { parseConsoleRequest } from "../../lib/console-parser";
+import { paginate } from "../../lib/paginate";
 import { buildConnectionLogContextFromProfile, buildRequestLogContext } from "../../lib/error-logs";
 import { extractUnknownErrorMessage, getResponseErrorMessage } from "../../lib/errors";
 import { executeAdminOperation } from "../../lib/http-client";
@@ -233,6 +234,62 @@ function parseResourcesFromResult(result: AdminExecutionResult): AdminResource[]
   return [];
 }
 
+function resourceListOperations(section: AdminSection): AdminOperation[] {
+  const indices = [
+    createReadOperation({ id: "resources-indices", title: "读取索引列表", description: "读取 index 状态列表。", path: "/_cat/indices?format=json&bytes=b&expand_wildcards=all&h=index,health,status,docs.count,store.size,pri,rep" }),
+    createReadOperation({ id: "resources-aliases", title: "读取 Alias 列表", description: "读取 alias 绑定。", path: "/_cat/aliases?format=json&h=alias,index,is_write_index" }),
+  ];
+  const templates = [
+    createReadOperation({ id: "resources-index-templates", title: "读取 Index Template", description: "读取 composable index templates。", path: "/_index_template?filter_path=index_templates.name,index_templates.index_template.index_patterns", group: "templates" }),
+    createReadOperation({ id: "resources-component-templates", title: "读取 Component Template", description: "读取 component templates。", path: "/_component_template?filter_path=component_templates.name", group: "templates" }),
+    createReadOperation({ id: "resources-pipelines", title: "读取 Pipeline", description: "读取 ingest pipelines。", path: "/_ingest/pipeline", group: "templates" }),
+  ];
+  return section === "indices" ? indices : section === "templates" ? templates : [indices[0], templates[2]];
+}
+
+function resourceDetailOperation(resource: AdminResource): AdminOperation {
+  const name = encodeURIComponent(resource.name);
+  const path = resource.kind === "index" ? `/${name}` :
+    resource.kind === "alias" ? `/_alias/${name}` :
+    resource.kind === "index-template" ? `/_index_template/${name}` :
+    resource.kind === "component-template" ? `/_component_template/${name}` : `/_ingest/pipeline/${name}`;
+  return createReadOperation({ id: "resource-detail", title: `读取 ${resource.name} 详情`, description: "读取单项资源完整定义。", path, group: resource.kind === "index" || resource.kind === "alias" ? "indices" : "templates" });
+}
+
+function affectedResourceIds(operation: AdminOperation): Set<string> {
+  const ids = new Set<string>();
+  const segments = operation.path.split("?")[0].split("/").filter(Boolean).map(decodeURIComponent);
+  const [first, second, third] = segments;
+  if (first === "_index_template" && second && second !== "_simulate") ids.add(`index-template:${second}`);
+  if (first === "_component_template" && second) ids.add(`component-template:${second}`);
+  if (first === "_ingest" && second === "pipeline" && third) ids.add(`pipeline:${third}`);
+  if (first && !first.startsWith("_") && first !== "*" && operation.id !== "rollover") ids.add(`index:${first}`);
+  if ((operation.id === "shrink" || operation.id === "split") && third) ids.add(`index:${third}`);
+  if (operation.id === "rollover" && first) {
+    ids.add(`alias:${first}:`);
+    if (third) ids.add(`index:${third}`);
+  }
+  if (operation.id === "alias-switch") {
+    const actions = asRecord(parseJsonValue(operation.bodyText))?.actions;
+    if (Array.isArray(actions)) {
+      for (const action of actions) {
+        const entry = asRecord(asRecord(action)?.add ?? asRecord(action)?.remove);
+        const alias = asString(entry?.alias);
+        const index = asString(entry?.index);
+        if (alias) ids.add(`alias:${alias}:`);
+        if (index) ids.add(`index:${index}`);
+      }
+    }
+  }
+  if (operation.id === "reindex") {
+    const body = asRecord(parseJsonValue(operation.bodyText));
+    for (const name of [asString(asRecord(body?.source)?.index), asString(asRecord(body?.dest)?.index)]) {
+      if (name) ids.add(`index:${name}`);
+    }
+  }
+  return ids;
+}
+
 function parseListInput(value: string) {
   return value
     .split(/[\n,]/)
@@ -394,6 +451,12 @@ export type AdminPanelProps = {
   className?: string;
 };
 
+type ExecutionInput = {
+  operation: AdminOperation;
+  connection: ConnectionProfile;
+  logContext: ReturnType<typeof buildConnectionLogContextFromProfile>;
+};
+
 export function AdminPanel({
   onClose,
   closeTitle = "关闭治理",
@@ -408,12 +471,13 @@ export function AdminPanel({
     recordErrorLog,
     recordAuditLog,
   } = useAppState();
+  const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<AdminSection>("indices");
-  const [resources, setResources] = useState<AdminResource[]>([]);
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
+  const [resourcePage, setResourcePage] = useState(1);
+  const [mappingPage, setMappingPage] = useState(1);
   const [preview, setPreview] = useState<AdminRequestPreview | null>(null);
   const [execution, setExecution] = useState<AdminExecutionResult | null>(null);
-  const [resourceError, setResourceError] = useState<string | null>(null);
   const [mappingDiff, setMappingDiff] = useState<MappingDiffResult | null>(null);
 
   const [indexName, setIndexName] = useState("my-index");
@@ -453,25 +517,56 @@ export function AdminPanel({
   const [runtimeFieldsJson, setRuntimeFieldsJson] = useState(DEFAULT_RUNTIME_FIELDS);
   const [runtimeQueryJson, setRuntimeQueryJson] = useState("");
 
-  const selectedResource = useMemo(
-    () => resources.find((resource) => resource.id === selectedResourceId) ?? null,
-    [resources, selectedResourceId],
-  );
-
-  const visibleResources = useMemo(
-    () => resources.filter((resource) => {
-      if (activeSection === "indices") {
-        return resource.kind === "index" || resource.kind === "alias";
-      }
-      if (activeSection === "templates") {
-        return resource.kind === "index-template" || resource.kind === "component-template" || resource.kind === "pipeline";
-      }
-      return resource.kind === "pipeline" || resource.kind === "index";
-    }),
-    [activeSection, resources],
-  );
-
   const connection = currentConnection;
+  const currentConnectionRef = useRef(connection);
+  currentConnectionRef.current = connection;
+  const resourceQueryKey = ["admin-resources", connection?.id, connection?.updatedAt, activeSection] as const;
+  const resourcesQuery = useQuery({
+    queryKey: resourceQueryKey,
+    enabled: Boolean(connection),
+    queryFn: async () => {
+      const operations = resourceListOperations(activeSection);
+      const results = await Promise.allSettled(operations.map((operation) => runAdminOperation(operation)));
+      const resources: AdminResource[] = [];
+      const partialFailures: string[] = [];
+      for (const [index, settled] of results.entries()) {
+        const operation = operations[index];
+        if (settled.status === "rejected") {
+          partialFailures.push(`${operation.title}：${extractUnknownErrorMessage(settled.reason, "请求失败")}`);
+        } else if (!settled.value.ok) {
+          partialFailures.push(`${operation.title}：${settled.value.status} ${settled.value.statusText}`);
+        } else {
+          resources.push(...parseResourcesFromResult(settled.value));
+        }
+      }
+      if (partialFailures.length === operations.length) {
+        throw new Error(partialFailures.join("；"));
+      }
+      return { resources, partialFailures };
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  });
+  const visibleResources = resourcesQuery.data?.resources ?? [];
+  const selectedResource = visibleResources.find((resource) => resource.id === selectedResourceId) ?? null;
+  const resourcePageData = paginate(visibleResources, resourcePage);
+  const mappingPageData = paginate(mappingDiff?.entries ?? [], mappingPage);
+  const detailQuery = useQuery({
+    queryKey: [...resourceQueryKey, selectedResource?.id],
+    enabled: Boolean(connection && selectedResource),
+    queryFn: async () => {
+      if (!selectedResource) throw new Error("未选择资源。");
+      const result = await runAdminOperation(resourceDetailOperation(selectedResource));
+      if (!result.ok) throw new Error(getResponseErrorMessage(buildResponseSnapshot(result), "资源详情读取失败，请检查连接权限。"));
+      return formatResultBody(result);
+    },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  });
 
   function setOperation(operation: AdminOperation) {
     setPreview(buildAdminRequestPreview(operation));
@@ -502,13 +597,10 @@ export function AdminPanel({
   }
 
   const executeMutation = useMutation({
-    mutationFn: async (operation: AdminOperation) => {
-      if (!connection) {
-        throw new Error("当前没有可用连接。");
-      }
+    mutationFn: async ({ operation, connection: sourceConnection }: ExecutionInput) => {
       const requestPreview = buildAdminRequestPreview(operation);
       const parsed = parseConsoleRequest(requestPreview.content);
-      const safety = classifyRequestSafety(parsed, connection);
+      const safety = classifyRequestSafety(parsed, sourceConnection);
       if (safety.blocked) {
         throw new Error(`请求被阻断：${safety.reasons.join(" ")}`);
       }
@@ -521,10 +613,12 @@ export function AdminPanel({
         }
       }
 
-      return runAdminOperation(operation);
+      return runAdminOperation(operation, sourceConnection);
     },
-    onSuccess(result) {
-      setExecution(result);
+    onSuccess(result, { connection: sourceConnection, logContext }) {
+      if (currentConnectionRef.current?.id === sourceConnection.id && currentConnectionRef.current.updatedAt === sourceConnection.updatedAt) {
+        setExecution(result);
+      }
       const requestPreview = buildAdminRequestPreview(result.operation);
       const snapshot = buildResponseSnapshot({
         ok: result.ok,
@@ -537,9 +631,6 @@ export function AdminPanel({
       });
 
       if (!result.ok) {
-        if (!connection) {
-          return;
-        }
         const message = getResponseErrorMessage(snapshot, "治理操作执行失败");
         toast.error(message);
         recordErrorLog({
@@ -549,17 +640,13 @@ export function AdminPanel({
           diagnostics: result.diagnostics,
           status: result.status,
           rawResponse: result.bodyText,
-          connection: buildConnectionLogContextFromProfile(connection, getSshProfileForConnection(connection)),
+          connection: logContext,
           request: buildRequestLogContext(requestPreview.content),
         });
         return;
       }
 
-      if (!connection) {
-        return;
-      }
-
-      const safety = classifyRequestSafety(parseConsoleRequest(requestPreview.content), connection);
+      const safety = classifyRequestSafety(parseConsoleRequest(requestPreview.content), sourceConnection);
       if (safety.auditOnSuccess) {
         recordAuditLog({
           scope: "request-audit",
@@ -568,72 +655,38 @@ export function AdminPanel({
           diagnostics: safety.reasons,
           status: result.status,
           rawResponse: result.bodyText,
-          connection: buildConnectionLogContextFromProfile(connection, getSshProfileForConnection(connection)),
+          connection: logContext,
           request: buildRequestLogContext(requestPreview.content),
         });
       }
 
       toast.success("治理操作已执行。");
-    },
-    onError(error) {
-      toast.error(extractUnknownErrorMessage(error, "治理操作执行失败"));
-    },
-  });
-
-  const resourcesMutation = useMutation({
-    mutationFn: async () => {
-      const operations = [
-        createReadOperation({
-          id: "resources-indices",
-          title: "读取索引列表",
-          description: "读取 index 状态列表。",
-          path: "/_cat/indices?format=json&bytes=b&expand_wildcards=all&h=index,health,status,docs.count,store.size,pri,rep",
-        }),
-        createReadOperation({
-          id: "resources-aliases",
-          title: "读取 Alias 列表",
-          description: "读取 alias 绑定。",
-          path: "/_cat/aliases?format=json&h=alias,index,is_write_index",
-        }),
-        createReadOperation({
-          id: "resources-index-templates",
-          title: "读取 Index Template",
-          description: "读取 composable index templates。",
-          path: "/_index_template",
-          group: "templates",
-        }),
-        createReadOperation({
-          id: "resources-component-templates",
-          title: "读取 Component Template",
-          description: "读取 component templates。",
-          path: "/_component_template",
-          group: "templates",
-        }),
-        createReadOperation({
-          id: "resources-pipelines",
-          title: "读取 Pipeline",
-          description: "读取 ingest pipelines。",
-          path: "/_ingest/pipeline",
-          group: "templates",
-        }),
-      ];
-
-      const results = await Promise.all(operations.map((operation) => runAdminOperation(operation)));
-      return results;
-    },
-    onSuccess(results) {
-      const nextResources = results.flatMap(parseResourcesFromResult);
-      setResources(nextResources);
-      setResourceError(null);
-      if (!selectedResourceId && nextResources.length > 0) {
-        setSelectedResourceId(nextResources[0]?.id ?? null);
+      if (result.operation.method !== "GET" && result.operation.group !== "tools" && result.operation.id !== "index-template-simulate" && !result.operation.path.includes("dry_run=true")) {
+        const affectedSections: AdminSection[] = result.operation.group === "templates" ? ["templates", "tools"] : ["indices", "tools"];
+        const affectedIds = affectedResourceIds(result.operation);
+        for (const section of affectedSections) {
+          const key = ["admin-resources", sourceConnection.id, sourceConnection.updatedAt, section];
+          void queryClient.invalidateQueries({ queryKey: key, exact: true });
+          if (affectedIds.size > 0) {
+            void queryClient.invalidateQueries({
+              predicate: (query) => query.queryKey.length === 5 && query.queryKey.slice(0, 4).every((value, index) => value === key[index]) &&
+                [...affectedIds].some((id) => id.endsWith(":") ? String(query.queryKey[4]).startsWith(id) : query.queryKey[4] === id),
+            });
+          }
+        }
       }
-      toast.success("治理资源列表已刷新。");
     },
-    onError(error) {
-      const message = extractUnknownErrorMessage(error, "治理资源刷新失败");
-      setResourceError(message);
+    onError(error, { operation, logContext }) {
+      const message = extractUnknownErrorMessage(error, "治理操作执行失败");
       toast.error(message);
+      recordErrorLog({
+        scope: "request-execution",
+        title: "治理操作执行失败",
+        summary: message,
+        diagnostics: [],
+        connection: logContext,
+        request: buildRequestLogContext(buildAdminRequestPreview(operation).content),
+      });
     },
   });
 
@@ -652,6 +705,7 @@ export function AdminPanel({
         leftMapping: parseJsonValue(left.bodyText),
         rightMapping: parseJsonValue(right.bodyText),
       }));
+      setMappingPage(1);
       toast.success("Mapping 差异已生成。");
     } catch (error) {
       toast.error(extractUnknownErrorMessage(error, "Mapping 差异生成失败"));
@@ -673,10 +727,14 @@ export function AdminPanel({
   }
 
   function executeCurrentPreview() {
-    if (!preview) {
+    if (!preview || !connection) {
       return;
     }
-    executeMutation.mutate(preview);
+    executeMutation.mutate({
+      operation: preview,
+      connection,
+      logContext: buildConnectionLogContextFromProfile(connection, getSshProfileForConnection(connection)),
+    });
   }
 
   function useSelectedResourceName(fallback: string, acceptedKinds: AdminResource["kind"][]) {
@@ -734,7 +792,7 @@ export function AdminPanel({
                       ? "border-emerald-300/60 bg-emerald-400/15 text-white"
                       : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white",
                   )}
-                  onClick={() => setActiveSection(section)}
+                  onClick={() => { setActiveSection(section); setSelectedResourceId(null); setResourcePage(1); }}
                 >
                   <p className="text-sm font-bold">{SECTION_LABELS[section]}</p>
                   <p className="mt-1 text-xs leading-5 opacity-80">{SECTION_DESCRIPTIONS[section]}</p>
@@ -755,27 +813,31 @@ export function AdminPanel({
                 </div>
                 <Button
                   className="h-8 rounded-lg px-2.5 text-xs"
-                  onClick={() => resourcesMutation.mutate()}
-                  disabled={resourcesMutation.isPending}
+                  onClick={() => { void resourcesQuery.refetch(); }}
+                  disabled={resourcesQuery.isFetching}
                 >
-                  {resourcesMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="mr-1 h-3.5 w-3.5" />}
+                  {resourcesQuery.isFetching ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="mr-1 h-3.5 w-3.5" />}
                   刷新
                 </Button>
               </div>
-              {resourceError ? (
-                <p className="mt-2 rounded-lg border border-rose-100 bg-rose-50 p-2 text-xs leading-5 text-rose-700">{resourceError}</p>
+              {resourcesQuery.error ? (
+                <p className="mt-2 rounded-lg border border-rose-100 bg-rose-50 p-2 text-xs leading-5 text-rose-700">{extractUnknownErrorMessage(resourcesQuery.error, "治理资源刷新失败，请检查连接权限。")}</p>
               ) : null}
+              {resourcesQuery.data?.partialFailures.map((failure) => (
+                <p key={failure} className="mt-2 rounded-lg border border-amber-100 bg-amber-50 p-2 text-xs leading-5 text-amber-800">{failure}</p>
+              ))}
             </div>
             <div className="max-h-[680px] overflow-y-auto p-2">
               {visibleResources.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-500">
-                  暂无资源数据。点击刷新读取当前连接的治理资源。
+                  {resourcesQuery.isPending ? "正在读取当前功能区资源…" : "暂无资源数据。点击刷新重试。"}
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  {visibleResources.map((resource) => (
+                  {resourcePageData.items.map((resource) => (
                     <button
                       key={resource.id}
+                      data-testid="admin-resource-row"
                       type="button"
                       className={cn(
                         "w-full rounded-xl border p-2.5 text-left transition",
@@ -806,6 +868,23 @@ export function AdminPanel({
                 </div>
               )}
             </div>
+            {resourcePageData.pageCount > 1 ? (
+              <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2 text-xs text-slate-600">
+                <span>第 {resourcePageData.page} / {resourcePageData.pageCount} 页 · 共 {resourcePageData.total} 项</span>
+                <div className="flex gap-2">
+                  <button type="button" aria-label="上一页资源" disabled={resourcePageData.page <= 1} onClick={() => setResourcePage(resourcePageData.page - 1)}>上一页</button>
+                  <button type="button" aria-label="下一页资源" disabled={resourcePageData.page >= resourcePageData.pageCount} onClick={() => setResourcePage(resourcePageData.page + 1)}>下一页</button>
+                </div>
+              </div>
+            ) : null}
+            {selectedResource ? (
+              <div className="border-t border-slate-100 p-3 text-xs">
+                <p className="font-bold text-slate-900">{selectedResource.name} 详情</p>
+                {detailQuery.error ? <p className="mt-2 text-rose-700">{extractUnknownErrorMessage(detailQuery.error, "资源详情读取失败，请检查连接权限。")}</p> :
+                  detailQuery.isPending ? <p className="mt-2 text-slate-500">正在读取详情…</p> :
+                    <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-50 p-2 text-slate-700">{detailQuery.data}</pre>}
+              </div>
+            ) : null}
           </Card>
 
           <div className="space-y-3">
@@ -1045,7 +1124,7 @@ export function AdminPanel({
                             </tr>
                           </thead>
                           <tbody>
-                            {mappingDiff.entries.map((entry) => (
+                            {mappingPageData.items.map((entry) => (
                               <tr key={entry.field} className="border-t border-slate-100">
                                 <td className="py-1 pr-3 font-bold text-slate-900">{entry.field}</td>
                                 <td className="py-1 pr-3">{entry.kind}</td>
@@ -1056,6 +1135,15 @@ export function AdminPanel({
                           </tbody>
                         </table>
                       </div>
+                      {mappingPageData.pageCount > 1 ? (
+                        <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
+                          <span>第 {mappingPageData.page} / {mappingPageData.pageCount} 页</span>
+                          <div className="flex gap-2">
+                            <button type="button" aria-label="上一页差异" disabled={mappingPageData.page <= 1} onClick={() => setMappingPage(mappingPageData.page - 1)}>上一页</button>
+                            <button type="button" aria-label="下一页差异" disabled={mappingPageData.page >= mappingPageData.pageCount} onClick={() => setMappingPage(mappingPageData.page + 1)}>下一页</button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                 </OperationCard>

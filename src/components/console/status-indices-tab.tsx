@@ -4,6 +4,7 @@ import { Card } from "../ui/card";
 import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { filterStatusIndices, sortStatusIndices } from "../../lib/status";
+import { paginate } from "../../lib/paginate";
 import { cn } from "../../lib/utils";
 import type { IndexStatus, IndicesStatusSnapshot, ServerStatusSort } from "../../types/status";
 import { formatDataBytes, formatNumber, healthBadgeClasses, healthTextClasses, RiskFindingsPanel } from "./status-overview-tab";
@@ -62,6 +63,7 @@ export function StatusIndicesTab({ snapshot }: { snapshot: IndicesStatusSnapshot
   const [query, setQuery] = useState("");
   const [showSystemIndices, setShowSystemIndices] = useState(false);
   const [sort, setSort] = useState<ServerStatusSort>({ key: "store", direction: "desc" });
+  const [page, setPage] = useState(1);
 
   const visibleIndices = useMemo(() => {
     const filtered = filterStatusIndices(snapshot.indices, { query, showSystemIndices });
@@ -69,8 +71,10 @@ export function StatusIndicesTab({ snapshot }: { snapshot: IndicesStatusSnapshot
   }, [query, showSystemIndices, sort, snapshot.indices]);
 
   const displayedStats = useMemo(() => calculateDisplayedStats(visibleIndices), [visibleIndices]);
+  const paginatedIndices = useMemo(() => paginate(visibleIndices, page), [visibleIndices, page]);
 
   function changeSort(key: ServerStatusSort["key"]) {
+    setPage(1);
     setSort((current) => ({
       key,
       direction: current.key === key && current.direction === "desc" ? "asc" : "desc",
@@ -99,12 +103,12 @@ export function StatusIndicesTab({ snapshot }: { snapshot: IndicesStatusSnapshot
                 <Input
                   className="h-9 py-1 pl-8 text-sm"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => { setQuery(event.target.value); setPage(1); }}
                   placeholder="搜索 index 名称"
                 />
               </label>
               <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 sm:text-sm">
-                <Switch checked={showSystemIndices} onChange={(event) => setShowSystemIndices(event.target.checked)} />
+                <Switch checked={showSystemIndices} onChange={(event) => { setShowSystemIndices(event.target.checked); setPage(1); }} />
                 显示系统索引
               </label>
             </div>
@@ -142,8 +146,8 @@ export function StatusIndicesTab({ snapshot }: { snapshot: IndicesStatusSnapshot
                   </td>
                 </tr>
               ) : (
-                visibleIndices.map((index) => (
-                  <tr key={index.name} className="align-top hover:bg-slate-50/80">
+                paginatedIndices.items.map((index) => (
+                  <tr key={index.name} data-testid="status-index-row" className="align-top hover:bg-slate-50/80">
                     <td className="max-w-[320px] px-3 py-2">
                       <div className="flex min-w-0 items-start gap-2">
                         <Activity className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", healthTextClasses[index.health])} />
@@ -179,6 +183,15 @@ export function StatusIndicesTab({ snapshot }: { snapshot: IndicesStatusSnapshot
             </tbody>
           </table>
         </div>
+        {paginatedIndices.pageCount > 1 ? (
+          <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2 text-xs text-slate-600">
+            <span>第 {paginatedIndices.page} / {paginatedIndices.pageCount} 页</span>
+            <div className="flex gap-2">
+              <button type="button" aria-label="上一页索引" disabled={paginatedIndices.page <= 1} onClick={() => setPage(paginatedIndices.page - 1)}>上一页</button>
+              <button type="button" aria-label="下一页索引" disabled={paginatedIndices.page >= paginatedIndices.pageCount} onClick={() => setPage(paginatedIndices.page + 1)}>下一页</button>
+            </div>
+          </div>
+        ) : null}
       </Card>
     </div>
   );
