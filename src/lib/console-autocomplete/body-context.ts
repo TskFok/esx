@@ -59,6 +59,60 @@ function parseTargetNames(value: unknown, allowArray: boolean): string[] | null 
   return [...new Set(names)];
 }
 
+export interface NdjsonCompletionState {
+  kind: "bulk-action" | "bulk-source" | "bulk-update" | "msearch-header" | "msearch-body" | "unknown";
+  targetNames: string[] | null;
+  completedLineCount: number;
+}
+
+export function initialNdjsonCompletionState(mode: ConsoleBodyMode): NdjsonCompletionState {
+  return {
+    kind: mode === "bulk-ndjson" ? "bulk-action" : mode === "msearch-ndjson" ? "msearch-header" : "unknown",
+    targetNames: null,
+    completedLineCount: 0,
+  };
+}
+
+export function advanceNdjsonCompletionState(
+  state: NdjsonCompletionState,
+  line: string,
+  mode: ConsoleBodyMode,
+): NdjsonCompletionState {
+  if (!line.trim() || state.kind === "unknown") return state;
+  const invalid: NdjsonCompletionState = { kind: "unknown", targetNames: null, completedLineCount: state.completedLineCount + 1 };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return invalid;
+  }
+  if (!isJsonObject(parsed)) return invalid;
+
+  const completedLineCount = state.completedLineCount + 1;
+  if (mode === "msearch-ndjson") {
+    return state.kind === "msearch-header"
+      ? { kind: "msearch-body", targetNames: parseTargetNames(parsed.index, true), completedLineCount }
+      : { kind: "msearch-header", targetNames: null, completedLineCount };
+  }
+  if (mode !== "bulk-ndjson") return invalid;
+  if (state.kind !== "bulk-action") {
+    return { kind: "bulk-action", targetNames: null, completedLineCount };
+  }
+  const actionKeys = Object.keys(parsed);
+  if (actionKeys.length !== 1) return invalid;
+  const action = actionKeys[0]!;
+  const metadata = parsed[action];
+  if (!isJsonObject(metadata)) return invalid;
+  if (action === "delete") return { kind: "bulk-action", targetNames: null, completedLineCount };
+  if (action === "update") {
+    return { kind: "bulk-update", targetNames: parseTargetNames(metadata._index, false), completedLineCount };
+  }
+  if (action === "index" || action === "create") {
+    return { kind: "bulk-source", targetNames: parseTargetNames(metadata._index, false), completedLineCount };
+  }
+  return invalid;
+}
+
 export function analyzeBodyCompletion(
   content: string,
   request: ConsoleRequestContext,
@@ -66,73 +120,14 @@ export function analyzeBodyCompletion(
   const lines = content.split(/\r?\n/);
   const bodyLines = lines.slice(1);
   const currentLine = bodyLines[bodyLines.length - 1] ?? "";
-  const completedLines = bodyLines.slice(0, -1).filter((line) => line.trim().length > 0);
   const jsonKind = JSON_BODY_KIND[request.bodyMode];
   if (jsonKind) return { kind: jsonKind, currentLine, targetNames: null };
-
-  if (request.bodyMode === "msearch-ndjson") {
-    let targetNames: string[] | null = null;
-    for (let index = 0; index < completedLines.length; index += 1) {
-      const line = completedLines[index] ?? "";
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        return { kind: "unknown", currentLine, targetNames: null };
-      }
-      if (!isJsonObject(parsed)) return { kind: "unknown", currentLine, targetNames: null };
-      if (index % 2 === 0) targetNames = parseTargetNames(parsed.index, true);
-    }
-    const kind = completedLines.length % 2 === 0 ? "msearch-header" : "msearch-body";
-    return {
-      kind,
-      currentLine,
-      targetNames: kind === "msearch-body" ? targetNames : null,
-    };
-  }
-
-  if (request.bodyMode !== "bulk-ndjson") {
+  if (request.bodyMode !== "bulk-ndjson" && request.bodyMode !== "msearch-ndjson") {
     return { kind: "unknown", currentLine, targetNames: null };
   }
-
-  let kind: BodyCompletionKind = "bulk-action";
-  let targetNames: string[] | null = null;
-  for (const line of completedLines) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      return { kind: "unknown", currentLine, targetNames: null };
-    }
-    if (!isJsonObject(parsed)) {
-      return { kind: "unknown", currentLine, targetNames: null };
-    }
-    if (kind !== "bulk-action") {
-      kind = "bulk-action";
-      targetNames = null;
-      continue;
-    }
-    const actionKeys = Object.keys(parsed);
-    if (actionKeys.length !== 1) {
-      return { kind: "unknown", currentLine, targetNames: null };
-    }
-    const action = actionKeys[0];
-    const actionMetadata = parsed[action!];
-    if (!isJsonObject(actionMetadata)) {
-      return { kind: "unknown", currentLine, targetNames: null };
-    }
-    if (action === "delete") {
-      kind = "bulk-action";
-      targetNames = null;
-    } else if (action === "update") {
-      kind = "bulk-update";
-      targetNames = parseTargetNames(actionMetadata._index, false);
-    } else if (action === "index" || action === "create") {
-      kind = "bulk-source";
-      targetNames = parseTargetNames(actionMetadata._index, false);
-    } else {
-      return { kind: "unknown", currentLine, targetNames: null };
-    }
+  let state = initialNdjsonCompletionState(request.bodyMode);
+  for (const line of bodyLines.slice(0, -1)) {
+    state = advanceNdjsonCompletionState(state, line, request.bodyMode);
   }
-  return { kind, currentLine, targetNames };
+  return { kind: state.kind, currentLine, targetNames: state.targetNames };
 }

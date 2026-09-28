@@ -37,6 +37,7 @@ import {
   analyzeBodyCompletion,
   type BodyCompletionKind,
 } from "./body-context";
+import { getCachedNdjsonCompletion } from "./ndjson-completion-cache";
 
 export {
   buildConsoleAutocompleteContext,
@@ -278,10 +279,14 @@ function buildBodySuggestions(
   position: monacoEditor.Position,
   autocompleteContext: ConsoleAutocompleteContext,
 ): monacoEditor.languages.CompletionItem[] {
-  const textBeforeCursor = model.getValueInRange(
+  const isNdjson = autocompleteContext.request.bodyMode === "bulk-ndjson" ||
+    autocompleteContext.request.bodyMode === "msearch-ndjson";
+  const textBeforeCursor = isNdjson ? "" : model.getValueInRange(
     new monacoInstance.Range(1, 1, position.lineNumber, position.column),
   );
-  const bodyContext = analyzeBodyCompletion(textBeforeCursor, autocompleteContext.request);
+  const bodyContext = isNdjson
+    ? getCachedNdjsonCompletion(model, position, autocompleteContext.request)
+    : analyzeBodyCompletion(textBeforeCursor, autocompleteContext.request);
   const lineContent = model.getLineContent(position.lineNumber);
   const lineRange = new monacoInstance.Range(
     position.lineNumber,
@@ -300,7 +305,7 @@ function buildBodySuggestions(
 
   const rootSnippets = ROOT_SNIPPETS_BY_KIND[bodyContext.kind];
   if (!rootSnippets) return [];
-  const analysisPrefix = bodyContext.kind === "msearch-body"
+  const analysisPrefix = isNdjson
     ? `POST /_search\n${bodyContext.currentLine}`
     : textBeforeCursor;
   const allowRootFieldKeys = bodyContext.kind === "document-json" || bodyContext.kind === "bulk-source";

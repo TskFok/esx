@@ -27,7 +27,7 @@ const fakeMonaco = {
   },
 } as never;
 
-function modelFor(content: string) {
+function modelFor(content: string, forbidRange = false) {
   const lines = content.split(/\r?\n/);
   return {
     getLineContent(lineNumber: number) {
@@ -44,6 +44,7 @@ function modelFor(content: string) {
       };
     },
     getValueInRange(range: { startLineNumber: number; startColumn: number; endLineNumber: number; endColumn: number }) {
+      if (forbidRange) throw new Error("NDJSON 补全不应读取全文范围");
       if (range.startLineNumber === range.endLineNumber) {
         return (lines[range.startLineNumber - 1] ?? "").slice(range.startColumn - 1, range.endColumn - 1);
       }
@@ -158,6 +159,20 @@ function completionSuggestions(content: string, searchMetadata = metadata({})) {
 }
 
 describe("provideConsoleCompletionItems", () => {
+  it.each([
+    ['POST /_bulk\n{"index":{"_index":"orders"}}\n{', ["order_id", "order_total"]],
+    ['POST /_msearch\n{"index":"orders"}\n{"query":{"term":{', ["order_id", "order_total"]],
+  ] as const)("NDJSON provider 不读取全文仍能提示目标字段：%s", (content, fields) => {
+    const lines = content.split("\n");
+    const suggestions = provideConsoleCompletionItems(
+      fakeMonaco,
+      modelFor(content, true),
+      { lineNumber: lines.length, column: lines[lines.length - 1]!.length + 1 } as never,
+      buildConsoleAutocompleteContext([], content, metadataWithTargetFields()),
+    );
+    expect(suggestions.map((item) => String(item.label))).toEqual(expect.arrayContaining([...fields]));
+  });
+
   it("only suggests index-level APIs after an index path", () => {
     const labels = completionLabels("GET /orders/");
 
