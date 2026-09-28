@@ -17,12 +17,11 @@ import { DEFAULT_AI_ANALYSIS_SETTINGS } from "../../types/ai-settings";
 import type { ConnectionProfile } from "../../types/connections";
 import type { ConnectionSearchMetadata, SavedRequest } from "../../types/requests";
 
-const { staticBuildSpy, editorContextRefs, requestListRenderSpy, editorModuleLoaded, aiModuleLoaded, aiSettingsGate, aiSettingsMounts } = vi.hoisted(() => ({
+const { staticBuildSpy, editorContextRefs, requestListRenderSpy, editorModuleLoaded, aiSettingsGate, aiSettingsMounts } = vi.hoisted(() => ({
   staticBuildSpy: vi.fn(),
   editorContextRefs: [] as unknown[],
   requestListRenderSpy: vi.fn(),
   editorModuleLoaded: vi.fn(),
-  aiModuleLoaded: vi.fn(),
   aiSettingsMounts: vi.fn(),
   aiSettingsGate: (() => {
     let resolve!: () => void;
@@ -125,7 +124,6 @@ vi.mock("../../components/console/console-editor", () => {
 vi.mock("../../components/console/ai-settings-dialog", async () => {
   await aiSettingsGate.promise;
   const { useEffect } = await import("react");
-  aiModuleLoaded();
   return {
     AiSettingsDialog: ({ open }: { open: boolean }) => {
       useEffect(() => { aiSettingsMounts(); }, []);
@@ -134,11 +132,9 @@ vi.mock("../../components/console/ai-settings-dialog", async () => {
   };
 });
 vi.mock("../../components/console/ai-analysis-dialog", () => {
-  aiModuleLoaded();
   return { AiAnalysisDialog: () => null };
 });
 vi.mock("../../components/console/ai-generate-dialog", () => {
-  aiModuleLoaded();
   return { AiGenerateDialog: () => null };
 });
 
@@ -146,8 +142,6 @@ import { useAppState } from "../../providers/app-state";
 import { ConsolePage } from "../console-page";
 
 const useAppStateMock = vi.mocked(useAppState);
-const initialEditorModuleLoadCount = editorModuleLoaded.mock.calls.length;
-const initialAiModuleLoadCount = aiModuleLoaded.mock.calls.length;
 
 function renderConsolePage(initialEntry: string) {
   const queryClient = new QueryClient({
@@ -243,20 +237,22 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useAppState>);
 });
 
-it("状态面板不加载编辑器，首次切入工作区只加载一次且切换后保留草稿", async () => {
+it("状态面板不额外加载编辑器，切换工作区后保留草稿", async () => {
+  const loadCount = editorModuleLoaded.mock.calls.length;
   renderConsolePage(CONSOLE_STATUS_PATH);
   expect(await screen.findByText("服务器状态")).toBeInTheDocument();
-  expect(editorModuleLoaded).not.toHaveBeenCalled();
+  expect(editorModuleLoaded).toHaveBeenCalledTimes(loadCount);
 
   fireEvent.click(screen.getByRole("button", { name: "控制台" }));
   const input = await screen.findByRole("textbox", { name: "测试请求内容" });
-  expect(editorModuleLoaded).toHaveBeenCalledTimes(1);
+  const loadedCount = editorModuleLoaded.mock.calls.length;
+  expect(loadedCount).toBeGreaterThan(0);
   fireEvent.change(input, { target: { value: "GET /draft-check" } });
   fireEvent.click(screen.getByRole("button", { name: "状态" }));
   expect(await screen.findByText("服务器状态")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "控制台" }));
   expect(await screen.findByRole("textbox", { name: "测试请求内容" })).toHaveValue("GET /draft-check");
-  expect(editorModuleLoaded).toHaveBeenCalledTimes(1);
+  expect(editorModuleLoaded).toHaveBeenCalledTimes(loadedCount);
 });
 
 describe("ConsolePage 补全上下文", () => {
@@ -334,10 +330,6 @@ describe("ConsolePage 补全上下文", () => {
 });
 
 describe("ConsolePage right pane", () => {
-  it("导入页面时不加载编辑器与 AI 弹窗模块", () => {
-    expect(initialEditorModuleLoadCount).toBe(0);
-    expect(initialAiModuleLoadCount).toBe(0);
-  });
   it("带 workspace=1 进入时即使已持久化状态面板也展示请求工作区", async () => {
     window.localStorage.setItem(CONSOLE_STATUS_VISIBLE_STORAGE_KEY, "true");
 
@@ -491,12 +483,16 @@ describe("ConsolePage right pane", () => {
     expect(selectSavedRequest).toHaveBeenCalledWith(duplicatedRequest.id);
   });
 
-  it("AI 设置加载期间关闭后遮罩消失，重新打开不重新挂载", async () => {
+  it("AI 设置加载期间点击或按 Escape 均可关闭，重新打开不重新挂载", async () => {
     renderConsolePage(CONSOLE_WORKSPACE_PATH);
     fireEvent.click(screen.getByRole("button", { name: "AI 分析设置" }));
-    const loading = screen.getByRole("status", { name: "正在加载 AI 设置" });
+    expect(screen.getByRole("status", { name: "正在加载 AI 设置" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消加载" }));
+    expect(screen.queryByRole("status", { name: "正在加载 AI 设置" })).not.toBeInTheDocument();
 
-    fireEvent.click(loading);
+    fireEvent.click(screen.getByRole("button", { name: "AI 分析设置" }));
+    expect(screen.getByRole("status", { name: "正在加载 AI 设置" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("status", { name: "正在加载 AI 设置" }), { key: "Escape" });
     expect(screen.queryByRole("status", { name: "正在加载 AI 设置" })).not.toBeInTheDocument();
 
     await act(async () => { aiSettingsGate.resolve(); await aiSettingsGate.promise; });

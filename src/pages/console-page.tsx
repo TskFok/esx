@@ -129,6 +129,15 @@ function useHasOpened(open: boolean) {
   return open || hasOpened;
 }
 
+function LazyDialogFallback({ open, title, onClose }: { open: boolean; title: string; onClose: () => void }) {
+  return (
+    <Dialog open={open} title={title} onClose={onClose}>
+      <p role="status" aria-label={title} className="text-sm text-slate-500">请稍候…</p>
+      <Button variant="outline" className="mt-4" onClick={onClose}>取消加载</Button>
+    </Dialog>
+  );
+}
+
 const DRAFT_SAVE_DEBOUNCE_MS = 600;
 const EMPTY_CONNECTION: ConnectionProfile = {
   id: "__missing_connection__",
@@ -1758,9 +1767,9 @@ export function ConsolePage() {
         </main>
       </div>
 
-      {analysisDialogMounted ? <Suspense fallback={analysisDialogOpen ? (
-        <div className="fixed inset-0 z-50 bg-slate-950/45" role="status" aria-label="正在加载 AI 分析" onClick={() => setAnalysisDialogOpen(false)} />
-      ) : null}>
+      {analysisDialogMounted ? <Suspense fallback={
+        <LazyDialogFallback open={analysisDialogOpen} title="正在加载 AI 分析" onClose={() => setAnalysisDialogOpen(false)} />
+      }>
         <AiAnalysisDialog
           open={analysisDialogOpen}
           isAnalyzing={isAnalyzing}
@@ -1789,9 +1798,9 @@ export function ConsolePage() {
         />
       </Suspense> : null}
 
-      {generateDialogMounted ? <Suspense fallback={generateDialogOpen ? (
-        <div className="fixed inset-0 z-50 bg-slate-950/45" role="status" aria-label="正在加载 AI 生成" onClick={() => setGenerateDialogOpen(false)} />
-      ) : null}>
+      {generateDialogMounted ? <Suspense fallback={
+        <LazyDialogFallback open={generateDialogOpen} title="正在加载 AI 生成" onClose={() => setGenerateDialogOpen(false)} />
+      }>
         <AiGenerateDialog
           open={generateDialogOpen}
           isGenerating={isGenerating}
@@ -1810,9 +1819,9 @@ export function ConsolePage() {
         />
       </Suspense> : null}
 
-      {aiSettingsDialogMounted ? <Suspense fallback={aiSettingsDialogOpen ? (
-        <div className="fixed inset-0 z-50 bg-slate-950/45" role="status" aria-label="正在加载 AI 设置" onClick={() => setAiSettingsDialogOpen(false)} />
-      ) : null}>
+      {aiSettingsDialogMounted ? <Suspense fallback={
+        <LazyDialogFallback open={aiSettingsDialogOpen} title="正在加载 AI 设置" onClose={() => setAiSettingsDialogOpen(false)} />
+      }>
         <AiSettingsDialog
           open={aiSettingsDialogOpen}
           settings={aiSettings}

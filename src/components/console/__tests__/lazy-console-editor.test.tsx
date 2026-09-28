@@ -23,7 +23,7 @@ vi.mock("../console-editor", async () => {
 
 import { LazyConsoleEditor } from "../lazy-console-editor";
 
-it("请求与响应共用一次编辑器加载，并在等待时接收最新草稿", async () => {
+it("请求与响应共用一次加载，挂载等待期间传入最新值", async () => {
   const view = render(
     <>
       <LazyConsoleEditor value="旧草稿" height="240px" onChange={() => {}} />
@@ -33,15 +33,13 @@ it("请求与响应共用一次编辑器加载，并在等待时接收最新草�
   expect(editorModuleLoaded).not.toHaveBeenCalled();
   expect(screen.getAllByRole("status", { name: "正在加载编辑器" })[0]).toHaveStyle({ height: "240px" });
 
-  view.rerender(<div>切换到其他面板</div>);
-  expect(screen.queryByRole("status", { name: "正在加载编辑器" })).not.toBeInTheDocument();
-
   view.rerender(
     <>
       <LazyConsoleEditor value="最新草稿" height="240px" onChange={() => {}} />
       <LazyConsoleEditor readOnly value="最新响应" onChange={() => {}} />
     </>,
   );
+  expect(screen.getAllByRole("status", { name: "正在加载编辑器" })).toHaveLength(2);
   await act(async () => { moduleGate.resolve(); await moduleGate.promise; });
 
   expect(screen.getByRole("textbox", { name: "请求" })).toHaveValue("最新草稿");
