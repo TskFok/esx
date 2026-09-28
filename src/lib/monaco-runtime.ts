@@ -12,6 +12,8 @@ import "monaco-editor/esm/vs/editor/contrib/multicursor/browser/multicursor.js";
 import "monaco-editor/esm/vs/editor/contrib/readOnlyMessage/browser/contribution.js";
 import "monaco-editor/esm/vs/editor/contrib/hover/browser/hoverContribution.js";
 import "monaco-editor/esm/vs/editor/contrib/gotoError/browser/gotoError.js";
+import "monaco-editor/esm/vs/editor/contrib/contextmenu/browser/contextmenu.js";
+import "monaco-editor/esm/vs/editor/contrib/clipboard/browser/clipboard.js";
 import EditorWorker from "monaco-editor/esm/vs/editor/editor.worker.js?worker";
 
 let configured = false;

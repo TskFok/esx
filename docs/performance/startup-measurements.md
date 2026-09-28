@@ -5,17 +5,19 @@
 | 指标 | 优化前基线 | 本轮构建 |
 | --- | ---: | ---: |
 | 连接页初始 JS 原始字节 | 4,041,186 | 515,542 |
-| 连接页初始 JS gzip 参考值 | 约 1.07 MB | 157,945 字节 |
-| 初始静态闭包 | 单一入口 JS | `assets/index-B5Xgzs1c.js` |
+| 连接页初始 JS gzip 参考值 | 约 1.07 MB | 157,941 字节 |
+| 初始静态闭包 | 单一入口 JS | `assets/index-CHm1jRsu.js` |
 | 初始闭包含 Monaco | 是 | 否 |
-| 动态编辑器 JS | 未独立拆分 | `assets/console-editor-CfHmNlNm.js`，2,892,016 字节，gzip 743,036 字节 |
+| 动态编辑器 JS | 未独立拆分 | `assets/console-editor-Cs5DSXGa.js`，2,925,783 字节，gzip 752,403 字节 |
 | 试行预算：初始 JS 原始字节 < 1,000,000 | 未达到 | 达到 |
 
 优化前数值来自 2026-09-28 的生产入口构建审计；本轮数据来自当前产物的依赖图及实际文件。构建报告中的 18 个 chunk 字节数已逐项与写盘文件大小核对，全部一致；模块标识未包含机器绝对路径。预算只针对初始 JS，不包含 CSS、字体、worker 或首次打开编辑器的动态加载。编辑器 worker 是独立构建资产 `assets/editor.worker-B4pQIWZD.js`，不属于首屏静态 JS 闭包。构建仍提示动态编辑器 chunk 大于 500 kB；未调整 Vite 的警告阈值。
 
+最终审查补回 Monaco 的 `contextmenu.js` 与 `clipboard.js` 后，`node scripts/performance/monaco-contributions.mjs dist` 已从缺少两项的失败变为通过，并确认两项都在实际编辑器 chunk 的模块图内。相对补回前的 2,892,016 字节，动态编辑器增加 33,767 字节（gzip 增加 9,367 字节）；首屏原始字节保持 515,542，gzip 参考值减少 4 字节，入口文件哈希随动态引用更新。上述产物检查不能代替右键菜单及系统剪贴板的真实 WebView 操作验收。
+
 ## Tauri 与 WebView 功能验收
 
-产品 `pnpm exec tauri build --debug --no-bundle` 已退出码 0，生成 `src-tauri/target/debug/esx`。该命令已在最终构建报告配置下再次通过，包含本轮全部产品与 Vite 改动。未启动访问真实 keyring 的完整产品实例。独立 ESX Monaco QA.app 在 `tauri://localhost` 使用与产品相同的生产 CSP、真实 `ConsoleEditor` 与 `ResponseViewer`，以合成数据运行，不访问 keyring、store 或 HTTP 命令。
+补回右键菜单与剪贴板贡献前，产品 `pnpm exec tauri build --debug --no-bundle` 已退出码 0，生成 `src-tauri/target/debug/esx`；补回后的 native 构建待复验。未启动访问真实 keyring 的完整产品实例。此前独立 ESX Monaco QA.app 在 `tauri://localhost` 使用与产品相同的生产 CSP、真实 `ConsoleEditor` 与 `ResponseViewer`，以合成数据运行，不访问 keyring、store 或 HTTP 命令；补回后的右键及剪切、复制、粘贴真实操作待复验。
 
 | 检查 | 精简前独立 WebView | 精简后独立 WebView |
 | --- | --- | --- |
