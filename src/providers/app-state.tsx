@@ -68,7 +68,7 @@ import { redactSensitiveList, redactSensitiveText, redactSensitiveValue } from "
 import { buildSecretsMigrationHint } from "../lib/secrets-vault";
 import { appendStatusHistorySnapshot } from "../lib/status-diagnostics";
 import { normalizeBaseUrl } from "../lib/http-client";
-import { normalizeClusterMetadata } from "../lib/console-autocomplete";
+import { normalizeClusterMetadata } from "../lib/console-autocomplete/capabilities";
 import {
   buildConnectionExportPayload,
   buildConnectionImportPlan,

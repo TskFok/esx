@@ -5,9 +5,14 @@ import { act, render } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { editorMock, setModelMarkers } = vi.hoisted(() => ({
+const { editorMock, setModelMarkers, registerCompletionItemProvider, setLanguageConfiguration, setMonarchTokensProvider, defineTheme, register } = vi.hoisted(() => ({
   editorMock: vi.fn(),
   setModelMarkers: vi.fn(),
+  registerCompletionItemProvider: vi.fn(),
+  setLanguageConfiguration: vi.fn(),
+  setMonarchTokensProvider: vi.fn(),
+  defineTheme: vi.fn(),
+  register: vi.fn(),
 }));
 
 type MockEditor = {
@@ -88,7 +93,15 @@ vi.mock("@monaco-editor/react", () => ({
 }));
 
 vi.mock("monaco-editor", () => ({
-  editor: { setModelMarkers },
+  editor: { setModelMarkers, defineTheme },
+  languages: {
+    getLanguages: () => [],
+    register,
+    setMonarchTokensProvider,
+    setLanguageConfiguration,
+    registerCompletionItemProvider,
+    IndentAction: { Indent: 1, IndentOutdent: 2 },
+  },
   MarkerSeverity: { Error: 8, Warning: 4 },
   KeyMod: { CtrlCmd: 2048, Shift: 1024, Alt: 512 },
   KeyCode: { Enter: 3, KeyA: 31, KeyD: 33, KeyF: 35 },
@@ -101,6 +114,11 @@ describe("ConsoleEditor", () => {
     vi.useFakeTimers();
     editorMock.mockClear();
     setModelMarkers.mockClear();
+    registerCompletionItemProvider.mockClear();
+    setLanguageConfiguration.mockClear();
+    setMonarchTokensProvider.mockClear();
+    defineTheme.mockClear();
+    register.mockClear();
     currentModel = createModel();
     editorDisposers = [];
   });
@@ -112,9 +130,41 @@ describe("ConsoleEditor", () => {
 
     expect(editorMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        options: expect.objectContaining({ folding: true, showFoldingControls: "always" }),
+        options: expect.objectContaining({
+          folding: true,
+          showFoldingControls: "always",
+          bracketPairColorization: { enabled: true },
+        }),
       }),
     );
+  });
+
+  it("模型销毁并再次挂载后只注册一次语言和补全", () => {
+    const first = render(<ConsoleEditor value={currentModel.getValue()} onChange={vi.fn()} />);
+    const beforeMount = (editorMock.mock.lastCall?.[0] as { beforeMount: (instance: unknown) => void }).beforeMount;
+    const monacoInstance = {
+      editor: { defineTheme },
+      languages: {
+        getLanguages: () => [],
+        register,
+        setMonarchTokensProvider,
+        setLanguageConfiguration,
+        registerCompletionItemProvider,
+        IndentAction: { Indent: 1, IndentOutdent: 2 },
+      },
+    };
+    beforeMount(monacoInstance);
+    currentModel.dispose();
+    first.unmount();
+    currentModel = createModel();
+    render(<ConsoleEditor value={currentModel.getValue()} onChange={vi.fn()} />);
+    beforeMount(monacoInstance);
+
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(setMonarchTokensProvider).toHaveBeenCalledTimes(1);
+    expect(setLanguageConfiguration).toHaveBeenCalledTimes(1);
+    expect(defineTheme).toHaveBeenCalledTimes(1);
+    expect(registerCompletionItemProvider).toHaveBeenCalledTimes(1);
   });
 
   it("does not register validation for a read-only model", () => {

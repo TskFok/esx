@@ -1,5 +1,6 @@
-import Editor, { loader, type Monaco } from "@monaco-editor/react";
-import * as monacoEditor from "monaco-editor";
+import Editor, { type Monaco } from "@monaco-editor/react";
+import type * as MonacoTypes from "monaco-editor/esm/vs/editor/editor.api";
+import { configureMonaco, monaco } from "../../lib/monaco-runtime";
 import { useEffect, useMemo, useRef } from "react";
 import {
   DEFAULT_CLUSTER_METADATA,
@@ -11,7 +12,7 @@ import {
 import { parseConsoleRequestContext } from "../../lib/console-autocomplete/request-context";
 import { createConsoleValidationScheduler } from "../../lib/console-autocomplete/validation-scheduler";
 
-loader.config({ monaco: monacoEditor });
+configureMonaco();
 
 const EMPTY_AUTOCOMPLETE_CONTEXT: ConsoleAutocompleteContext = {
   indexNames: [],
@@ -23,8 +24,8 @@ const EMPTY_AUTOCOMPLETE_CONTEXT: ConsoleAutocompleteContext = {
   request: parseConsoleRequestContext(""),
 };
 
-const modelAutocompleteContext = new WeakMap<monacoEditor.editor.ITextModel, ConsoleAutocompleteContext>();
-let completionProviderRegistered = false;
+const modelAutocompleteContext = new WeakMap<MonacoTypes.editor.ITextModel, ConsoleAutocompleteContext>();
+let languageConfigured = false;
 
 let cachedOverflowWidgetsDomNode: HTMLElement | null = null;
 
@@ -51,10 +52,10 @@ function getOverflowWidgetsDomNode(): HTMLElement | undefined {
 const MARKER_OWNER = "es-console-validator";
 
 function publishConsoleDiagnostics(
-  model: monacoEditor.editor.ITextModel,
+  model: MonacoTypes.editor.ITextModel,
   diagnostics: ConsoleBodyDiagnostic[],
 ) {
-  monacoEditor.editor.setModelMarkers(
+  monaco.editor.setModelMarkers(
     model,
     MARKER_OWNER,
     diagnostics.map((diag) => ({
@@ -65,54 +66,33 @@ function publishConsoleDiagnostics(
       endColumn: diag.endColumn,
       severity:
         diag.severity === "error"
-          ? monacoEditor.MarkerSeverity.Error
-          : monacoEditor.MarkerSeverity.Warning,
+          ? monaco.MarkerSeverity.Error
+          : monaco.MarkerSeverity.Warning,
     })),
   );
 }
 
-function runConsoleValidation(model: monacoEditor.editor.ITextModel) {
+function runConsoleValidation(model: MonacoTypes.editor.ITextModel) {
   publishConsoleDiagnostics(model, validateConsoleContent(model.getValue()));
 }
 
 function registerLanguage(monacoInstance: Monaco) {
-  if (monacoInstance.languages.getLanguages().some((item) => item.id === "es-console")) {
-    monacoInstance.editor.defineTheme("es-console-theme", {
-      base: "vs",
-      inherit: true,
-      rules: [
-        { token: "keyword", foreground: "0f766e", fontStyle: "bold" },
-        { token: "string.escape", foreground: "2563eb" },
-        { token: "string", foreground: "b45309" },
-        { token: "number", foreground: "7c3aed" },
-        { token: "delimiter", foreground: "0f172a" },
-      ],
-      colors: {
-        "editor.background": "#ffffff",
-        "editorLineNumber.foreground": "#94a3b8",
-        "editorLineNumber.activeForeground": "#0f172a",
-        "editorLineNumber.dimmedForeground": "#cbd5e1",
-        "editorGutter.background": "#ffffff",
-        "editorCursor.foreground": "#059669",
-        "editor.selectionBackground": "#d1fae5",
-        "editor.lineHighlightBackground": "#f8fafc",
-      },
-    });
-  } else {
+  if (languageConfigured) return;
+  if (!monacoInstance.languages.getLanguages().some((item) => item.id === "es-console")) {
     monacoInstance.languages.register({ id: "es-console" });
-    monacoInstance.languages.setMonarchTokensProvider("es-console", {
-      tokenizer: {
-        root: [
-          [/^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b/, "keyword"],
-          [/\/[^\s]*/, "string.escape"],
-          [/".*?"/, "string"],
-          [/[{}[\]]/, "delimiter"],
-          [/-?\d+(\.\d+)?/, "number"],
-          [/(true|false|null)\b/, "keyword"],
-        ],
-      },
-    });
   }
+  monacoInstance.languages.setMonarchTokensProvider("es-console", {
+    tokenizer: {
+      root: [
+        [/^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b/, "keyword"],
+        [/\/[^\s]*/, "string.escape"],
+        [/".*?"/, "string"],
+        [/[{}[\]]/, "delimiter"],
+        [/-?\d+(\.\d+)?/, "number"],
+        [/(true|false|null)\b/, "keyword"],
+      ],
+    },
+  });
 
   monacoInstance.languages.setLanguageConfiguration("es-console", {
     brackets: [
@@ -175,23 +155,21 @@ function registerLanguage(monacoInstance: Monaco) {
     },
   });
 
-  if (!completionProviderRegistered) {
-    monacoInstance.languages.registerCompletionItemProvider("es-console", {
-      triggerCharacters: ["/", "\"", "_", ".", ":"],
-      provideCompletionItems(model, position) {
-        const autocompleteContext = modelAutocompleteContext.get(model) ?? EMPTY_AUTOCOMPLETE_CONTEXT;
-        return {
-          suggestions: provideConsoleCompletionItems(
-            monacoEditor,
-            model,
-            position,
-            autocompleteContext,
-          ),
-        };
-      },
-    });
-    completionProviderRegistered = true;
-  }
+  monacoInstance.languages.registerCompletionItemProvider("es-console", {
+    triggerCharacters: ["/", "\"", "_", ".", ":"],
+    provideCompletionItems(model, position) {
+      const autocompleteContext = modelAutocompleteContext.get(model) ?? EMPTY_AUTOCOMPLETE_CONTEXT;
+      return {
+        suggestions: provideConsoleCompletionItems(
+          monaco,
+          model,
+          position,
+          autocompleteContext,
+        ),
+      };
+    },
+  });
+  languageConfigured = true;
 }
 export type ConsoleEditorProps = {
   value: string;
@@ -212,21 +190,21 @@ export function ConsoleEditor({
   onRunShortcut,
   onAnalyzeShortcut,
 }: ConsoleEditorProps) {
-  const modelRef = useRef<monacoEditor.editor.ITextModel | null>(null);
+  const modelRef = useRef<MonacoTypes.editor.ITextModel | null>(null);
   const validationRef = useRef<{
-    model: monacoEditor.editor.ITextModel;
+    model: MonacoTypes.editor.ITextModel;
     dispose: () => void;
   } | null>(null);
   const runShortcutRef = useRef(onRunShortcut);
   const analyzeShortcutRef = useRef(onAnalyzeShortcut);
 
-  const updateValidation = (model: monacoEditor.editor.ITextModel | null, editable: boolean) => {
+  const updateValidation = (model: MonacoTypes.editor.ITextModel | null, editable: boolean) => {
     if (validationRef.current && (validationRef.current.model !== model || !editable)) {
       const previousModel = validationRef.current.model;
       validationRef.current.dispose();
       validationRef.current = null;
       if (!editable && previousModel === model) {
-        monacoEditor.editor.setModelMarkers(model, MARKER_OWNER, []);
+        monaco.editor.setModelMarkers(model, MARKER_OWNER, []);
       }
     }
     if (!model || !editable || validationRef.current) {
@@ -355,12 +333,12 @@ export function ConsoleEditor({
         }
 
         if (!readOnly) {
-          editor.addCommand(monacoEditor.KeyMod.CtrlCmd | monacoEditor.KeyCode.Enter, () => {
+          editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             runShortcutRef.current?.();
           });
 
           editor.addCommand(
-            monacoEditor.KeyMod.CtrlCmd | monacoEditor.KeyMod.Shift | monacoEditor.KeyCode.KeyA,
+            monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyA,
             () => {
               analyzeShortcutRef.current?.();
             },
@@ -369,7 +347,7 @@ export function ConsoleEditor({
           editor.addAction({
             id: "es-console.delete-line",
             label: "删除当前行",
-            keybindings: [monacoEditor.KeyMod.CtrlCmd | monacoEditor.KeyCode.KeyD],
+            keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyD],
             run(currentEditor) {
               const action = currentEditor.getAction("editor.action.deleteLines");
               if (!action) {
@@ -384,7 +362,7 @@ export function ConsoleEditor({
             id: "es-console.format-document",
             label: "格式化 JSON",
             keybindings: [
-              monacoEditor.KeyMod.Shift | monacoEditor.KeyMod.Alt | monacoEditor.KeyCode.KeyF,
+              monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF,
             ],
             run(currentEditor) {
               return currentEditor.getAction("editor.action.formatDocument")?.run();

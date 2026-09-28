@@ -1,4 +1,6 @@
-import * as monacoEditor from "monaco-editor";
+import type * as monacoEditor from "monaco-editor/esm/vs/editor/editor.api";
+
+type MonacoApi = typeof import("monaco-editor/esm/vs/editor/editor.api");
 import {
   BULK_ACTION_SNIPPETS,
   COUNT_ROOT_PROPERTY_SNIPPETS,
@@ -73,7 +75,7 @@ export {
 export * from "./snippets";
 
 function getMethodRange(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   lineContent: string,
   column: number,
 ) {
@@ -93,7 +95,7 @@ function getMethodRange(
 }
 
 function getPathSegmentRange(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   lineContent: string,
   column: number,
 ) {
@@ -122,7 +124,7 @@ function getPathSegmentRange(
 }
 
 function snippetKindToMonaco(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   kind: RawSnippet["kind"],
 ) {
   switch (kind) {
@@ -138,7 +140,7 @@ function snippetKindToMonaco(
 }
 
 function renderSnippet(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   snippet: RawSnippet,
   replaceRange: monacoEditor.IRange,
   insideString: boolean,
@@ -157,7 +159,7 @@ function renderSnippet(
 }
 
 function buildFieldSuggestions(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   fields: string[],
   replaceRange: monacoEditor.IRange,
   mode: "key" | "string-value",
@@ -175,7 +177,7 @@ function buildFieldSuggestions(
 }
 
 function buildJsonSuggestions(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   model: monacoEditor.editor.ITextModel,
   position: monacoEditor.Position,
   autocompleteContext: ConsoleAutocompleteContext,
@@ -274,7 +276,7 @@ const ROOT_SNIPPETS_BY_KIND: Partial<Record<BodyCompletionKind, readonly RawSnip
 };
 
 function buildBodySuggestions(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   model: monacoEditor.editor.ITextModel,
   position: monacoEditor.Position,
   autocompleteContext: ConsoleAutocompleteContext,
@@ -404,7 +406,7 @@ function analyzeQueryParameterCursor(
 }
 
 function buildMethodSuggestions(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   lineContent: string,
   column: number,
 ): monacoEditor.languages.CompletionItem[] {
@@ -421,7 +423,7 @@ function buildMethodSuggestions(
 }
 
 function buildQueryParameterSuggestions(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   lineContent: string,
   column: number,
   autocompleteContext: ConsoleAutocompleteContext,
@@ -469,7 +471,7 @@ function resolvePathSuggestionScope(
 }
 
 function buildPathSuggestions(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   lineContent: string,
   column: number,
   autocompleteContext: ConsoleAutocompleteContext,
@@ -533,7 +535,7 @@ function buildPathSuggestions(
 }
 
 export function provideConsoleCompletionItems(
-  monacoInstance: typeof monacoEditor,
+  monacoInstance: MonacoApi,
   model: monacoEditor.editor.ITextModel,
   position: monacoEditor.Position,
   autocompleteContext: ConsoleAutocompleteContext,
