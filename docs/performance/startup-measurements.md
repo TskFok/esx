@@ -15,7 +15,7 @@
 
 ## Tauri 与 WebView 功能验收
 
-产品 `pnpm exec tauri build --debug --no-bundle` 已退出码 0，生成 `src-tauri/target/debug/esx`。这项构建检查在任务 3 的产品提交 `52060e8` 后执行；本任务增加的构建报告随后通过 `pnpm build` 验证。未启动访问真实 keyring 的完整产品实例。独立 ESX Monaco QA.app 在 `tauri://localhost` 使用与产品相同的生产 CSP、真实 `ConsoleEditor` 与 `ResponseViewer`，以合成数据运行，不访问 keyring、store 或 HTTP 命令。
+产品 `pnpm exec tauri build --debug --no-bundle` 已退出码 0，生成 `src-tauri/target/debug/esx`。该命令已在最终构建报告配置下再次通过，包含本轮全部产品与 Vite 改动。未启动访问真实 keyring 的完整产品实例。独立 ESX Monaco QA.app 在 `tauri://localhost` 使用与产品相同的生产 CSP、真实 `ConsoleEditor` 与 `ResponseViewer`，以合成数据运行，不访问 keyring、store 或 HTTP 命令。
 
 | 检查 | 精简前独立 WebView | 精简后独立 WebView |
 | --- | --- | --- |
