@@ -100,6 +100,56 @@ describe("ConsoleRequestList", () => {
     expect(ordered[999]).toBe("r-0");
   });
 
+  it("经过一行后放到列表空白处不会沿用旧目标排序", () => {
+    const { props } = renderList({ requests: requests(5) });
+    fireEvent.dragStart(screen.getByRole("button", { name: "请求 0" }));
+    fireEvent.dragOver(screen.getByRole("button", { name: "请求 3" }));
+    fireEvent.drop(screen.getByTestId("console-request-scroll"));
+
+    expect(props.onReorderRequests).not.toHaveBeenCalled();
+  });
+
+  it("请求内容更新时保留长列表的滚动位置", () => {
+    const data = requests(1_000);
+    const view = renderList({ requests: data });
+    const scroller = screen.getByTestId("console-request-scroll");
+    act(() => { scroller.scrollTop = 44_000; fireEvent.scroll(scroller); });
+    expect(screen.getByRole("button", { name: "请求 500" })).toBeInTheDocument();
+
+    const updated = data.map((request, index) => index === 500 ? { ...request, lastStatus: 200 } : request);
+    view.rerender(<ConsoleRequestList {...view.props} requests={updated} />);
+
+    expect(scroller.scrollTop).toBe(44_000);
+    expect(screen.getByRole("button", { name: "请求 500" })).toBeInTheDocument();
+  });
+
+  it("少于 200 项但可滚动时，请求刷新仍保留滚动位置", () => {
+    const data = requests(50);
+    const view = renderList({ requests: data });
+    const scroller = screen.getByTestId("console-request-scroll");
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 3_000 });
+    scroller.scrollTop = 600;
+
+    view.rerender(<ConsoleRequestList {...view.props} requests={data.map((request, index) =>
+      index === 10 ? { ...request, lastStatus: 200 } : request,
+    )} />);
+
+    expect(scroller.scrollTop).toBe(600);
+  });
+
+  it("拖拽悬停在列表中间不安排自动滚动动画帧", () => {
+    const frame = vi.fn(() => 1);
+    vi.stubGlobal("requestAnimationFrame", frame);
+    renderList();
+    fireEvent.dragStart(screen.getByRole("button", { name: "请求 0" }));
+    const initialFrames = frame.mock.calls.length;
+    const dragOver = new Event("dragover", { bubbles: true, cancelable: true });
+    Object.defineProperty(dragOver, "clientY", { value: 240 });
+    fireEvent(screen.getByTestId("console-request-scroll"), dragOver);
+
+    expect(frame).toHaveBeenCalledTimes(initialFrames);
+  });
+
   it("拖拽靠近边缘时滚动独立列表容器", () => {
     const frames: FrameRequestCallback[] = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
@@ -160,7 +210,7 @@ describe("ConsoleRequestList", () => {
     view.rerender(<ConsoleRequestList {...view.props} requests={data.slice(0, 500)} />);
     fireEvent.scroll(screen.getByTestId("console-request-scroll"));
 
-    expect(screen.getByRole("button", { name: "请求 0" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "请求 499" })).toBeInTheDocument();
   });
 
   it("少于 200 项保留直接渲染", () => {

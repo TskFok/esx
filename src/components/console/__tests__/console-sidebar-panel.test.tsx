@@ -175,12 +175,12 @@ describe("ConsoleSidebarPanel large request list", () => {
     fireEvent.scroll(scroller);
 
     fireEvent.change(screen.getByPlaceholderText("搜索请求名称、路径或标签"), { target: { value: "请求 2" } });
-    expect(scroller.scrollTop).toBe(0);
+    expect(screen.getByTestId("console-request-scroll")).toHaveProperty("scrollTop", 0);
     expect(screen.getByRole("button", { name: "请求 2" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText("搜索请求名称、路径或标签"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "偶数" }));
-    expect(scroller.scrollTop).toBe(0);
+    expect(screen.getByTestId("console-request-scroll")).toHaveProperty("scrollTop", 0);
     expect(screen.getByRole("button", { name: "请求 0" })).toBeInTheDocument();
   });
 });

@@ -331,6 +331,7 @@ function ConsoleSidebarPanelInner({
               </p>
             ) : null}
             <ConsoleRequestList
+              key={JSON.stringify([searchQuery.trim().toLowerCase(), tagFilter])}
               requests={visibleRequests}
               activeSavedRequestId={activeSavedRequestId}
               selectionMode={selectionMode}

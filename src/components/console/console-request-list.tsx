@@ -27,7 +27,6 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
   } = props;
   const scrollRef = useRef<HTMLDivElement>(null);
   const draggedIdRef = useRef<string | null>(null);
-  const targetIdRef = useRef<string | null>(null);
   const dragYRef = useRef<number | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -51,9 +50,15 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
   });
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    virtualizer.scrollToOffset(0);
-  }, [requests, virtualizer]);
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    const contentHeight = virtualized ? virtualizer.getTotalSize() : scroll.scrollHeight;
+    const maxOffset = Math.max(0, contentHeight - scroll.offsetHeight);
+    if (scroll.scrollTop > maxOffset) {
+      scroll.scrollTop = maxOffset;
+      virtualizer.scrollToOffset(maxOffset);
+    }
+  }, [requests, virtualized, virtualizer]);
 
   useEffect(() => () => {
     if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
@@ -91,7 +96,6 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
       }
     }
     draggedIdRef.current = null;
-    targetIdRef.current = null;
     dragYRef.current = null;
     if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
     scrollFrameRef.current = null;
@@ -109,12 +113,11 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
     const rect = scroll.getBoundingClientRect();
     const edge = 48;
     const direction = y < rect.top + edge ? -1 : y > rect.bottom - edge ? 1 : 0;
-    if (direction) {
-      scroll.scrollTop += direction * 20;
-      const offset = scroll.scrollTop + Math.max(0, Math.min(rect.height, y - rect.top));
-      const item = virtualizer.getVirtualItemForOffset(offset);
-      if (item) targetIdRef.current = requests[item.index]?.id ?? null;
+    if (!direction) {
+      scrollFrameRef.current = null;
+      return;
     }
+    scroll.scrollTop += direction * 20;
     scrollFrameRef.current = requestAnimationFrame(scrollWhileDragging);
   }
 
@@ -137,11 +140,7 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
         draggable={canReorder}
         onDragStart={() => { draggedIdRef.current = request.id; setDraggedId(request.id); setDraggedIndex(index); }}
         onDragEnd={() => finishDrag(null)}
-        onDragOver={(event) => {
-          if (!canReorder) return;
-          event.preventDefault();
-          targetIdRef.current = request.id;
-        }}
+        onDragOver={(event) => { if (canReorder) event.preventDefault(); }}
         onDrop={(event) => { event.preventDefault(); event.stopPropagation(); finishDrag(request.id); }}
         role="button"
         tabIndex={0}
@@ -206,6 +205,12 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
         if (!draggedIdRef.current || !canReorder) return;
         event.preventDefault();
         dragYRef.current = event.clientY;
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (event.clientY >= rect.top + 48 && event.clientY <= rect.bottom - 48) {
+          if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
+          scrollFrameRef.current = null;
+          return;
+        }
         if (scrollFrameRef.current === null) scrollWhileDragging();
       }}
       onDragLeave={(event) => {
@@ -214,7 +219,7 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
         if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
         scrollFrameRef.current = null;
       }}
-      onDrop={(event) => { event.preventDefault(); finishDrag(targetIdRef.current); }}>
+      onDrop={(event) => { event.preventDefault(); finishDrag(null); }}>
       {requests.length === 0 ? null : (
         <div className={virtualized ? "relative" : "space-y-1.5"} style={virtualized ? { height: virtualizer.getTotalSize() } : undefined}>
           {virtualized
