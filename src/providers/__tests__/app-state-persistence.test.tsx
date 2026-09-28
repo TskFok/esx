@@ -60,7 +60,7 @@ describe("应用状态持久化", () => {
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(writeStorage).toHaveBeenLastCalledWith(expect.objectContaining({
       drafts: expect.objectContaining({ "conn-1": expect.objectContaining({ content: pendingContent, name: pendingName }) }),
-    }));
+    }), expect.any(Set));
     expect(destroy).toHaveBeenCalledOnce();
     pendingContent = "";
     pendingName = "";
@@ -76,7 +76,7 @@ describe("应用状态持久化", () => {
     await act(async () => { await event.run(); });
     expect(writeStorage).toHaveBeenLastCalledWith(expect.objectContaining({
       drafts: expect.objectContaining({ "conn-1": expect.objectContaining({ content: "GET /retry" }) }),
-    }));
+    }), expect.any(Set));
     expect(destroy).toHaveBeenCalledOnce();
   });
 
@@ -106,7 +106,7 @@ describe("应用状态持久化", () => {
     });
     expect(writeStorage).toHaveBeenLastCalledWith(expect.objectContaining({
       drafts: expect.objectContaining({ "conn-1": expect.objectContaining({ content: "GET /explicit" }) }),
-    }));
+    }), expect.any(Set));
   });
 
   it("读取失败后不会把空白状态写回磁盘", async () => {

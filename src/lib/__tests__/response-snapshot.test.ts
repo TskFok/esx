@@ -20,6 +20,14 @@ function buildSnapshot(bodyText: string) {
 }
 
 describe("response snapshot previews", () => {
+  it("preserves the eviction marker when normalizing a persisted snapshot", () => {
+    const evicted = normalizeResponseSnapshot({
+      ok: true, status: 200, statusText: "OK", durationMs: 1, sizeBytes: 3000000,
+      executedAt: "2026-01-01", bodyPreview: "", previewBytes: 0,
+      truncated: true, isJson: true, diagnostics: [], previewEvicted: true,
+    });
+    expect(evicted).toMatchObject({ previewEvicted: true, bodyPreview: "", previewBytes: 0, status: 200 });
+  });
   it("keeps and prettifies small JSON responses", () => {
     const snapshot = buildSnapshot('{"ok":true,"hits":[1,2]}');
 

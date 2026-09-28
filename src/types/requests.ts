@@ -12,6 +12,7 @@ export type ResponseSnapshot = {
   isJson: boolean;
   errorMessage?: string;
   diagnostics: string[];
+  previewEvicted?: boolean;
 };
 
 export type SavedRequest = {
@@ -68,6 +69,9 @@ export type ConnectionSearchMetadata = {
   aliases: string[];
   fields: string[];
   fieldsByIndex: Record<string, string[]>;
+  fieldsFetchedAtByIndex?: Record<string, string>;
+  fieldsTruncatedByIndex?: Record<string, boolean>;
+  connectionUpdatedAt?: string;
   aliasToIndices: Record<string, string[]>;
   cluster: ConnectionSearchClusterMetadata;
   fetchedAt: string;

@@ -148,6 +148,7 @@ export function normalizeResponseSnapshot(value: unknown, maxPreviewBytes = RESP
     diagnostics: Array.isArray(value.diagnostics)
       ? value.diagnostics.filter((item): item is string => typeof item === "string")
       : [],
+    previewEvicted: asBoolean(value.previewEvicted) || undefined,
   };
 }
 

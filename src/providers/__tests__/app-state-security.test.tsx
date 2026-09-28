@@ -60,7 +60,7 @@ describe("application credential boundaries", () => {
     }));
     const log = hook.result.current.errorLogs[0];
     expect(JSON.stringify(log)).not.toMatch(/test-title-token|test-query-token|test-url-password/);
-    await waitFor(() => expect(writeStorage).toHaveBeenLastCalledWith(expect.objectContaining({ errorLogs: [log] })));
+    await waitFor(() => expect(writeStorage).toHaveBeenLastCalledWith(expect.objectContaining({ errorLogs: [log] }), expect.any(Set)));
   });
 
   it("clears the previous AI key when changing origin without a replacement", async () => {

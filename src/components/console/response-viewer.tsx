@@ -15,6 +15,14 @@ export function ResponseViewer({ response, fallbackValue }: ResponseViewerProps)
 
   const value = getResponseDisplayText(response);
 
+  if (response.previewEvicted) {
+    return (
+      <div className="flex h-full items-center justify-center rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-sm text-amber-900">
+        历史预览已清理。再次执行请求可生成新预览。
+      </div>
+    );
+  }
+
   if (!response.truncated) {
     return <LazyConsoleEditor readOnly value={value} onChange={() => {}} />;
   }

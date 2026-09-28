@@ -21,6 +21,7 @@ import {
   createEmptyStorage,
   readAppStorage,
   writeAppStorage,
+  type StoragePartition,
 } from "../lib/storage";
 import {
   createTextPreview,
@@ -465,12 +466,14 @@ function normalizeState(state: AppStateShape): AppStateShape {
     const currentDraftState = nextDrafts[connection.id] as LegacyStoredDraft | undefined;
     const activeRequest =
       currentDraftState?.activeSavedRequestId ? requestsById.get(currentDraftState.activeSavedRequestId) ?? null : null;
+    const matchingActiveRequest = activeRequest?.connectionId === connection.id ? activeRequest : null;
 
     nextDrafts[connection.id] = currentDraftState
       ? normalizeStoredDraft({
           ...currentDraftState,
-          activeSavedRequestId: activeRequest?.id ?? null,
-          response: activeRequest?.lastResponse ?? normalizeResponseSnapshot(currentDraftState.response, responsePreviewBytes),
+          connectionId: connection.id,
+          activeSavedRequestId: matchingActiveRequest?.id ?? null,
+          response: matchingActiveRequest?.lastResponse ?? normalizeResponseSnapshot(currentDraftState.response, responsePreviewBytes),
         })
       : createDefaultDraft(connection.id);
   });
@@ -551,17 +554,18 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const indexFieldFetchInFlight = useRef(new Map<string, Promise<string[] | null>>());
   const pendingDraftFlushes = useRef(new Set<() => void>());
   const closing = useRef(false);
-  const persistQueue = useRef(createPersistQueue<AppStateShape>({
+  const lastScheduledState = useRef<AppStateShape | null>(null);
+  const persistQueue = useRef(createPersistQueue<{ state: AppStateShape; dirty: ReadonlySet<StoragePartition> }>({
     write: async (value) => {
       try {
-        await writeAppStorage(value);
+        await writeAppStorage(value.state, value.dirty);
       } catch (error) {
         console.error(error);
         toast.error("本地数据保存失败。");
         throw error;
       }
     },
-    merge: (_pending, newer) => newer,
+    merge: (pending, newer) => ({ state: newer.state, dirty: new Set([...pending.dirty, ...newer.dirty]) }),
   }));
 
   const registerPendingDraftFlush = useCallback((flush: () => void) => {
@@ -612,7 +616,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         console.error(error);
         if (!cancelled) {
           setReady(true);
-          toast.error("本地数据读取失败，已使用空白状态启动。");
+          toast.error(`本地数据读取失败，已保留磁盘数据：${error instanceof Error ? error.message : "请恢复本地数据后重新启动。"}`);
         }
       });
 
@@ -622,7 +626,18 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   }, []);
 
   useLayoutEffect(() => {
-    if (storageLoaded) persistQueue.current.schedule(state);
+    if (!storageLoaded) return;
+    const previous = lastScheduledState.current;
+    const dirty = new Set<StoragePartition>();
+    if (!previous || previous.drafts !== state.drafts || previous.currentConnectionId !== state.currentConnectionId) {
+      dirty.add("hot");
+    }
+    if (!previous || (Object.keys(state) as Array<keyof AppStateShape>).some((key) =>
+      key !== "drafts" && key !== "currentConnectionId" && previous[key] !== state[key])) {
+      dirty.add("cold");
+    }
+    lastScheduledState.current = state;
+    if (dirty.size) persistQueue.current.schedule({ state, dirty });
   }, [storageLoaded, state]);
 
   useEffect(() => {
