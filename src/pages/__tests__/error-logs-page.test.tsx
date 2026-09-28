@@ -24,13 +24,17 @@ const connection = {
 
 vi.mock("../../providers/app-state", () => ({
   useAppState: vi.fn(),
+  useAppStateField: vi.fn(),
+  useAppActions: vi.fn(),
 }));
 
 import { CONSOLE_ERROR_LOGS_PATH } from "../../lib/console-error-logs-panel";
-import { useAppState } from "../../providers/app-state";
+import { useAppActions, useAppState, useAppStateField } from "../../providers/app-state";
 import { ErrorLogsPage } from "../error-logs-page";
 
 const useAppStateMock = vi.mocked(useAppState);
+vi.mocked(useAppStateField).mockImplementation((key) => useAppStateMock()[key]);
+vi.mocked(useAppActions).mockImplementation(() => useAppStateMock());
 
 function ConsoleSearchProbe() {
   const location = useLocation();

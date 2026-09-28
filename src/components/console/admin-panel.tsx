@@ -58,7 +58,7 @@ import { classifyRequestSafety } from "../../lib/request-safety";
 import { buildResponseSnapshot } from "../../lib/response-snapshot";
 import { formatShanghaiDateTime } from "../../lib/time";
 import { cn } from "../../lib/utils";
-import { useAppState } from "../../providers/app-state";
+import { useAppActions, useAppStateField } from "../../providers/app-state";
 import type { AdminExecutionResult, AdminOperation, AdminOperationGroup, AdminRequestPreview, MappingDiffResult } from "../../types/admin";
 import type { ConnectionProfile } from "../../types/connections";
 
@@ -462,15 +462,15 @@ export function AdminPanel({
   closeTitle = "关闭治理",
   className = "flex h-full min-h-0 flex-col overflow-hidden",
 }: AdminPanelProps) {
+  const currentConnection = useAppStateField("currentConnection");
   const {
-    currentConnection,
     updateDraft,
     getPassword,
     getSshSecret,
     getSshProfileForConnection,
     recordErrorLog,
     recordAuditLog,
-  } = useAppState();
+  } = useAppActions();
   const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState<AdminSection>("indices");
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);

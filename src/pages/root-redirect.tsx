@@ -1,8 +1,8 @@
 import { Navigate } from "react-router-dom";
-import { useAppState } from "../providers/app-state";
+import { useAppStateField } from "../providers/app-state";
 
 export function RootRedirect() {
-  const { ready } = useAppState();
+  const ready = useAppStateField("ready");
 
   if (!ready) {
     return null;

@@ -32,8 +32,8 @@ const connection = {
 let activeConnection: ConnectionProfile = connection;
 const anotherConnection = { ...connection, id: "conn-2", name: "另一个集群", baseUrl: "https://second.example.com", updatedAt: "2026-06-05T00:00:00.000Z" };
 
-vi.mock("../../../providers/app-state", () => ({
-  useAppState: () => ({
+vi.mock("../../../providers/app-state", () => {
+  const useAppState = () => ({
     currentConnection: activeConnection,
     updateDraft: updateDraftMock,
     getPassword: vi.fn(async () => "secret"),
@@ -41,8 +41,9 @@ vi.mock("../../../providers/app-state", () => ({
     getSshProfileForConnection: vi.fn(() => null),
     recordErrorLog: recordErrorLogMock,
     recordAuditLog: recordAuditLogMock,
-  }),
-}));
+  });
+  return { useAppState, useAppStateField: (key: keyof ReturnType<typeof useAppState>) => useAppState()[key], useAppActions: useAppState };
+});
 
 function renderAdminPanel(onClose = vi.fn()) {
   const queryClient = new QueryClient({

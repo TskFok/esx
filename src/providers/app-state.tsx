@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type PropsWithChildren,
 } from "react";
 import { flushSync } from "react-dom";
@@ -147,7 +148,7 @@ type AppStateContextValue = {
     apiKey: string | null;
     clearApiKey: boolean;
   }) => Promise<void>;
-  getAiApiKey: () => Promise<string | null>;
+  getAiApiKey: (expectedScope?: string | null) => Promise<string | null>;
   recordAiAnalysisHistory: (payload: {
     connectionId: string | null;
     connectionName: string | null;
@@ -241,7 +242,79 @@ type AppStateContextValue = {
   }>;
 };
 
-const AppStateContext = createContext<AppStateContextValue | null>(null);
+export type AppStateView = Pick<AppStateContextValue,
+  | "ready" | "connections" | "sshProfiles" | "searchMetadataByConnection"
+  | "currentConnection" | "currentDraft" | "requestsForCurrentConnection"
+  | "errorLoggingEnabled" | "responsePreviewBytes" | "aiSettings"
+  | "aiApiKeyConfigured" | "aiAnalysisHistory" | "errorLogs"
+  | "statusHistoryByConnection"
+>;
+export type AppStateActions = Omit<AppStateContextValue, keyof AppStateView>;
+
+const viewKeys = [
+  "ready", "connections", "sshProfiles", "searchMetadataByConnection", "currentConnection",
+  "currentDraft", "requestsForCurrentConnection", "errorLoggingEnabled", "responsePreviewBytes",
+  "aiSettings", "aiApiKeyConfigured", "aiAnalysisHistory", "errorLogs", "statusHistoryByConnection",
+] as const satisfies readonly (keyof AppStateView)[];
+
+const actionKeys = [
+  "registerPendingDraftFlush", "flushAppState", "setCurrentConnection", "setErrorLoggingEnabled",
+  "setResponsePreviewBytes", "updateAiSettings", "saveAiSettings", "getAiApiKey",
+  "recordAiAnalysisHistory", "clearAiAnalysisHistory", "clearErrorLogs", "recordStatusSnapshot",
+  "recordErrorLog", "recordAuditLog", "updateDraft", "createBlankDraft", "selectSavedRequest",
+  "saveRequestFromDraft", "updateRequest", "bulkUpdateRequestTags", "deleteRequest", "duplicateRequest",
+  "reorderConnectionRequests", "importConnectionRequests", "refreshSearchMetadata", "ensureTargetFields",
+  "ensureIndexFields", "recordExecution", "upsertSshProfile", "upsertConnection", "deleteSshProfile",
+  "deleteConnection", "getPassword", "getSshSecret", "getSshProfileForConnection",
+  "exportConnections", "importConnections",
+] as const satisfies readonly (keyof AppStateActions)[];
+
+type AppStateStore = ReturnType<typeof createAppStateStore>;
+
+function createAppStateStore(initialValue: AppStateContextValue) {
+  let currentValue = initialValue;
+  const listeners = new Set<() => void>();
+  const fieldListeners = new Map<keyof AppStateView, Set<() => void>>();
+  const actions = Object.fromEntries(actionKeys.map((key) => [key, (...args: unknown[]) => {
+    if (key === "getAiApiKey") {
+      const expectedScope = args[0] as string | null | undefined;
+      if (!expectedScope || expectedScope !== getAiCredentialScope(currentValue.aiSettings)) return Promise.resolve(null);
+    }
+    return (currentValue[key] as (...parameters: unknown[]) => unknown)(...args);
+  }])) as AppStateActions;
+
+  return {
+    getSnapshot: () => currentValue,
+    getFieldSnapshot: <K extends keyof AppStateView>(key: K): AppStateView[K] => currentValue[key],
+    getActions: () => actions,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    subscribeField: (key: keyof AppStateView, listener: () => void) => {
+      let group = fieldListeners.get(key);
+      if (!group) {
+        group = new Set();
+        fieldListeners.set(key, group);
+      }
+      group.add(listener);
+      return () => { group.delete(listener); };
+    },
+    publish(nextValue: AppStateContextValue) {
+      if (currentValue === nextValue) return;
+      const previousValue = currentValue;
+      currentValue = nextValue;
+      for (const key of viewKeys) {
+        if (!Object.is(previousValue[key], nextValue[key])) {
+          fieldListeners.get(key)?.forEach((listener) => listener());
+        }
+      }
+      listeners.forEach((listener) => listener());
+    },
+  };
+}
+
+const AppStateContext = createContext<AppStateStore | null>(null);
 const MAX_ERROR_LOGS = 200;
 const SEARCH_METADATA_TTL_MS = 5 * 60 * 1000;
 
@@ -684,13 +757,16 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     [state.connections, state.currentConnectionId],
   );
 
-  const currentDraft = currentConnection
-    ? state.drafts[currentConnection.id] ?? createDefaultDraft(currentConnection.id)
-    : null;
+  const currentDraft = useMemo(
+    () => currentConnection
+      ? state.drafts[currentConnection.id] ?? createDefaultDraft(currentConnection.id)
+      : null,
+    [currentConnection?.id, state.drafts],
+  );
 
   const requestsForCurrentConnection = useMemo(
     () => (currentConnection ? getConnectionRequests(currentConnection.id, state.requests) : []),
-    [currentConnection, state.requests],
+    [currentConnection?.id, state.requests],
   );
   const responsePreviewBytes = normalizeResponsePreviewBytes(state.settings.responsePreviewBytes);
 
@@ -826,9 +902,9 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       async saveAiSettings(payload) {
         await persistAiSettings(payload);
       },
-      async getAiApiKey() {
+      async getAiApiKey(expectedScope) {
         const scope = getAiCredentialScope(state.aiSettings);
-        if (!scope || scope !== aiKeyScope.current) return null;
+        if (!scope || scope !== aiKeyScope.current || (expectedScope !== undefined && expectedScope !== scope)) return null;
         const key = await getAiApiKey(scope);
         return scope === aiKeyScope.current ? key : null;
       },
@@ -1360,13 +1436,33 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     [aiApiKeyConfigured, currentConnection, currentDraft, flushAppState, ready, registerPendingDraftFlush, requestsForCurrentConnection, state],
   );
 
-  return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
+  const storeRef = useRef<AppStateStore | null>(null);
+  if (!storeRef.current) storeRef.current = createAppStateStore(value);
+  useLayoutEffect(() => { storeRef.current!.publish(value); }, [value]);
+
+  return <AppStateContext.Provider value={storeRef.current}>{children}</AppStateContext.Provider>;
+}
+
+function useAppStateStore() {
+  const store = useContext(AppStateContext);
+  if (!store) {
+    throw new Error("useAppState must be used within AppStateProvider");
+  }
+  return store;
+}
+
+export function useAppStateField<K extends keyof AppStateView>(key: K): AppStateView[K] {
+  const store = useAppStateStore();
+  const subscribe = useCallback((listener: () => void) => store.subscribeField(key, listener), [store, key]);
+  const getSnapshot = useCallback(() => store.getFieldSnapshot(key), [store, key]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+export function useAppActions(): AppStateActions {
+  return useAppStateStore().getActions();
 }
 
 export function useAppState() {
-  const value = useContext(AppStateContext);
-  if (!value) {
-    throw new Error("useAppState must be used within AppStateProvider");
-  }
-  return value;
+  const store = useAppStateStore();
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }

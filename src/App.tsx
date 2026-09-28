@@ -4,7 +4,7 @@ import { HashRouter, Link, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster } from "sonner";
 import { ConnectionsPage } from "./pages/connections-page";
 import { RootRedirect } from "./pages/root-redirect";
-import { useAppState } from "./providers/app-state";
+import { useAppStateField } from "./providers/app-state";
 
 const ConsolePage = lazy(() => import("./pages/console-page").then((module) => ({ default: module.ConsolePage })));
 const AdminPage = lazy(() => import("./pages/admin-page").then((module) => ({ default: module.AdminPage })));
@@ -82,7 +82,7 @@ function GlobalGuards() {
 }
 
 export default function App() {
-  const { ready } = useAppState();
+  const ready = useAppStateField("ready");
 
   return (
     <HashRouter>

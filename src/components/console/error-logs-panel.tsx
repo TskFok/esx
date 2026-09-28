@@ -3,7 +3,7 @@ import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { getErrorLogScopeLabel, getErrorLogsEmptyDescription } from "../../lib/error-log-display";
 import { formatShanghaiDateTime } from "../../lib/time";
-import { useAppState } from "../../providers/app-state";
+import { useAppActions, useAppStateField } from "../../providers/app-state";
 import type { ErrorLogEntry } from "../../types/logs";
 
 export type ErrorLogsPanelProps = {
@@ -94,7 +94,9 @@ export function ErrorLogsPanel({
   closeTitle = "关闭错误日志",
   className = "flex h-full min-h-0 flex-col overflow-hidden",
 }: ErrorLogsPanelProps) {
-  const { errorLoggingEnabled, setErrorLoggingEnabled, clearErrorLogs, errorLogs } = useAppState();
+  const errorLoggingEnabled = useAppStateField("errorLoggingEnabled");
+  const errorLogs = useAppStateField("errorLogs");
+  const { setErrorLoggingEnabled, clearErrorLogs } = useAppActions();
 
   return (
     <div className={className}>

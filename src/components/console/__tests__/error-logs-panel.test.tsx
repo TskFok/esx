@@ -27,12 +27,16 @@ const sampleLog = {
 
 vi.mock("../../../providers/app-state", () => ({
   useAppState: vi.fn(),
+  useAppStateField: vi.fn(),
+  useAppActions: vi.fn(),
 }));
 
-import { useAppState } from "../../../providers/app-state";
+import { useAppActions, useAppState, useAppStateField } from "../../../providers/app-state";
 import { ErrorLogsPanel } from "../error-logs-panel";
 
 const useAppStateMock = vi.mocked(useAppState);
+const useAppStateFieldMock = vi.mocked(useAppStateField);
+const useAppActionsMock = vi.mocked(useAppActions);
 
 function mockAppState(overrides: Partial<ReturnType<typeof useAppState>> = {}) {
   useAppStateMock.mockReturnValue({
@@ -42,6 +46,8 @@ function mockAppState(overrides: Partial<ReturnType<typeof useAppState>> = {}) {
     errorLogs: [],
     ...overrides,
   } as unknown as ReturnType<typeof useAppState>);
+  useAppStateFieldMock.mockImplementation((key) => useAppStateMock()[key]);
+  useAppActionsMock.mockImplementation(() => useAppStateMock());
 }
 
 describe("ErrorLogsPanel", () => {

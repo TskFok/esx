@@ -91,7 +91,8 @@ import { classifyRequestSafety } from "../lib/request-safety";
 import { getSearchSizeWarning } from "../lib/search-size-warning";
 import { formatShanghaiDateTime } from "../lib/time";
 import { formatBytes } from "../lib/utils";
-import { useAppState } from "../providers/app-state";
+import { useAppActions, useAppStateField } from "../providers/app-state";
+import { getAiCredentialScope } from "../types/ai-settings";
 import type { ConnectionProfile } from "../types/connections";
 import type { ConnectionSearchMetadata, ConsoleDraft, ResponseSnapshot, SavedRequest } from "../types/requests";
 
@@ -308,13 +309,16 @@ function useStableSidebarActions(actions: SidebarActions): SidebarActions {
 export function ConsolePage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const currentConnection = useAppStateField("currentConnection");
+  const currentDraft = useAppStateField("currentDraft");
+  const connections = useAppStateField("connections");
+  const requestsForCurrentConnection = useAppStateField("requestsForCurrentConnection");
+  const searchMetadataByConnection = useAppStateField("searchMetadataByConnection");
+  const responsePreviewBytes = useAppStateField("responsePreviewBytes");
+  const aiSettings = useAppStateField("aiSettings");
+  const aiApiKeyConfigured = useAppStateField("aiApiKeyConfigured");
+  const aiAnalysisHistory = useAppStateField("aiAnalysisHistory");
   const {
-    currentConnection,
-    currentDraft,
-    connections,
-    requestsForCurrentConnection,
-    searchMetadataByConnection,
-    responsePreviewBytes,
     updateDraft,
     registerPendingDraftFlush,
     flushAppState,
@@ -334,14 +338,11 @@ export function ConsolePage() {
     getSshProfileForConnection,
     recordErrorLog,
     recordAuditLog,
-    aiSettings,
-    aiApiKeyConfigured,
-    aiAnalysisHistory,
     saveAiSettings,
     getAiApiKey,
     recordAiAnalysisHistory,
     clearAiAnalysisHistory,
-  } = useAppState();
+  } = useAppActions();
   const [sidebarVisible, setSidebarVisible] = useState(readStoredConsoleSidebarVisible);
   const [sidebarWidth, setSidebarWidth] = useState(readStoredConsoleSidebarWidth);
   const [sidebarDragging, setSidebarDragging] = useState(false);
@@ -615,7 +616,7 @@ export function ConsolePage() {
     setAnalysisDialogOpen(true);
 
     try {
-      const apiKey = await getAiApiKey();
+      const apiKey = await getAiApiKey(getAiCredentialScope(aiSettings));
       const useAiStream = isAiAnalysisConfigured(aiSettings, apiKey);
       const result = await analyzeRequestContent({
         content,
@@ -961,7 +962,7 @@ export function ConsolePage() {
     setGenerateStreamingContent("");
 
     try {
-      const apiKey = await getAiApiKey();
+      const apiKey = await getAiApiKey(getAiCredentialScope(aiSettings));
       const useAiStream = isAiAnalysisConfigured(aiSettings, apiKey);
       const content = await generateRequestContent({
         description,
@@ -1867,7 +1868,7 @@ export function ConsolePage() {
           onSave={handleSaveAiSettings}
           onTestConnection={handleTestAiConnection}
           onFetchModels={handleFetchAiModels}
-          onLoadStoredApiKey={getAiApiKey}
+          onLoadStoredApiKey={() => getAiApiKey(getAiCredentialScope(aiSettings))}
         />
       </Suspense> : null}
 

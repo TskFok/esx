@@ -10,7 +10,7 @@ const modules = vi.hoisted(() => ({
 }));
 
 vi.mock("../providers/app-state", () => ({
-  useAppState: () => ({ ready: true }),
+  useAppStateField: () => true,
 }));
 vi.mock("../pages/connections-page", () => ({
   ConnectionsPage: () => <div data-testid="connections-page">连接页</div>,

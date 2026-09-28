@@ -6,11 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../../providers/app-state", () => ({
-  useAppState: () => ({
-    ready: true,
-    currentConnection: { id: "conn-1", name: "生产集群" },
-    connections: [{ id: "conn-1" }],
-  }),
+  useAppStateField: () => true,
 }));
 
 import { RootRedirect } from "../root-redirect";

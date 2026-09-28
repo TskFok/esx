@@ -8,7 +8,7 @@ import { extractUnknownErrorDiagnostics, extractUnknownErrorMessage } from "../.
 import { useStatusTabQuery, type StatusTab } from "../../lib/status-tab-query";
 import { formatShanghaiDateTime } from "../../lib/time";
 import { cn } from "../../lib/utils";
-import { useAppState } from "../../providers/app-state";
+import { useAppActions, useAppStateField } from "../../providers/app-state";
 import type { ConnectionProfile } from "../../types/connections";
 import { healthBadgeClasses, healthLabels, StatusOverviewTab } from "./status-overview-tab";
 import { StatusOperationsTab } from "./status-operations-tab";
@@ -53,13 +53,9 @@ export function StatusPanel({
   closeTitle = "关闭状态",
   className = "flex h-full min-h-0 flex-col overflow-hidden",
 }: StatusPanelProps) {
-  const {
-    currentConnection,
-    getSshProfileForConnection,
-    recordErrorLog,
-    recordStatusSnapshot,
-    statusHistoryByConnection,
-  } = useAppState();
+  const currentConnection = useAppStateField("currentConnection");
+  const statusHistoryByConnection = useAppStateField("statusHistoryByConnection");
+  const { getSshProfileForConnection, recordErrorLog, recordStatusSnapshot } = useAppActions();
   const [activeTab, setActiveTab] = useState<StatusTab>("overview");
   const lastNotifiedErrorUpdatedAtRef = useRef<Partial<Record<StatusTab, number>>>({});
   const suppressNextReactivationErrorRef = useRef<Partial<Record<StatusTab, boolean>>>({});
