@@ -222,8 +222,12 @@ export function ConsoleEditor({
 
   const updateValidation = (model: monacoEditor.editor.ITextModel | null, editable: boolean) => {
     if (validationRef.current && (validationRef.current.model !== model || !editable)) {
+      const previousModel = validationRef.current.model;
       validationRef.current.dispose();
       validationRef.current = null;
+      if (!editable && previousModel === model) {
+        monacoEditor.editor.setModelMarkers(model, MARKER_OWNER, []);
+      }
     }
     if (!model || !editable || validationRef.current) {
       return;

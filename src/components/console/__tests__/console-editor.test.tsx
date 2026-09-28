@@ -151,12 +151,18 @@ describe("ConsoleEditor", () => {
     expect(setModelMarkers).toHaveBeenCalledTimes(1);
   });
 
-  it("stops validating when switched to read-only", () => {
+  it("clears stale markers when the same model switches to read-only", () => {
     const view = render(<ConsoleEditor value={currentModel.getValue()} onChange={vi.fn()} />);
-    currentModel.change("POST /_search\n]");
+    expect(setModelMarkers).toHaveBeenCalledWith(
+      currentModel,
+      "es-console-validator",
+      [expect.objectContaining({ message: "未闭合的 [ 数组" })],
+    );
+    currentModel.change("POST /_search\n[]");
     view.rerender(<ConsoleEditor readOnly value={currentModel.getValue()} onChange={vi.fn()} />);
+    expect(setModelMarkers).toHaveBeenLastCalledWith(currentModel, "es-console-validator", []);
     act(() => vi.advanceTimersByTime(120));
-    expect(setModelMarkers).toHaveBeenCalledTimes(1);
+    expect(setModelMarkers).toHaveBeenCalledTimes(2);
   });
 
   it("cancels the old model timer when Monaco releases that model", () => {
