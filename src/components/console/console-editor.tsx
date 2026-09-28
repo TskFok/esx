@@ -193,7 +193,7 @@ function registerLanguage(monacoInstance: Monaco) {
     completionProviderRegistered = true;
   }
 }
-type ConsoleEditorProps = {
+export type ConsoleEditorProps = {
   value: string;
   onChange: (value: string) => void;
   readOnly?: boolean;

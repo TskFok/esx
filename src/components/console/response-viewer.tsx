@@ -1,7 +1,7 @@
 import type { ResponseSnapshot } from "../../types/requests";
 import { formatBytes } from "../../lib/utils";
 import { getResponseDisplayText } from "../../lib/response-snapshot";
-import { ConsoleEditor } from "./console-editor";
+import { LazyConsoleEditor } from "./lazy-console-editor";
 
 type ResponseViewerProps = {
   response: ResponseSnapshot | null;
@@ -10,13 +10,13 @@ type ResponseViewerProps = {
 
 export function ResponseViewer({ response, fallbackValue }: ResponseViewerProps) {
   if (!response) {
-    return <ConsoleEditor readOnly value={fallbackValue} onChange={() => {}} />;
+    return <LazyConsoleEditor readOnly value={fallbackValue} onChange={() => {}} />;
   }
 
   const value = getResponseDisplayText(response);
 
   if (!response.truncated) {
-    return <ConsoleEditor readOnly value={value} onChange={() => {}} />;
+    return <LazyConsoleEditor readOnly value={value} onChange={() => {}} />;
   }
 
   return (

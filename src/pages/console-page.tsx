@@ -6,7 +6,7 @@ import {
   Loader2,
   PanelLeftOpen,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { getSshTunnelForProfile } from "../lib/connection-security";
@@ -15,18 +15,12 @@ import { ConsoleContextBreadcrumb } from "../components/console/console-context-
 import { ConsoleExportDialog } from "../components/console/console-export-dialog";
 import { ConsoleImportDialog } from "../components/console/console-import-dialog";
 import { ConsoleTemplateDialog } from "../components/console/console-template-dialog";
-import { ConsoleEditor } from "../components/console/console-editor";
-import { AiSettingsDialog } from "../components/console/ai-settings-dialog";
-import { AiAnalysisDialog } from "../components/console/ai-analysis-dialog";
-import { AiGenerateDialog } from "../components/console/ai-generate-dialog";
+import { LazyConsoleEditor } from "../components/console/lazy-console-editor";
 import { ConsoleRequestToolbar } from "../components/console/console-request-toolbar";
 import { ConsoleMobileDrawer } from "../components/console/console-mobile-drawer";
 import { ConsoleShortcutsDialog } from "../components/console/console-shortcuts-dialog";
 import { ConsoleSidebarPanel, type ConsoleSidebarPanelProps } from "../components/console/console-sidebar-panel";
 import { ConsoleWorkspaceRightPane } from "../components/console/console-workspace-right-pane";
-import { ErrorLogsPanel } from "../components/console/error-logs-panel";
-import { StatusPanel } from "../components/console/status-panel";
-import { AdminPanel } from "../components/console/admin-panel";
 import { ResponseViewer } from "../components/console/response-viewer";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -107,6 +101,33 @@ type RunPayload = {
   overwriteRequestId: string | null;
   requestName: string;
 };
+
+const ErrorLogsPanel = lazy(() =>
+  import("../components/console/error-logs-panel").then(({ ErrorLogsPanel }) => ({ default: ErrorLogsPanel })),
+);
+const StatusPanel = lazy(() =>
+  import("../components/console/status-panel").then(({ StatusPanel }) => ({ default: StatusPanel })),
+);
+const AdminPanel = lazy(() =>
+  import("../components/console/admin-panel").then(({ AdminPanel }) => ({ default: AdminPanel })),
+);
+const AiAnalysisDialog = lazy(() =>
+  import("../components/console/ai-analysis-dialog").then(({ AiAnalysisDialog }) => ({ default: AiAnalysisDialog })),
+);
+const AiGenerateDialog = lazy(() =>
+  import("../components/console/ai-generate-dialog").then(({ AiGenerateDialog }) => ({ default: AiGenerateDialog })),
+);
+const AiSettingsDialog = lazy(() =>
+  import("../components/console/ai-settings-dialog").then(({ AiSettingsDialog }) => ({ default: AiSettingsDialog })),
+);
+
+function useHasOpened(open: boolean) {
+  const [hasOpened, setHasOpened] = useState(open);
+  useEffect(() => {
+    if (open) setHasOpened(true);
+  }, [open]);
+  return open || hasOpened;
+}
 
 const DRAFT_SAVE_DEBOUNCE_MS = 600;
 const EMPTY_CONNECTION: ConnectionProfile = {
@@ -360,6 +381,9 @@ export function ConsolePage() {
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [aiSettingsDialogOpen, setAiSettingsDialogOpen] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const analysisDialogMounted = useHasOpened(analysisDialogOpen);
+  const generateDialogMounted = useHasOpened(generateDialogOpen);
+  const aiSettingsDialogMounted = useHasOpened(aiSettingsDialogOpen);
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [generateStreamingReasoning, setGenerateStreamingReasoning] = useState("");
@@ -1564,17 +1588,23 @@ export function ConsolePage() {
               adminVisible={adminVisible}
               errorLogs={
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <ErrorLogsPanel onClose={() => setErrorLogsOpen(false)} />
+                  <Suspense fallback={<div className="min-h-0 flex-1" role="status" aria-label="正在加载错误日志" />}>
+                    <ErrorLogsPanel onClose={() => setErrorLogsOpen(false)} />
+                  </Suspense>
                 </div>
               }
               status={
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <StatusPanel onClose={() => setStatusOpen(false)} />
+                  <Suspense fallback={<div className="min-h-0 flex-1" role="status" aria-label="正在加载状态面板" />}>
+                    <StatusPanel onClose={() => setStatusOpen(false)} />
+                  </Suspense>
                 </div>
               }
               admin={
                 <div className="flex min-h-0 flex-1 flex-col">
-                  <AdminPanel onClose={() => setAdminOpen(false)} />
+                  <Suspense fallback={<div className="min-h-0 flex-1" role="status" aria-label="正在加载治理面板" />}>
+                    <AdminPanel onClose={() => setAdminOpen(false)} />
+                  </Suspense>
                 </div>
               }
               workspace={
@@ -1634,7 +1664,7 @@ export function ConsolePage() {
                   </div>
                 </div>
                 <div className="min-h-0 flex-1 p-4">
-                  <ConsoleEditor
+                  <LazyConsoleEditor
                     autocompleteContext={autocompleteContext}
                     onRunShortcut={handleRunAndSave}
                     onAnalyzeShortcut={handleAnalyzeRequest}
@@ -1728,60 +1758,72 @@ export function ConsolePage() {
         </main>
       </div>
 
-      <AiAnalysisDialog
-        open={analysisDialogOpen}
-        isAnalyzing={isAnalyzing}
-        streamingReasoningText={analysisStreamingReasoning}
-        streamingContentText={analysisStreamingContent}
-        analysisResult={analysisResult}
-        analysisError={analysisError}
-        history={aiAnalysisHistory}
-        selectedHistoryId={selectedHistoryId}
-        currentConnectionId={selectedConnection.id}
-        currentConnectionName={selectedConnection.name}
-        aiEnabled={aiSettings.enabled}
-        aiConfigured={aiConfiguredForAnalysis}
-        onClose={() => setAnalysisDialogOpen(false)}
-        onOpenSettings={() => setAiSettingsDialogOpen(true)}
-        onApplySuggestion={handleApplyAnalysisSuggestion}
-        onSelectHistory={setSelectedHistoryId}
-        onClearHistory={() => {
-          clearAiAnalysisHistory();
-          setSelectedHistoryId(null);
-          toast.success("分析历史已清空。");
-        }}
-        onReanalyze={() => {
-          void runAnalysis(editorContentRef.current);
-        }}
-      />
+      {analysisDialogMounted ? <Suspense fallback={analysisDialogOpen ? (
+        <div className="fixed inset-0 z-50 bg-slate-950/45" role="status" aria-label="正在加载 AI 分析" onClick={() => setAnalysisDialogOpen(false)} />
+      ) : null}>
+        <AiAnalysisDialog
+          open={analysisDialogOpen}
+          isAnalyzing={isAnalyzing}
+          streamingReasoningText={analysisStreamingReasoning}
+          streamingContentText={analysisStreamingContent}
+          analysisResult={analysisResult}
+          analysisError={analysisError}
+          history={aiAnalysisHistory}
+          selectedHistoryId={selectedHistoryId}
+          currentConnectionId={selectedConnection.id}
+          currentConnectionName={selectedConnection.name}
+          aiEnabled={aiSettings.enabled}
+          aiConfigured={aiConfiguredForAnalysis}
+          onClose={() => setAnalysisDialogOpen(false)}
+          onOpenSettings={() => setAiSettingsDialogOpen(true)}
+          onApplySuggestion={handleApplyAnalysisSuggestion}
+          onSelectHistory={setSelectedHistoryId}
+          onClearHistory={() => {
+            clearAiAnalysisHistory();
+            setSelectedHistoryId(null);
+            toast.success("分析历史已清空。");
+          }}
+          onReanalyze={() => {
+            void runAnalysis(editorContentRef.current);
+          }}
+        />
+      </Suspense> : null}
 
-      <AiGenerateDialog
-        open={generateDialogOpen}
-        isGenerating={isGenerating}
-        streamingReasoningText={generateStreamingReasoning}
-        streamingContentText={generateStreamingContent}
-        generatedContent={generatedContent}
-        generateError={generateError}
-        aiEnabled={aiSettings.enabled}
-        aiConfigured={aiConfiguredForAnalysis}
-        onClose={() => setGenerateDialogOpen(false)}
-        onOpenSettings={() => setAiSettingsDialogOpen(true)}
-        onGenerate={(description) => {
-          void runGeneration(description);
-        }}
-        onApply={handleApplyGeneratedContent}
-      />
+      {generateDialogMounted ? <Suspense fallback={generateDialogOpen ? (
+        <div className="fixed inset-0 z-50 bg-slate-950/45" role="status" aria-label="正在加载 AI 生成" onClick={() => setGenerateDialogOpen(false)} />
+      ) : null}>
+        <AiGenerateDialog
+          open={generateDialogOpen}
+          isGenerating={isGenerating}
+          streamingReasoningText={generateStreamingReasoning}
+          streamingContentText={generateStreamingContent}
+          generatedContent={generatedContent}
+          generateError={generateError}
+          aiEnabled={aiSettings.enabled}
+          aiConfigured={aiConfiguredForAnalysis}
+          onClose={() => setGenerateDialogOpen(false)}
+          onOpenSettings={() => setAiSettingsDialogOpen(true)}
+          onGenerate={(description) => {
+            void runGeneration(description);
+          }}
+          onApply={handleApplyGeneratedContent}
+        />
+      </Suspense> : null}
 
-      <AiSettingsDialog
-        open={aiSettingsDialogOpen}
-        settings={aiSettings}
-        apiKeyConfigured={aiApiKeyConfigured}
-        onClose={() => setAiSettingsDialogOpen(false)}
-        onSave={handleSaveAiSettings}
-        onTestConnection={handleTestAiConnection}
-        onFetchModels={handleFetchAiModels}
-        onLoadStoredApiKey={getAiApiKey}
-      />
+      {aiSettingsDialogMounted ? <Suspense fallback={aiSettingsDialogOpen ? (
+        <div className="fixed inset-0 z-50 bg-slate-950/45" role="status" aria-label="正在加载 AI 设置" onClick={() => setAiSettingsDialogOpen(false)} />
+      ) : null}>
+        <AiSettingsDialog
+          open={aiSettingsDialogOpen}
+          settings={aiSettings}
+          apiKeyConfigured={aiApiKeyConfigured}
+          onClose={() => setAiSettingsDialogOpen(false)}
+          onSave={handleSaveAiSettings}
+          onTestConnection={handleTestAiConnection}
+          onFetchModels={handleFetchAiModels}
+          onLoadStoredApiKey={getAiApiKey}
+        />
+      </Suspense> : null}
 
       <Dialog
         open={requestDialogOpen}

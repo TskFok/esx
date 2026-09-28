@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -17,10 +17,18 @@ import { DEFAULT_AI_ANALYSIS_SETTINGS } from "../../types/ai-settings";
 import type { ConnectionProfile } from "../../types/connections";
 import type { ConnectionSearchMetadata, SavedRequest } from "../../types/requests";
 
-const { staticBuildSpy, editorContextRefs, requestListRenderSpy } = vi.hoisted(() => ({
+const { staticBuildSpy, editorContextRefs, requestListRenderSpy, editorModuleLoaded, aiModuleLoaded, aiSettingsGate, aiSettingsMounts } = vi.hoisted(() => ({
   staticBuildSpy: vi.fn(),
   editorContextRefs: [] as unknown[],
   requestListRenderSpy: vi.fn(),
+  editorModuleLoaded: vi.fn(),
+  aiModuleLoaded: vi.fn(),
+  aiSettingsMounts: vi.fn(),
+  aiSettingsGate: (() => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => { resolve = done; });
+    return { promise, resolve };
+  })(),
 }));
 
 const connection = {
@@ -92,29 +100,54 @@ vi.mock("../../components/console/error-logs-panel", () => ({
   ErrorLogsPanel: () => <div>错误日志面板</div>,
 }));
 
-vi.mock("../../components/console/console-editor", () => ({
-  ConsoleEditor: ({ value, onChange, autocompleteContext, readOnly }: {
-    value: string;
-    onChange: (value: string) => void;
-    autocompleteContext: unknown;
-    readOnly?: boolean;
-  }) => {
-    if (!readOnly) editorContextRefs.push(autocompleteContext);
-    return (
-      <textarea
-        aria-label={readOnly ? "测试响应内容" : "测试请求内容"}
-        readOnly={readOnly}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    );
-  },
-}));
+vi.mock("../../components/console/console-editor", () => {
+  editorModuleLoaded();
+  return {
+    ConsoleEditor: ({ value, onChange, autocompleteContext, readOnly }: {
+      value: string;
+      onChange: (value: string) => void;
+      autocompleteContext: unknown;
+      readOnly?: boolean;
+    }) => {
+      if (!readOnly) editorContextRefs.push(autocompleteContext);
+      return (
+        <textarea
+          aria-label={readOnly ? "测试响应内容" : "测试请求内容"}
+          readOnly={readOnly}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      );
+    },
+  };
+});
+
+vi.mock("../../components/console/ai-settings-dialog", async () => {
+  await aiSettingsGate.promise;
+  const { useEffect } = await import("react");
+  aiModuleLoaded();
+  return {
+    AiSettingsDialog: ({ open }: { open: boolean }) => {
+      useEffect(() => { aiSettingsMounts(); }, []);
+      return open ? <div role="dialog">AI 设置已加载</div> : null;
+    },
+  };
+});
+vi.mock("../../components/console/ai-analysis-dialog", () => {
+  aiModuleLoaded();
+  return { AiAnalysisDialog: () => null };
+});
+vi.mock("../../components/console/ai-generate-dialog", () => {
+  aiModuleLoaded();
+  return { AiGenerateDialog: () => null };
+});
 
 import { useAppState } from "../../providers/app-state";
 import { ConsolePage } from "../console-page";
 
 const useAppStateMock = vi.mocked(useAppState);
+const initialEditorModuleLoadCount = editorModuleLoaded.mock.calls.length;
+const initialAiModuleLoadCount = aiModuleLoaded.mock.calls.length;
 
 function renderConsolePage(initialEntry: string) {
   const queryClient = new QueryClient({
@@ -210,13 +243,28 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useAppState>);
 });
 
+it("状态面板不加载编辑器，首次切入工作区只加载一次且切换后保留草稿", async () => {
+  renderConsolePage(CONSOLE_STATUS_PATH);
+  expect(await screen.findByText("服务器状态")).toBeInTheDocument();
+  expect(editorModuleLoaded).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "控制台" }));
+  const input = await screen.findByRole("textbox", { name: "测试请求内容" });
+  expect(editorModuleLoaded).toHaveBeenCalledTimes(1);
+  fireEvent.change(input, { target: { value: "GET /draft-check" } });
+  fireEvent.click(screen.getByRole("button", { name: "状态" }));
+  expect(await screen.findByText("服务器状态")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "控制台" }));
+  expect(await screen.findByRole("textbox", { name: "测试请求内容" })).toHaveValue("GET /draft-check");
+  expect(editorModuleLoaded).toHaveBeenCalledTimes(1);
+});
+
 describe("ConsolePage 补全上下文", () => {
-  it("正文输入不会重新渲染请求列表", () => {
+  it("正文输入不会重新渲染请求列表", async () => {
     renderConsolePage(CONSOLE_WORKSPACE_PATH);
+    const input = await screen.findByRole("textbox", { name: "测试请求内容" });
     const initialRenders = requestListRenderSpy.mock.calls.length;
     expect(initialRenders).toBeGreaterThan(0);
-
-    const input = screen.getByRole("textbox", { name: "测试请求内容" });
     for (let index = 0; index < 20; index++) {
       fireEvent.change(input, { target: { value: `POST /items/_search\n{"size":${index}}` } });
     }
@@ -224,7 +272,7 @@ describe("ConsolePage 补全上下文", () => {
     expect(requestListRenderSpy).toHaveBeenCalledTimes(initialRenders);
   });
 
-  it("正文连续编辑不重建静态元数据，连接与 metadata 更新时重建", () => {
+  it("正文连续编辑不重建静态元数据，连接与 metadata 更新时重建", async () => {
     const initialMetadata: ConnectionSearchMetadata = {
       connectionId: connection.id,
       indices: ["orders"],
@@ -248,7 +296,7 @@ describe("ConsolePage 补全上下文", () => {
       searchMetadataByConnection: { [connection.id]: initialMetadata },
     } as ReturnType<typeof useAppState>);
     const view = renderConsolePage(CONSOLE_WORKSPACE_PATH);
-    const input = screen.getByRole("textbox", { name: "测试请求内容" });
+    const input = await screen.findByRole("textbox", { name: "测试请求内容" });
 
     expect(staticBuildSpy).toHaveBeenCalledTimes(1);
     fireEvent.change(input, { target: { value: "POST /orders/_search\n{}" } });
@@ -286,6 +334,10 @@ describe("ConsolePage 补全上下文", () => {
 });
 
 describe("ConsolePage right pane", () => {
+  it("导入页面时不加载编辑器与 AI 弹窗模块", () => {
+    expect(initialEditorModuleLoadCount).toBe(0);
+    expect(initialAiModuleLoadCount).toBe(0);
+  });
   it("带 workspace=1 进入时即使已持久化状态面板也展示请求工作区", async () => {
     window.localStorage.setItem(CONSOLE_STATUS_VISIBLE_STORAGE_KEY, "true");
 
@@ -437,5 +489,20 @@ describe("ConsolePage right pane", () => {
     expect(screen.queryByText("服务器状态")).not.toBeInTheDocument();
     expect(duplicateRequest).toHaveBeenCalledWith(savedRequest.id, "健康检查 副本");
     expect(selectSavedRequest).toHaveBeenCalledWith(duplicatedRequest.id);
+  });
+
+  it("AI 设置加载期间关闭后遮罩消失，重新打开不重新挂载", async () => {
+    renderConsolePage(CONSOLE_WORKSPACE_PATH);
+    fireEvent.click(screen.getByRole("button", { name: "AI 分析设置" }));
+    const loading = screen.getByRole("status", { name: "正在加载 AI 设置" });
+
+    fireEvent.click(loading);
+    expect(screen.queryByRole("status", { name: "正在加载 AI 设置" })).not.toBeInTheDocument();
+
+    await act(async () => { aiSettingsGate.resolve(); await aiSettingsGate.promise; });
+    expect(screen.queryByText("AI 设置已加载")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "AI 分析设置" }));
+    expect(await screen.findByText("AI 设置已加载")).toBeInTheDocument();
+    expect(aiSettingsMounts).toHaveBeenCalledTimes(1);
   });
 });
