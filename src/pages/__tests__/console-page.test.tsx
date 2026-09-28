@@ -15,7 +15,12 @@ import {
 import { createDefaultDraft } from "../../lib/storage";
 import { DEFAULT_AI_ANALYSIS_SETTINGS } from "../../types/ai-settings";
 import type { ConnectionProfile } from "../../types/connections";
-import type { SavedRequest } from "../../types/requests";
+import type { ConnectionSearchMetadata, SavedRequest } from "../../types/requests";
+
+const { staticBuildSpy, editorContextRefs } = vi.hoisted(() => ({
+  staticBuildSpy: vi.fn(),
+  editorContextRefs: [] as unknown[],
+}));
 
 const connection = {
   id: "conn-1",
@@ -52,6 +57,17 @@ vi.mock("../../providers/app-state", () => ({
   useAppState: vi.fn(),
 }));
 
+vi.mock("../../lib/console-autocomplete", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/console-autocomplete")>();
+  return {
+    ...actual,
+    buildConsoleAutocompleteStaticContext: (...args: Parameters<typeof actual.buildConsoleAutocompleteStaticContext>) => {
+      staticBuildSpy();
+      return actual.buildConsoleAutocompleteStaticContext(...args);
+    },
+  };
+});
+
 vi.mock("../../components/console/status-panel", () => ({
   StatusPanel: () => <div>服务器状态</div>,
 }));
@@ -65,7 +81,22 @@ vi.mock("../../components/console/error-logs-panel", () => ({
 }));
 
 vi.mock("../../components/console/console-editor", () => ({
-  ConsoleEditor: () => <div data-testid="console-editor" />,
+  ConsoleEditor: ({ value, onChange, autocompleteContext, readOnly }: {
+    value: string;
+    onChange: (value: string) => void;
+    autocompleteContext: unknown;
+    readOnly?: boolean;
+  }) => {
+    if (!readOnly) editorContextRefs.push(autocompleteContext);
+    return (
+      <textarea
+        aria-label={readOnly ? "测试响应内容" : "测试请求内容"}
+        readOnly={readOnly}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  },
 }));
 
 import { useAppState } from "../../providers/app-state";
@@ -81,7 +112,7 @@ function renderConsolePage(initialEntry: string) {
     },
   });
 
-  return render(
+  const page = () => (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <Routes>
@@ -89,8 +120,10 @@ function renderConsolePage(initialEntry: string) {
           <Route path="/connections" element={<div>connections-page</div>} />
         </Routes>
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const result = render(page());
+  return { ...result, rerenderPage: () => result.rerender(page()) };
 }
 
 function createLocalStorageMock() {
@@ -110,6 +143,8 @@ function createLocalStorageMock() {
 }
 
 beforeEach(() => {
+  staticBuildSpy.mockClear();
+  editorContextRefs.length = 0;
   Object.defineProperty(window, "localStorage", {
     configurable: true,
     value: createLocalStorageMock(),
@@ -160,6 +195,68 @@ beforeEach(() => {
     recordAiAnalysisHistory: vi.fn(),
     clearAiAnalysisHistory: vi.fn(),
   } as unknown as ReturnType<typeof useAppState>);
+});
+
+describe("ConsolePage 补全上下文", () => {
+  it("正文连续编辑不重建静态元数据，连接与 metadata 更新时重建", () => {
+    const initialMetadata: ConnectionSearchMetadata = {
+      connectionId: connection.id,
+      indices: ["orders"],
+      aliases: [],
+      fields: ["price"],
+      fieldsByIndex: { orders: ["price"] },
+      aliasToIndices: {},
+      cluster: {
+        product: "unknown",
+        version: { number: null, major: null, minor: null },
+        distribution: null,
+        buildFlavor: null,
+        license: { type: null, status: null, source: "unknown" },
+      },
+      fetchedAt: "2026-09-28T00:00:00.000Z",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+    const initialState = useAppStateMock();
+    useAppStateMock.mockReturnValue({
+      ...initialState,
+      searchMetadataByConnection: { [connection.id]: initialMetadata },
+    } as ReturnType<typeof useAppState>);
+    const view = renderConsolePage(CONSOLE_WORKSPACE_PATH);
+    const input = screen.getByRole("textbox", { name: "测试请求内容" });
+
+    expect(staticBuildSpy).toHaveBeenCalledTimes(1);
+    fireEvent.change(input, { target: { value: "POST /orders/_search\n{}" } });
+    const firstContext = editorContextRefs[editorContextRefs.length - 1];
+    for (let i = 0; i < 100; i += 1) {
+      fireEvent.change(input, { target: { value: `POST /orders/_search\n${"x".repeat(i + 1)}` } });
+    }
+    expect(staticBuildSpy).toHaveBeenCalledTimes(1);
+    expect(editorContextRefs[editorContextRefs.length - 1]).toBe(firstContext);
+
+    const otherConnection = { ...connection, id: "conn-2", name: "另一集群" };
+    useAppStateMock.mockReturnValue({
+      ...initialState,
+      currentConnection: otherConnection,
+      currentDraft: createDefaultDraft(otherConnection.id),
+      connections: [connection, otherConnection],
+      requestsForCurrentConnection: [],
+      searchMetadataByConnection: { [connection.id]: initialMetadata },
+    } as ReturnType<typeof useAppState>);
+    view.rerenderPage();
+    expect(staticBuildSpy).toHaveBeenCalledTimes(2);
+
+    const replacementMetadata = { ...initialMetadata, connectionId: otherConnection.id, fields: ["new.field"] };
+    useAppStateMock.mockReturnValue({
+      ...initialState,
+      currentConnection: otherConnection,
+      currentDraft: createDefaultDraft(otherConnection.id),
+      connections: [connection, otherConnection],
+      requestsForCurrentConnection: [],
+      searchMetadataByConnection: { [otherConnection.id]: replacementMetadata },
+    } as ReturnType<typeof useAppState>);
+    view.rerenderPage();
+    expect(staticBuildSpy).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe("ConsolePage right pane", () => {

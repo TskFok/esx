@@ -38,8 +38,17 @@ import {
   type BodyCompletionKind,
 } from "./body-context";
 
-export { buildConsoleAutocompleteContext, extractIndexNamesFromPath } from "./context";
-export type { ConsoleAutocompleteContext } from "./context";
+export {
+  buildConsoleAutocompleteContext,
+  buildConsoleAutocompleteContextForRequest,
+  buildConsoleAutocompleteStaticContext,
+  extractIndexNamesFromPath,
+} from "./context";
+export type {
+  ConsoleAutocompleteContext,
+  ConsoleAutocompleteStaticContext,
+  SearchMetadataInput,
+} from "./context";
 export { validateConsoleContent } from "./validator";
 export type { ConsoleBodyDiagnostic } from "./validator";
 export { analyzeBodyCompletion } from "./body-context";

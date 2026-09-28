@@ -48,22 +48,30 @@ export function extractIndexNamesFromPath(path: string) {
     );
 }
 
-type SearchMetadataInput = Partial<ConnectionSearchMetadata> & {
+export type SearchMetadataInput = Partial<ConnectionSearchMetadata> & {
   fields?: string[];
   fieldsByIndex?: Record<string, string[]>;
   aliasToIndices?: Record<string, string[]>;
 };
 
+export type ConsoleAutocompleteStaticContext = Pick<
+  ConsoleAutocompleteContext,
+  "indexNames" | "aliasNames" | "fieldNamesByTarget" | "cluster"
+> & {
+  savedHistoryTargetNames: string[];
+  metadata: SearchMetadataInput | null;
+};
+
 function resolveFieldNames(
   currentTargets: string[],
-  metadata: SearchMetadataInput | null | undefined,
+  stable: ConsoleAutocompleteStaticContext,
 ): string[] {
-  const allFields = metadata?.fields ?? [];
-  const fieldsByIndex = metadata?.fieldsByIndex ?? {};
-  const aliasToIndices = metadata?.aliasToIndices ?? {};
+  const allFields = stable.metadata?.fields ?? [];
+  const fieldsByIndex = stable.metadata?.fieldsByIndex ?? {};
+  const aliasToIndices = stable.metadata?.aliasToIndices ?? {};
 
-  if (currentTargets.length === 0 || Object.keys(fieldsByIndex).length === 0) {
-    return uniqueSorted(allFields);
+  if (currentTargets.length === 0) {
+    return allFields;
   }
 
   const resolved = new Set<string>();
@@ -72,7 +80,7 @@ function resolveFieldNames(
     const direct = fieldsByIndex[name];
     if (direct && direct.length > 0) {
       matchedAny = true;
-      direct.forEach((item) => resolved.add(item));
+      stable.fieldNamesByTarget[name]?.forEach((item) => resolved.add(item));
       return;
     }
 
@@ -82,14 +90,14 @@ function resolveFieldNames(
         const list = fieldsByIndex[indexName];
         if (list && list.length > 0) {
           matchedAny = true;
-          list.forEach((item) => resolved.add(item));
+          stable.fieldNamesByTarget[indexName]?.forEach((item) => resolved.add(item));
         }
       });
     }
   });
 
   if (!matchedAny) {
-    return uniqueSorted(allFields);
+    return allFields;
   }
 
   return uniqueSorted([...resolved]);
@@ -148,32 +156,60 @@ export function resolveFieldNamesForTargets(
   );
 }
 
+export function buildConsoleAutocompleteStaticContext(
+  requests: SavedRequest[],
+  metadata?: SearchMetadataInput | null,
+): ConsoleAutocompleteStaticContext {
+  const indexNames = uniqueSorted([...(metadata?.indices ?? [])]);
+  const aliasNames = uniqueSorted([...(metadata?.aliases ?? [])]);
+  const fieldNamesByTarget = buildFieldNamesByTarget(metadata);
+  const cluster = normalizeClusterMetadata(metadata?.cluster);
+  const knownTargets = new Set([...indexNames, ...aliasNames]);
+  const savedHistoryTargetNames = uniqueSorted(
+    requests.flatMap((request) => extractIndexNamesFromPath(request.path))
+      .filter((item) => !knownTargets.has(item)),
+  );
+
+  return {
+    indexNames,
+    aliasNames,
+    fieldNamesByTarget,
+    cluster,
+    savedHistoryTargetNames,
+    metadata: metadata ? { ...metadata, fields: uniqueSorted(metadata.fields ?? []) } : null,
+  };
+}
+
+export function buildConsoleAutocompleteContextForRequest(
+  stable: ConsoleAutocompleteStaticContext,
+  firstLine: string,
+): ConsoleAutocompleteContext {
+  const request = parseConsoleRequestContext(firstLine);
+  const currentTargets = extractIndexNamesFromPath(request.path);
+  const historyTargetNames = uniqueSorted([
+    ...stable.savedHistoryTargetNames,
+    ...currentTargets.filter((item) =>
+      !stable.indexNames.includes(item) && !stable.aliasNames.includes(item)),
+  ]);
+
+  return {
+    indexNames: stable.indexNames,
+    aliasNames: stable.aliasNames,
+    fieldNames: resolveFieldNames(currentTargets, stable),
+    fieldNamesByTarget: stable.fieldNamesByTarget,
+    cluster: stable.cluster,
+    request,
+    historyTargetNames,
+  };
+}
+
 export function buildConsoleAutocompleteContext(
   requests: SavedRequest[],
   currentContent = "",
   metadata?: SearchMetadataInput | null,
 ): ConsoleAutocompleteContext {
-  const request = parseConsoleRequestContext(currentContent);
-  const currentTargets = extractIndexNamesFromPath(request.path);
-  const historyTargetNames = uniqueSorted([
-    ...requests.flatMap((request) => extractIndexNamesFromPath(request.path)),
-    ...currentTargets,
-  ]);
-  const indexNames = uniqueSorted([...(metadata?.indices ?? [])]);
-  const aliasNames = uniqueSorted([...(metadata?.aliases ?? [])]);
-  const fieldNames = resolveFieldNames(currentTargets, metadata);
-  const fieldNamesByTarget = buildFieldNamesByTarget(metadata);
-  const cluster = normalizeClusterMetadata(metadata?.cluster);
-
-  return {
-    indexNames,
-    aliasNames,
-    fieldNames,
-    fieldNamesByTarget,
-    cluster,
-    request,
-    historyTargetNames: historyTargetNames.filter(
-      (item) => !indexNames.includes(item) && !aliasNames.includes(item),
-    ),
-  };
+  return buildConsoleAutocompleteContextForRequest(
+    buildConsoleAutocompleteStaticContext(requests, metadata),
+    currentContent,
+  );
 }

@@ -32,7 +32,11 @@ import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Dialog } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
-import { buildConsoleAutocompleteContext, extractIndexNamesFromPath } from "../lib/console-autocomplete";
+import {
+  buildConsoleAutocompleteContextForRequest,
+  buildConsoleAutocompleteStaticContext,
+  extractIndexNamesFromPath,
+} from "../lib/console-autocomplete";
 import {
   isConsoleAiAnalysisShortcut,
   isConsoleShortcutsHelpShortcut,
@@ -808,9 +812,14 @@ export function ConsolePage() {
 
   useEffect(() => () => flushEditorContentRef.current(), []);
 
+  const autocompleteStaticContext = useMemo(
+    () => buildConsoleAutocompleteStaticContext(requestsForCurrentConnection, connectionSearchMetadata),
+    [requestsForCurrentConnection, connectionSearchMetadata],
+  );
+  const requestFirstLine = editorContent.split(/\r?\n/, 1)[0]?.trim() ?? "";
   const autocompleteContext = useMemo(
-    () => buildConsoleAutocompleteContext(requestsForCurrentConnection, editorContent, connectionSearchMetadata),
-    [requestsForCurrentConnection, editorContent, connectionSearchMetadata],
+    () => buildConsoleAutocompleteContextForRequest(autocompleteStaticContext, requestFirstLine),
+    [autocompleteStaticContext, requestFirstLine],
   );
 
   async function runGeneration(description: string) {
@@ -922,13 +931,12 @@ export function ConsolePage() {
   }, [activeConnection, connectionSearchMetadata?.fetchedAt, selectedConnection.id]);
 
   const currentPathIndexNamesKey = useMemo(() => {
-    const firstLine = editorContent.split(/\r?\n/, 1)[0]?.trim() ?? "";
-    if (!firstLine) {
+    if (!requestFirstLine) {
       return "";
     }
-    const [, ...pathParts] = firstLine.split(/\s+/);
+    const [, ...pathParts] = requestFirstLine.split(/\s+/);
     return extractIndexNamesFromPath(pathParts.join(" ").trim()).join(",");
-  }, [editorContent]);
+  }, [requestFirstLine]);
   const currentPathIndexNames = useMemo(
     () => (currentPathIndexNamesKey ? currentPathIndexNamesKey.split(",") : []),
     [currentPathIndexNamesKey],
