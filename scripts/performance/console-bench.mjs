@@ -110,6 +110,14 @@ for (const [count, fieldsPerIndex] of [[100, 50], [1000, 50], [1000, 200]]) {
     () => buildConsoleAutocompleteStaticContext(requests, metadata).fieldNamesByTarget["index-0"].length));
   results.push(measure(`context request line: ${suffix}`,
     () => buildConsoleAutocompleteContextForRequest(stable, "POST /index-0/_search").fieldNames.length));
+  if (count === 1000 && fieldsPerIndex === 200) {
+    for (const targetCount of [10, 100]) {
+      const targets = Array.from({ length: targetCount }, (_, index) => `index-${index}`).join(",");
+      const firstLine = `POST /${targets}/_search`;
+      results.push(measure(`context request line: ${targetCount} concrete targets, ${suffix}`,
+        () => buildConsoleAutocompleteContextForRequest(stable, firstLine).fieldNames.length));
+    }
+  }
 }
 
 function validContent(kib) {

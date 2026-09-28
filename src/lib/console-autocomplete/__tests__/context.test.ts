@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildConsoleAutocompleteContext,
   buildConsoleAutocompleteContextForRequest,
@@ -251,8 +251,11 @@ describe("静态补全上下文", () => {
     expect(ordersWithBody.fieldNamesByTarget).toBe(stable.fieldNamesByTarget);
     expect(users.fieldNamesByTarget).toBe(stable.fieldNamesByTarget);
     expect(orders.fieldNames).toEqual(["price", "shared"]);
+    expect(orders.fieldNames).toBe(stable.fieldNamesByTarget.orders);
+    expect(ordersWithBody.fieldNames).toBe(stable.fieldNamesByTarget.orders);
     expect(ordersWithBody.fieldNames).toEqual(["price", "shared"]);
     expect(users.fieldNames).toEqual(["shared", "user.name"]);
+    expect(users.fieldNames).toBe(stable.fieldNamesByTarget.users);
   });
 
   it("保存历史仅含已保存目标，当前目标在动态阶段加入", () => {
@@ -281,6 +284,47 @@ describe("静态补全上下文", () => {
       .toEqual(["price", "shared", "user.name"]);
     expect(buildConsoleAutocompleteContextForRequest(stable, "POST /orders-*/_search").historyTargetNames)
       .toEqual([]);
+  });
+
+  it("单一 alias 复用预排序字段，多目标归并保持顺序去重且动态阶段不排序", () => {
+    const stable = buildConsoleAutocompleteStaticContext([], metadata);
+    const alias = buildConsoleAutocompleteContextForRequest(stable, "POST /all-data/_search");
+    expect(alias.fieldNames).toBe(stable.fieldNamesByTarget["all-data"]);
+
+    const sortSpy = vi.spyOn(Array.prototype, "sort");
+    try {
+      const mixed = buildConsoleAutocompleteContextForRequest(
+        stable,
+        "POST /users,orders,orders,missing/_search",
+      );
+      expect(mixed.fieldNames).toEqual(["price", "shared", "user.name"]);
+      expect(sortSpy).not.toHaveBeenCalled();
+    } finally {
+      sortSpy.mockRestore();
+    }
+  });
+
+  it("动态历史目标判断不线性扫描索引或 alias 名称", () => {
+    const stable = buildConsoleAutocompleteStaticContext([], metadata);
+    const indexIncludes = vi.spyOn(stable.indexNames, "includes");
+    const aliasIncludes = vi.spyOn(stable.aliasNames, "includes");
+
+    const context = buildConsoleAutocompleteContextForRequest(stable, "POST /draft,orders,all-data/_search");
+    expect(context.historyTargetNames).toEqual(["draft"]);
+    expect(indexIncludes).not.toHaveBeenCalled();
+    expect(aliasIncludes).not.toHaveBeenCalled();
+  });
+
+  it("排序规则视为相等但字符串不同的目标仍保留历史候选", () => {
+    const stable = buildConsoleAutocompleteStaticContext([], {
+      indices: ["café"],
+      aliases: ["résumé"],
+    });
+    const context = buildConsoleAutocompleteContextForRequest(
+      stable,
+      "POST /cafe\u0301,re\u0301sume\u0301/_search",
+    );
+    expect(context.historyTargetNames).toEqual(["cafe\u0301", "re\u0301sume\u0301"]);
   });
 
   it("新连接和新 metadata 构建独立对象且不修改旧对象", () => {
