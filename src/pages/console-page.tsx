@@ -316,6 +316,8 @@ export function ConsolePage() {
     searchMetadataByConnection,
     responsePreviewBytes,
     updateDraft,
+    registerPendingDraftFlush,
+    flushAppState,
     setResponsePreviewBytes,
     selectSavedRequest,
     saveRequestFromDraft,
@@ -709,16 +711,18 @@ export function ConsolePage() {
       }
       return lastResponse;
     },
-    onSuccess(response, payload) {
+    async onSuccess(response, payload) {
       let saveErrorMessage: string | null = null;
 
       try {
-        saveRequestFromDraft({
-          connectionId: payload.connection.id,
-          name: payload.requestName,
-          content: payload.content,
-          response,
-          overwriteRequestId: payload.overwriteRequestId,
+        await flushAppState(() => {
+          saveRequestFromDraft({
+            connectionId: payload.connection.id,
+            name: payload.requestName,
+            content: payload.content,
+            response,
+            overwriteRequestId: payload.overwriteRequestId,
+          });
         });
       } catch (error) {
         saveErrorMessage = error instanceof Error ? error.message : "保存失败";
@@ -800,6 +804,11 @@ export function ConsolePage() {
     setResponsePreviewInputKb(String(Math.round(responsePreviewBytes / 1024)));
   }, [responsePreviewBytes]);
   const [editorContent, setEditorContent] = useState(activeDraftState.content);
+  const [draftName, setDraftName] = useState(activeDraftState.name);
+  const draftNameRef = useRef(activeDraftState.name);
+  const latestDraftNameRef = useRef(activeDraftState.name);
+  const lastFlushedNameRef = useRef(activeDraftState.name);
+  const draftNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorContentRef = useRef(activeDraftState.content);
   const latestDraftContentRef = useRef(activeDraftState.content);
   const lastFlushedContentRef = useRef(activeDraftState.content);
@@ -816,6 +825,30 @@ export function ConsolePage() {
     clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = null;
   }, []);
+
+  const clearDraftNameTimer = useCallback(() => {
+    if (draftNameTimerRef.current !== null) {
+      clearTimeout(draftNameTimerRef.current);
+      draftNameTimerRef.current = null;
+    }
+  }, []);
+
+  const flushDraftName = useCallback(() => {
+    if (!activeConnection) return;
+    clearDraftNameTimer();
+    const nextName = draftNameRef.current;
+    if (nextName === latestDraftNameRef.current) return;
+    lastFlushedNameRef.current = nextName;
+    latestDraftNameRef.current = nextName;
+    updateDraft(selectedConnection.id, (currentDraftState) => ({ ...currentDraftState, name: nextName }));
+  }, [activeConnection, clearDraftNameTimer, selectedConnection.id, updateDraft]);
+
+  const updateDraftName = useCallback((value: string) => {
+    draftNameRef.current = value;
+    setDraftName(value);
+    clearDraftNameTimer();
+    draftNameTimerRef.current = setTimeout(flushDraftName, 300);
+  }, [clearDraftNameTimer, flushDraftName]);
 
   const flushEditorContent = useCallback(() => {
     if (!activeConnection) {
@@ -847,10 +880,17 @@ export function ConsolePage() {
     [clearDraftSaveTimer, flushEditorContent],
   );
   const flushEditorContentRef = useRef(flushEditorContent);
+  const flushDraftNameRef = useRef(flushDraftName);
 
   useEffect(() => {
     flushEditorContentRef.current = flushEditorContent;
-  }, [flushEditorContent]);
+    flushDraftNameRef.current = flushDraftName;
+  }, [flushDraftName, flushEditorContent]);
+
+  useEffect(() => registerPendingDraftFlush(() => {
+    flushEditorContentRef.current();
+    flushDraftNameRef.current();
+  }), [registerPendingDraftFlush]);
 
   useEffect(() => {
     latestDraftContentRef.current = activeDraftState.content;
@@ -859,12 +899,25 @@ export function ConsolePage() {
   useEffect(() => {
     if (lastDraftKeyRef.current !== draftKey) {
       clearDraftSaveTimer();
+      clearDraftNameTimer();
       lastDraftKeyRef.current = draftKey;
+      lastFlushedNameRef.current = activeDraftState.name;
+      latestDraftNameRef.current = activeDraftState.name;
+      draftNameRef.current = activeDraftState.name;
+      setDraftName(activeDraftState.name);
       lastFlushedContentRef.current = activeDraftState.content;
       latestDraftContentRef.current = activeDraftState.content;
       editorContentRef.current = activeDraftState.content;
       setEditorContent(activeDraftState.content);
       return;
+    }
+
+    latestDraftNameRef.current = activeDraftState.name;
+    if (activeDraftState.name !== lastFlushedNameRef.current && activeDraftState.name !== draftNameRef.current) {
+      clearDraftNameTimer();
+      lastFlushedNameRef.current = activeDraftState.name;
+      draftNameRef.current = activeDraftState.name;
+      setDraftName(activeDraftState.name);
     }
 
     if (
@@ -877,9 +930,12 @@ export function ConsolePage() {
       editorContentRef.current = activeDraftState.content;
       setEditorContent(activeDraftState.content);
     }
-  }, [activeDraftState.content, clearDraftSaveTimer, draftKey]);
+  }, [activeDraftState.content, activeDraftState.name, clearDraftNameTimer, clearDraftSaveTimer, draftKey]);
 
-  useEffect(() => () => flushEditorContentRef.current(), []);
+  useEffect(() => () => {
+    flushEditorContentRef.current();
+    flushDraftNameRef.current();
+  }, []);
 
   const autocompleteStaticContext = useMemo(
     () => buildConsoleAutocompleteStaticContext(requestsForCurrentConnection, connectionSearchMetadata),
@@ -1191,6 +1247,7 @@ export function ConsolePage() {
 
     const content = editorContentRef.current;
     flushEditorContent();
+    flushDraftName();
     const searchSizeWarning = getSearchSizeWarning(content);
     if (searchSizeWarning) {
       toast.warning(searchSizeWarning.message);
@@ -1200,26 +1257,33 @@ export function ConsolePage() {
       connection: selectedConnection,
       content,
       overwriteRequestId: activeDraftState.activeSavedRequestId,
-      requestName: resolveDraftRequestName(activeDraftState.name, activeRequest?.name, content),
+      requestName: resolveDraftRequestName(draftNameRef.current, activeRequest?.name, content),
     });
   }
 
-  function handleCreateRequest() {
-    flushEditorContent();
-    const request = saveRequestFromDraft({
-      connectionId: selectedConnection.id,
-      name: buildUntitledRequestName(requestsForCurrentConnection.map((item) => item.name)),
-      content: "GET /_cluster/health",
-      response: null,
-    });
-
-    selectSavedRequest(request.id);
-    applyRightPaneMode("workspace");
-    toast.success("已新建请求。");
+  async function handleCreateRequest() {
+    try {
+      flushEditorContent();
+      flushDraftName();
+      await flushAppState(() => {
+        const request = saveRequestFromDraft({
+          connectionId: selectedConnection.id,
+          name: buildUntitledRequestName(requestsForCurrentConnection.map((item) => item.name)),
+          content: "GET /_cluster/health",
+          response: null,
+        });
+        selectSavedRequest(request.id);
+      });
+      applyRightPaneMode("workspace");
+      toast.success("已新建请求。");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存请求失败");
+    }
   }
 
   function handleSelectSavedRequest(requestId: string) {
     flushEditorContent();
+    flushDraftName();
     selectSavedRequest(requestId);
     applyRightPaneMode("workspace");
   }
@@ -1227,6 +1291,7 @@ export function ConsolePage() {
   function handleDuplicateRequest(requestId: string, requestNameValue: string) {
     try {
       flushEditorContent();
+      flushDraftName();
       const duplicated = duplicateRequest(
         requestId,
         buildDuplicateRequestName(
@@ -1249,15 +1314,22 @@ export function ConsolePage() {
     setRequestDialogOpen(true);
   }
 
-  function submitRequestDialog() {
+  async function submitRequestDialog() {
     if (!editingRequest) {
       return;
     }
 
-    updateRequest(editingRequest.id, {
-      name: requestName,
-      tags: parseTagsInput(requestTagsInput),
-    });
+    try {
+      await flushAppState(() => {
+        updateRequest(editingRequest.id, {
+          name: requestName,
+          tags: parseTagsInput(requestTagsInput),
+        });
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存请求失败");
+      return;
+    }
     setRequestDialogOpen(false);
     setEditingRequest(null);
     setRequestName("");
@@ -1477,6 +1549,7 @@ export function ConsolePage() {
 
     if (segment.kind === "request" && segment.requestId) {
       flushEditorContent();
+      flushDraftName();
       selectSavedRequest(segment.requestId);
       if (!isLgSplit) {
         setMobileDrawerOpen(false);
@@ -1508,7 +1581,7 @@ export function ConsolePage() {
   const breadcrumbSegments = buildConsoleContextBreadcrumbSegments({
     connectionName: selectedConnection.name,
     savedRequest: activeRequest,
-    draftName: activeDraftState.name,
+    draftName,
   });
 
   const showDockedSidebar = sidebarVisible && isLgSplit;
@@ -1619,15 +1692,10 @@ export function ConsolePage() {
               workspace={
                 <>
             <ConsoleRequestToolbar
-              requestName={activeDraftState.name}
+              requestName={draftName}
               isAnalyzing={isAnalyzing}
               isGenerating={isGenerating}
-              onRequestNameChange={(value) =>
-                updateDraft(selectedConnection.id, (currentDraftState) => ({
-                  ...currentDraftState,
-                  name: value,
-                }))
-              }
+              onRequestNameChange={updateDraftName}
               onRunAndSave={handleRunAndSave}
               onFormatJson={handleFormatJson}
               onAnalyze={handleAnalyzeRequest}

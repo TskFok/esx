@@ -211,6 +211,8 @@ beforeEach(() => {
     searchMetadataByConnection: {},
     responsePreviewBytes: 256 * 1024,
     updateDraft: vi.fn(),
+    registerPendingDraftFlush: vi.fn(() => vi.fn()),
+    flushAppState: vi.fn(async (commit?: () => void) => { commit?.(); }),
     setResponsePreviewBytes: vi.fn(),
     selectSavedRequest: vi.fn(),
     saveRequestFromDraft: vi.fn(),
@@ -235,6 +237,33 @@ beforeEach(() => {
     recordAiAnalysisHistory: vi.fn(),
     clearAiAnalysisHistory: vi.fn(),
   } as unknown as ReturnType<typeof useAppState>);
+});
+
+it("关闭前注册的回调提交正文和请求名最后输入", async () => {
+  const state = useAppStateMock();
+  renderConsolePage(CONSOLE_WORKSPACE_PATH);
+  const content = await screen.findByRole("textbox", { name: "测试请求内容" });
+  const name = screen.getByPlaceholderText(/请求名称（为空时/);
+  fireEvent.change(content, { target: { value: "GET /final" } });
+  fireEvent.change(name, { target: { value: "最后一字" } });
+  const register = vi.mocked(state.registerPendingDraftFlush);
+  expect(register).toHaveBeenCalled();
+  act(() => register.mock.calls[register.mock.calls.length - 1]![0]());
+  const updates = vi.mocked(state.updateDraft).mock.calls.map(([, updater]) => updater(createDefaultDraft(connection.id)));
+  expect(updates).toEqual(expect.arrayContaining([
+    expect.objectContaining({ content: "GET /final" }),
+    expect.objectContaining({ name: "最后一字" }),
+  ]));
+});
+
+it("切换已保存请求前提交尚未到期的请求名", async () => {
+  const state = useAppStateMock();
+  renderConsolePage(CONSOLE_WORKSPACE_PATH);
+  await screen.findByRole("textbox", { name: "测试请求内容" });
+  fireEvent.change(screen.getByPlaceholderText(/请求名称（为空时/), { target: { value: "草稿名末字" } });
+  fireEvent.click(screen.getByText("健康检查"));
+  const updates = vi.mocked(state.updateDraft).mock.calls.map(([, updater]) => updater(createDefaultDraft(connection.id)));
+  expect(updates).toEqual(expect.arrayContaining([expect.objectContaining({ name: "草稿名末字" })]));
 });
 
 it("状态面板不额外加载编辑器，切换工作区后保留草稿", async () => {
@@ -427,10 +456,12 @@ describe("ConsolePage right pane", () => {
     } satisfies SavedRequest;
     const selectSavedRequest = vi.fn();
     const saveRequestFromDraft = vi.fn().mockReturnValue(createdRequest);
+    const flushAppState = vi.fn(async (commit?: () => void) => { commit?.(); });
     useAppStateMock.mockReturnValue({
       ...useAppStateMock(),
       selectSavedRequest,
       saveRequestFromDraft,
+      flushAppState,
     } as unknown as ReturnType<typeof useAppState>);
 
     renderConsolePage(CONSOLE_STATUS_PATH);
@@ -448,6 +479,7 @@ describe("ConsolePage right pane", () => {
     expect(screen.getByText("请求内容")).toBeInTheDocument();
     expect(screen.queryByText("服务器状态")).not.toBeInTheDocument();
     expect(saveRequestFromDraft).toHaveBeenCalledOnce();
+    await waitFor(() => expect(flushAppState).toHaveBeenCalledOnce());
     expect(selectSavedRequest).toHaveBeenCalledWith(createdRequest.id);
   });
 

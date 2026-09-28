@@ -1,14 +1,20 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type PropsWithChildren,
 } from "react";
+import { flushSync } from "react-dom";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
 import { buildConsoleContent, parseConsoleRequest } from "../lib/console-parser";
+import { createPersistQueue } from "../lib/persist-queue";
 import { fetchConnectionSearchMetadata, fetchIndexMappingFields } from "../lib/http-client";
 import {
   createDefaultDraft,
@@ -115,6 +121,8 @@ type SaveRequestPayload = {
 
 type AppStateContextValue = {
   ready: boolean;
+  registerPendingDraftFlush: (flush: () => void) => () => void;
+  flushAppState: (commit?: () => void) => Promise<void>;
   connections: ConnectionProfile[];
   sshProfiles: SshProfile[];
   searchMetadataByConnection: Record<string, ConnectionSearchMetadata>;
@@ -535,11 +543,39 @@ function isSearchMetadataExpired(cache: ConnectionSearchMetadata | null | undefi
 
 export function AppStateProvider({ children }: PropsWithChildren) {
   const [ready, setReady] = useState(false);
+  const [storageLoaded, setStorageLoaded] = useState(false);
   const [state, setState] = useState<AppStateShape>(createEmptyStorage());
   const [aiApiKeyConfigured, setAiApiKeyConfigured] = useState(false);
   const aiKeyScope = useRef<string | null>(null);
   const aiSettingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const indexFieldFetchInFlight = useRef(new Map<string, Promise<string[] | null>>());
+  const pendingDraftFlushes = useRef(new Set<() => void>());
+  const closing = useRef(false);
+  const persistQueue = useRef(createPersistQueue<AppStateShape>({
+    write: async (value) => {
+      try {
+        await writeAppStorage(value);
+      } catch (error) {
+        console.error(error);
+        toast.error("本地数据保存失败。");
+        throw error;
+      }
+    },
+    merge: (_pending, newer) => newer,
+  }));
+
+  const registerPendingDraftFlush = useCallback((flush: () => void) => {
+    pendingDraftFlushes.current.add(flush);
+    return () => { pendingDraftFlushes.current.delete(flush); };
+  }, []);
+
+  const flushAppState = useCallback(async (commit?: () => void) => {
+    flushSync(() => {
+      for (const flush of pendingDraftFlushes.current) flush();
+      commit?.();
+    });
+    await persistQueue.current.flush();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -552,6 +588,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
 
         const normalized = normalizeState(loaded);
         setState(normalized);
+        setStorageLoaded(true);
         try {
           const vaultStatus = await loadSecretsVault(
             buildSecretsMigrationHint({
@@ -584,16 +621,32 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!ready) {
-      return;
-    }
+  useLayoutEffect(() => {
+    if (storageLoaded) persistQueue.current.schedule(state);
+  }, [storageLoaded, state]);
 
-    writeAppStorage(state).catch((error) => {
-      console.error(error);
-      toast.error("本地数据保存失败。");
-    });
-  }, [ready, state]);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    let active = true;
+    void getCurrentWindow().onCloseRequested(async (event) => {
+      event.preventDefault();
+      if (closing.current) return;
+      closing.current = true;
+      try {
+        await flushAppState();
+        await getCurrentWindow().destroy();
+      } catch (error) {
+        console.error(error);
+        toast.error("关闭前保存失败，请重试关闭窗口。");
+        closing.current = false;
+      }
+    }).then((stop) => {
+      if (active) unlisten = stop;
+      else stop();
+    }).catch((error) => console.error(error));
+    return () => { active = false; unlisten?.(); };
+  }, [flushAppState]);
 
   const currentConnection = useMemo(
     () => state.connections.find((item) => item.id === state.currentConnectionId) ?? null,
@@ -638,6 +691,8 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const value = useMemo<AppStateContextValue>(
     () => ({
       ready,
+      registerPendingDraftFlush,
+      flushAppState,
       connections: state.connections,
       sshProfiles: state.sshProfiles,
       searchMetadataByConnection: state.searchMetadata,
@@ -1337,7 +1392,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
         };
       },
     }),
-    [aiApiKeyConfigured, currentConnection, currentDraft, ready, requestsForCurrentConnection, state],
+    [aiApiKeyConfigured, currentConnection, currentDraft, flushAppState, ready, registerPendingDraftFlush, requestsForCurrentConnection, state],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
