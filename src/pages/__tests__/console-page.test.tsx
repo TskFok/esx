@@ -61,9 +61,10 @@ const savedRequest = {
   updatedAt: "2026-09-01T00:00:00.000Z",
 } satisfies SavedRequest;
 
-vi.mock("../../providers/app-state", () => ({
-  useAppState: vi.fn(),
-}));
+vi.mock("../../providers/app-state", () => {
+  const useAppState = vi.fn();
+  return { useAppState, useAppStateField: (key: string) => useAppState()[key], useAppActions: () => useAppState() };
+});
 
 vi.mock("../../lib/console-autocomplete", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/console-autocomplete")>();
@@ -224,6 +225,7 @@ beforeEach(() => {
     importConnectionRequests: vi.fn(),
     refreshSearchMetadata: vi.fn().mockResolvedValue(undefined),
     ensureIndexFields: vi.fn().mockResolvedValue(undefined),
+    ensureTargetFields: vi.fn().mockResolvedValue(undefined),
     getPassword: vi.fn().mockResolvedValue(null),
     getSshSecret: vi.fn().mockResolvedValue(null),
     getSshProfileForConnection: vi.fn(() => null),
@@ -533,4 +535,25 @@ describe("ConsolePage right pane", () => {
     expect(await screen.findByText("AI 设置已加载")).toBeInTheDocument();
     expect(aiSettingsMounts).toHaveBeenCalledTimes(1);
   });
+});
+
+it("将请求路径的多个目标一次交给批量字段入口，并展示截断提示", async () => {
+  const initial = useAppStateMock();
+  const ensureTargetFields = vi.fn().mockResolvedValue(["buyer", "price"]);
+  useAppStateMock.mockReturnValue({
+    ...initial,
+    currentDraft: { ...createDefaultDraft(connection.id), content: "GET /orders,sales/_search" },
+    ensureTargetFields,
+    searchMetadataByConnection: { [connection.id]: {
+      connectionId: connection.id, connectionUpdatedAt: connection.updatedAt,
+      indices: ["orders"], aliases: ["sales"], fields: ["buyer"], fieldsByIndex: { orders: ["buyer"] },
+      aliasToIndices: { sales: ["orders"] }, fieldsTruncatedByIndex: { orders: true },
+      fieldsFetchedAtByIndex: {}, fetchedAt: "2026-01-01T00:00:00.000Z", expiresAt: "2099-01-01T00:00:00.000Z",
+      cluster: { product: "unknown", version: { number: null, major: null, minor: null }, distribution: null, buildFlavor: null, license: { type: null, status: null, source: "unknown" } },
+    } },
+  });
+  renderConsolePage(CONSOLE_WORKSPACE_PATH);
+  await waitFor(() => expect(ensureTargetFields).toHaveBeenCalledWith(connection, ["orders", "sales"]));
+  expect(ensureTargetFields).toHaveBeenCalledOnce();
+  expect(screen.getByText(/字段候选不完整/)).toBeVisible();
 });

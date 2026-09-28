@@ -1008,30 +1008,6 @@ export async function fetchConnectionSearchMetadata(
     }
   }
 
-  const mappingAttempt = await runSearchMetadataProbe(
-    connection,
-    credentials,
-    {
-      path: "/_mapping?expand_wildcards=open",
-      label: "字段映射",
-    },
-    sshTunnelOverride,
-  );
-  attempts.push(mappingAttempt);
-  if (mappingAttempt.snapshot.ok) {
-    successfulProbeCount += 1;
-    const parsedMapping = parseMappingFields(mappingAttempt.bodyText);
-    parsedMapping.fields.forEach((item) => fields.add(item));
-    Object.entries(parsedMapping.fieldsByIndex).forEach(([indexName, list]) => {
-      if (list.length === 0) {
-        return;
-      }
-      const merged = new Set<string>(fieldsByIndex[indexName] ?? []);
-      list.forEach((item) => merged.add(item));
-      fieldsByIndex[indexName] = [...merged].sort((left, right) => left.localeCompare(right, "zh-CN"));
-    });
-  }
-
   if (successfulProbeCount === 0) {
     throw new DetailedError(
       buildSearchMetadataError(attempts),
@@ -1054,36 +1030,55 @@ export type IndexMappingFieldsResult = {
   fieldsByIndex: Record<string, string[]>;
 };
 
+export type TargetMappingFieldsResult = {
+  requestedNames: string[];
+  fieldsByIndex: Record<string, string[]>;
+};
+
+export async function fetchTargetMappingFields(
+  connection: ConnectionProfile,
+  credentials: RequestCredentials,
+  targets: string[],
+  sshTunnelOverride?: SshTunnelConfig | null,
+): Promise<TargetMappingFieldsResult> {
+  const requestedNames = deduplicateSorted(targets.map((name) => name.trim()).filter(
+    (name) => name && !name.startsWith("_") && !/[*?,/]/.test(name),
+  ));
+  const fieldsByIndex: Record<string, string[]> = {};
+  const attempts: SearchMetadataAttempt[] = [];
+  let nextBatch = 0;
+  let succeeded = false;
+  const batchCount = Math.ceil(requestedNames.length / 25);
+  const worker = async () => {
+    while (nextBatch < batchCount) {
+      const batch = nextBatch++;
+      const names = requestedNames.slice(batch * 25, (batch + 1) * 25);
+      const attempt = await runSearchMetadataProbe(connection, credentials, {
+        path: `/${names.map(encodeURIComponent).join(",")}/_mapping?ignore_unavailable=true&expand_wildcards=open`,
+        label: `索引映射(${names.join(",")})`,
+      }, sshTunnelOverride);
+      attempts.push(attempt);
+      if (attempt.snapshot.ok) {
+        succeeded = true;
+        Object.assign(fieldsByIndex, parseMappingFields(attempt.bodyText).fieldsByIndex);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(2, batchCount) }, worker));
+  if (batchCount > 0 && !succeeded) {
+    throw new DetailedError("拉取目标索引的 mapping 失败", buildSearchMetadataDiagnostics(attempts));
+  }
+  return { requestedNames, fieldsByIndex };
+}
+
 export async function fetchIndexMappingFields(
   connection: ConnectionProfile,
   credentials: RequestCredentials,
   indexOrAlias: string,
   sshTunnelOverride?: SshTunnelConfig | null,
 ): Promise<IndexMappingFieldsResult> {
-  const trimmedName = indexOrAlias.trim();
-  if (!trimmedName || trimmedName.startsWith("_") || trimmedName.includes("*")) {
-    return { requestedName: trimmedName, fieldsByIndex: {} };
-  }
-
-  const encodedName = encodeURIComponent(trimmedName);
-  const probe: SearchMetadataProbe = {
-    path: `/${encodedName}/_mapping?ignore_unavailable=true&expand_wildcards=open`,
-    label: `索引映射(${trimmedName})`,
-  };
-  const attempt = await runSearchMetadataProbe(connection, credentials, probe, sshTunnelOverride);
-
-  if (!attempt.snapshot.ok) {
-    throw new DetailedError(
-      `拉取索引 ${trimmedName} 的 mapping 失败`,
-      buildSearchMetadataDiagnostics([attempt]),
-    );
-  }
-
-  const parsed = parseMappingFields(attempt.bodyText);
-  return {
-    requestedName: trimmedName,
-    fieldsByIndex: parsed.fieldsByIndex,
-  };
+  const result = await fetchTargetMappingFields(connection, credentials, [indexOrAlias], sshTunnelOverride);
+  return { requestedName: indexOrAlias.trim(), fieldsByIndex: result.fieldsByIndex };
 }
 
 export async function testConnection(

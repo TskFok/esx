@@ -14,8 +14,9 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { toast } from "sonner";
 import { buildConsoleContent, parseConsoleRequest } from "../lib/console-parser";
+import { hasFreshTargetFields, mergeTargetFields, normalizeFieldCache, resolveFieldTargets } from "../lib/search-metadata-cache";
 import { createPersistQueue } from "../lib/persist-queue";
-import { fetchConnectionSearchMetadata, fetchIndexMappingFields } from "../lib/http-client";
+import { fetchConnectionSearchMetadata, fetchTargetMappingFields } from "../lib/http-client";
 import {
   createDefaultDraft,
   createEmptyStorage,
@@ -204,6 +205,11 @@ type AppStateContextValue = {
     connection: ConnectionProfile,
     options?: { force?: boolean },
   ) => Promise<ConnectionSearchMetadata>;
+  ensureTargetFields: (
+    connection: ConnectionProfile,
+    targets: string[],
+    options?: { force?: boolean },
+  ) => Promise<string[] | null>;
   ensureIndexFields: (
     connection: ConnectionProfile,
     indexOrAlias: string,
@@ -335,12 +341,13 @@ function normalizeStringRecordOfLists(
 function normalizeStoredSearchMetadata(
   cache: ConnectionSearchMetadata,
   connectionIds: Set<string>,
+  connectionUpdatedAt?: string,
 ) {
-  if (!connectionIds.has(cache.connectionId)) {
+  if (!connectionIds.has(cache.connectionId) || (cache.connectionUpdatedAt && cache.connectionUpdatedAt !== connectionUpdatedAt)) {
     return null;
   }
 
-  return {
+  return normalizeFieldCache({
     connectionId: cache.connectionId,
     indices: [...new Set((cache.indices ?? []).map((item) => item.trim()).filter(Boolean))].sort((left, right) =>
       left.localeCompare(right, "zh-CN"),
@@ -352,11 +359,14 @@ function normalizeStoredSearchMetadata(
       left.localeCompare(right, "zh-CN"),
     ),
     fieldsByIndex: normalizeStringRecordOfLists(cache.fieldsByIndex),
+    fieldsFetchedAtByIndex: cache.fieldsFetchedAtByIndex,
+    fieldsTruncatedByIndex: cache.fieldsTruncatedByIndex,
+    connectionUpdatedAt: cache.connectionUpdatedAt,
     aliasToIndices: normalizeStringRecordOfLists(cache.aliasToIndices),
     cluster: normalizeClusterMetadata(cache.cluster),
     fetchedAt: cache.fetchedAt,
     expiresAt: cache.expiresAt,
-  } satisfies ConnectionSearchMetadata;
+  } satisfies ConnectionSearchMetadata);
 }
 
 function normalizeStoredSshProfile(profile: SshProfile) {
@@ -417,9 +427,10 @@ function normalizeState(state: AppStateShape): AppStateShape {
     .sort((left, right) => right.lastUsedAt.localeCompare(left.lastUsedAt));
 
   const connectionIds = new Set(normalizedConnections.map((connection) => connection.id));
+  const connectionVersions = new Map(normalizedConnections.map((connection) => [connection.id, connection.updatedAt]));
   const normalizedSearchMetadata = Object.fromEntries(
     Object.entries(state.searchMetadata ?? {})
-      .map(([connectionId, cache]) => [connectionId, normalizeStoredSearchMetadata(cache, connectionIds)] as const)
+      .map(([connectionId, cache]) => [connectionId, normalizeStoredSearchMetadata(cache, connectionIds, connectionVersions.get(connectionId))] as const)
       .filter((entry): entry is readonly [string, ConnectionSearchMetadata] => Boolean(entry[1])),
   );
 
@@ -552,6 +563,10 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const aiKeyScope = useRef<string | null>(null);
   const aiSettingsSaveQueue = useRef<Promise<void>>(Promise.resolve());
   const indexFieldFetchInFlight = useRef(new Map<string, Promise<string[] | null>>());
+  const metadataFetchInFlight = useRef(new Map<string, Promise<ConnectionSearchMetadata>>());
+  const metadataGeneration = useRef(new Map<string, number>());
+  const committedState = useRef(state);
+  useLayoutEffect(() => { committedState.current = state; }, [state]);
   const pendingDraftFlushes = useRef(new Set<() => void>());
   const closing = useRef(false);
   const lastScheduledState = useRef<AppStateShape | null>(null);
@@ -701,6 +716,53 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     });
     aiSettingsSaveQueue.current = task;
     return task;
+  }
+
+  async function ensureTargetFields(connection: ConnectionProfile, targets: string[], options?: { force?: boolean }): Promise<string[] | null> {
+    const names = [...new Set(targets.map((name) => name.trim()).filter((name) => name && !name.startsWith("_") && !/[*?,/]/.test(name)))].sort();
+    if (!names.length || !committedState.current.connections.some((item) => item.id === connection.id && item.updatedAt === connection.updatedAt)) return null;
+    const storedCache = committedState.current.searchMetadata[connection.id] ?? null;
+    const cache = storedCache?.connectionUpdatedAt === connection.updatedAt ? storedCache : null;
+    const fieldsForTargets = (metadata: ConnectionSearchMetadata) => [...new Set(resolveFieldTargets(metadata, names).flatMap((name) => metadata.fieldsByIndex[name] ?? []))]
+      .sort((left, right) => left.localeCompare(right, "zh-CN"));
+    if (!options?.force && hasFreshTargetFields(cache, names, Date.now())) return fieldsForTargets(cache!);
+    const generation = metadataGeneration.current.get(connection.id) ?? 0;
+    const key = JSON.stringify([connection.id, connection.updatedAt, generation, names]);
+    const existing = indexFieldFetchInFlight.current.get(key);
+    if (existing) return existing;
+    const valid = () => committedState.current.connections.some((item) => item.id === connection.id && item.updatedAt === connection.updatedAt)
+      && (metadataGeneration.current.get(connection.id) ?? 0) === generation;
+    const run = (async (): Promise<string[] | null> => {
+      try {
+        const sshProfile = committedState.current.sshProfiles.find((profile) => profile.id === connection.sshProfileId) ?? null;
+        const [password, sshSecret] = await Promise.all([
+          getConnectionPassword(connection.id, connection.username),
+          sshProfile ? getConnectionSshSecret(sshProfile.id) : Promise.resolve(null),
+        ]);
+        if (!password || !valid()) return null;
+        const result = await fetchTargetMappingFields(connection, { password, sshSecret }, names, getSshTunnelForProfile(sshProfile));
+        if (!valid()) return null;
+        if (!Object.values(result.fieldsByIndex).some((fields) => fields.length)) return [];
+        const emptyCache = { ...buildSearchMetadataCache(connection.id, { indices: [], aliases: [], fields: [] }), expiresAt: new Date(0).toISOString(), connectionUpdatedAt: connection.updatedAt };
+        const timestamp = Date.now();
+        const merged = mergeTargetFields(cache ?? emptyCache, result, timestamp);
+        setState((current) => {
+          if (!current.connections.some((item) => item.id === connection.id && item.updatedAt === connection.updatedAt)
+            || (metadataGeneration.current.get(connection.id) ?? 0) !== generation) return current;
+          const latest = current.searchMetadata[connection.id];
+          const next = mergeTargetFields(latest?.connectionUpdatedAt === connection.updatedAt ? latest : emptyCache, result, timestamp);
+          return { ...current, searchMetadata: { ...current.searchMetadata, [connection.id]: next } };
+        });
+        return fieldsForTargets(merged);
+      } catch {
+        return null;
+      }
+    })();
+    const tracked = run.finally(() => {
+      if (indexFieldFetchInFlight.current.get(key) === tracked) indexFieldFetchInFlight.current.delete(key);
+    });
+    indexFieldFetchInFlight.current.set(key, tracked);
+    return tracked;
   }
 
   const value = useMemo<AppStateContextValue>(
@@ -1018,160 +1080,39 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       },
       async refreshSearchMetadata(connection, options) {
         const currentCache = state.searchMetadata[connection.id] ?? null;
-        if (!options?.force && currentCache && !isSearchMetadataExpired(currentCache)) {
+        if (!options?.force && currentCache?.connectionUpdatedAt === connection.updatedAt && !isSearchMetadataExpired(currentCache)) {
           return currentCache;
         }
-
-        const sshProfile =
-          connection.sshProfileId
-            ? state.sshProfiles.find((profile) => profile.id === connection.sshProfileId) ?? null
-            : null;
-        const [password, sshSecret] = await Promise.all([
-          getConnectionPassword(connection.id, connection.username),
-          sshProfile ? getConnectionSshSecret(sshProfile.id) : Promise.resolve(null),
-        ]);
-
-        if (!password) {
-          throw new Error("当前连接未找到已保存密码，请回到连接页重新保存。");
-        }
-
-        const metadata = await fetchConnectionSearchMetadata(
-          connection,
-          { password, sshSecret },
-          getSshTunnelForProfile(sshProfile),
-        );
-        const cache = buildSearchMetadataCache(connection.id, metadata);
-
-        setState((current) => {
-          if (!current.connections.some((item) => item.id === connection.id)) {
-            return current;
-          }
-
-          return {
-            ...current,
-            searchMetadata: {
-              ...current.searchMetadata,
-              [connection.id]: cache,
-            },
-          };
-        });
-
-        return cache;
-      },
-      async ensureIndexFields(connection, indexOrAlias, options) {
-        const trimmedName = indexOrAlias.trim();
-        if (!trimmedName || trimmedName.startsWith("_") || trimmedName.includes("*")) {
-          return null;
-        }
-
-        const currentCache = state.searchMetadata[connection.id] ?? null;
-        const aliasTargets = currentCache?.aliasToIndices?.[trimmedName] ?? [];
-        const resolvedTargets = aliasTargets.length > 0 ? aliasTargets : [trimmedName];
-        const hasAllCached = resolvedTargets.every(
-          (name) => (currentCache?.fieldsByIndex?.[name]?.length ?? 0) > 0,
-        );
-        if (!options?.force && hasAllCached) {
-          const merged = new Set<string>();
-          resolvedTargets.forEach((name) => {
-            currentCache?.fieldsByIndex?.[name]?.forEach((item) => merged.add(item));
-          });
-          return [...merged].sort((left, right) => left.localeCompare(right, "zh-CN"));
-        }
-
-        const cacheKey = `${connection.id}::${trimmedName}`;
-        const inFlightMap = indexFieldFetchInFlight.current;
-        if (!options?.force) {
-          const existing = inFlightMap.get(cacheKey);
-          if (existing) {
-            return existing;
-          }
-        }
-
-        const sshProfile =
-          connection.sshProfileId
-            ? state.sshProfiles.find((profile) => profile.id === connection.sshProfileId) ?? null
-            : null;
-
-        const run = (async (): Promise<string[] | null> => {
+        const key = JSON.stringify([connection.id, connection.updatedAt]);
+        const existing = metadataFetchInFlight.current.get(key);
+        if (!options?.force && existing) return existing;
+        const generation = (metadataGeneration.current.get(connection.id) ?? 0) + 1;
+        metadataGeneration.current.set(connection.id, generation);
+        const run = (async () => {
+          const sshProfile = state.sshProfiles.find((profile) => profile.id === connection.sshProfileId) ?? null;
           const [password, sshSecret] = await Promise.all([
             getConnectionPassword(connection.id, connection.username),
             sshProfile ? getConnectionSshSecret(sshProfile.id) : Promise.resolve(null),
           ]);
-
-          if (!password) {
-            throw new Error("当前连接未找到已保存密码，请回到连接页重新保存。");
-          }
-
-          const result = await fetchIndexMappingFields(
-            connection,
-            { password, sshSecret },
-            trimmedName,
-            getSshTunnelForProfile(sshProfile),
-          );
-
-          const fetchedIndexNames = Object.keys(result.fieldsByIndex);
-          if (fetchedIndexNames.length === 0) {
-            return [];
-          }
-
-          const merged = new Set<string>();
-          fetchedIndexNames.forEach((indexName) => {
-            result.fieldsByIndex[indexName].forEach((item) => merged.add(item));
-          });
-
+          if (!password) throw new Error("当前连接未找到已保存密码，请回到连接页重新保存。");
+          const metadata = await fetchConnectionSearchMetadata(connection, { password, sshSecret }, getSshTunnelForProfile(sshProfile));
+          const cache = { ...buildSearchMetadataCache(connection.id, metadata), connectionUpdatedAt: connection.updatedAt };
           setState((current) => {
-            const existingCache = current.searchMetadata[connection.id];
-            if (!existingCache) {
-              return current;
-            }
-
-            const nextFieldsByIndex = { ...existingCache.fieldsByIndex };
-            fetchedIndexNames.forEach((indexName) => {
-              const combined = new Set<string>(nextFieldsByIndex[indexName] ?? []);
-              result.fieldsByIndex[indexName].forEach((item) => combined.add(item));
-              nextFieldsByIndex[indexName] = [...combined].sort((left, right) =>
-                left.localeCompare(right, "zh-CN"),
-              );
-            });
-
-            const nextFields = new Set<string>(existingCache.fields);
-            merged.forEach((item) => nextFields.add(item));
-
-            const nextIndices = new Set<string>(existingCache.indices);
-            fetchedIndexNames.forEach((indexName) => nextIndices.add(indexName));
-
-            const nextAliasToIndices = { ...existingCache.aliasToIndices };
-            if (fetchedIndexNames.length > 0 && !fetchedIndexNames.includes(trimmedName)) {
-              const combinedAliasTargets = new Set<string>(nextAliasToIndices[trimmedName] ?? []);
-              fetchedIndexNames.forEach((indexName) => combinedAliasTargets.add(indexName));
-              nextAliasToIndices[trimmedName] = [...combinedAliasTargets].sort((left, right) =>
-                left.localeCompare(right, "zh-CN"),
-              );
-            }
-
-            return {
-              ...current,
-              searchMetadata: {
-                ...current.searchMetadata,
-                [connection.id]: {
-                  ...existingCache,
-                  fields: [...nextFields].sort((left, right) => left.localeCompare(right, "zh-CN")),
-                  fieldsByIndex: nextFieldsByIndex,
-                  aliasToIndices: nextAliasToIndices,
-                  indices: [...nextIndices].sort((left, right) => left.localeCompare(right, "zh-CN")),
-                },
-              },
-            };
+            if (!current.connections.some((item) => item.id === connection.id && item.updatedAt === connection.updatedAt)
+              || metadataGeneration.current.get(connection.id) !== generation) return current;
+            return { ...current, searchMetadata: { ...current.searchMetadata, [connection.id]: cache } };
           });
-
-          return [...merged].sort((left, right) => left.localeCompare(right, "zh-CN"));
+          return cache;
         })();
-
         const tracked = run.finally(() => {
-          inFlightMap.delete(cacheKey);
+          if (metadataFetchInFlight.current.get(key) === tracked) metadataFetchInFlight.current.delete(key);
         });
-        inFlightMap.set(cacheKey, tracked);
+        metadataFetchInFlight.current.set(key, tracked);
         return tracked;
+      },
+      ensureTargetFields,
+      ensureIndexFields(connection, indexOrAlias, options) {
+        return ensureTargetFields(connection, [indexOrAlias], options);
       },
       recordExecution(connectionId, content, response) {
         const parsed = parseConsoleRequest(content);

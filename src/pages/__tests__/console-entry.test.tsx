@@ -7,7 +7,10 @@ import { createDefaultDraft } from "../../lib/storage";
 import { DEFAULT_AI_ANALYSIS_SETTINGS } from "../../types/ai-settings";
 import type { ConnectionProfile } from "../../types/connections";
 
-vi.mock("../../providers/app-state", () => ({ useAppState: vi.fn() }));
+vi.mock("../../providers/app-state", () => {
+  const useAppState = vi.fn();
+  return { useAppState, useAppStateField: (key: string) => useAppState()[key], useAppActions: () => useAppState() };
+});
 vi.mock("../../components/console/console-editor", () => ({
   ConsoleEditor: () => <div>请求编辑器</div>,
 }));
@@ -76,8 +79,11 @@ beforeEach(() => {
     searchMetadataByConnection: {},
     responsePreviewBytes: 256 * 1024,
     updateDraft: vi.fn(),
+    registerPendingDraftFlush: vi.fn(() => vi.fn()),
+    flushAppState: vi.fn(async (commit?: () => void) => { commit?.(); }),
     refreshSearchMetadata: vi.fn().mockResolvedValue(undefined),
     ensureIndexFields: vi.fn().mockResolvedValue(undefined),
+    ensureTargetFields: vi.fn().mockResolvedValue(undefined),
     getPassword: vi.fn().mockResolvedValue(null),
     getSshSecret: vi.fn().mockResolvedValue(null),
     getSshProfileForConnection: vi.fn(() => null),

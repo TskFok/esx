@@ -328,7 +328,7 @@ export function ConsolePage() {
     reorderConnectionRequests,
     importConnectionRequests,
     refreshSearchMetadata,
-    ensureIndexFields,
+    ensureTargetFields,
     getPassword,
     getSshSecret,
     getSshProfileForConnection,
@@ -1047,13 +1047,7 @@ export function ConsolePage() {
     void metadataRefreshMutation.mutateAsync({ force: false }).catch(() => undefined);
   }, [activeConnection, connectionSearchMetadata?.expiresAt, metadataRefreshMutation, selectedConnection.id, selectedConnection.updatedAt]);
 
-  const indexFieldsAttemptedRef = useRef<Record<string, Set<string>>>({});
-  useEffect(() => {
-    if (!activeConnection || !connectionSearchMetadata) {
-      return;
-    }
-    indexFieldsAttemptedRef.current[selectedConnection.id] = new Set<string>();
-  }, [activeConnection, connectionSearchMetadata?.fetchedAt, selectedConnection.id]);
+  const targetFieldsAttemptedRef = useRef<string | null>(null);
 
   const currentPathIndexNamesKey = useMemo(() => {
     if (!requestFirstLine) {
@@ -1069,40 +1063,14 @@ export function ConsolePage() {
 
   useEffect(() => {
     if (!activeConnection || currentPathIndexNames.length === 0 || !connectionSearchMetadata) {
+      targetFieldsAttemptedRef.current = null;
       return;
     }
-    const connectionId = selectedConnection.id;
-    const attempted = (indexFieldsAttemptedRef.current[connectionId] ??= new Set<string>());
-    const fieldsByIndex = connectionSearchMetadata.fieldsByIndex ?? {};
-    const aliasToIndices = connectionSearchMetadata.aliasToIndices ?? {};
-
-    currentPathIndexNames.forEach((name) => {
-      if (attempted.has(name)) {
-        return;
-      }
-      const directCached = (fieldsByIndex[name]?.length ?? 0) > 0;
-      if (directCached) {
-        return;
-      }
-      const aliasTargets = aliasToIndices[name] ?? [];
-      const aliasCached =
-        aliasTargets.length > 0 && aliasTargets.every((indexName) => (fieldsByIndex[indexName]?.length ?? 0) > 0);
-      if (aliasCached) {
-        return;
-      }
-
-      attempted.add(name);
-      void ensureIndexFields(selectedConnection, name).catch(() => {
-        attempted.delete(name);
-      });
-    });
-  }, [
-    activeConnection,
-    currentPathIndexNames,
-    ensureIndexFields,
-    connectionSearchMetadata,
-    selectedConnection,
-  ]);
+    const key = JSON.stringify([selectedConnection.id, selectedConnection.updatedAt, connectionSearchMetadata.fetchedAt, currentPathIndexNames]);
+    if (targetFieldsAttemptedRef.current === key) return;
+    targetFieldsAttemptedRef.current = key;
+    void ensureTargetFields(selectedConnection, currentPathIndexNames).catch(() => undefined);
+  }, [activeConnection, currentPathIndexNames, ensureTargetFields, connectionSearchMetadata, selectedConnection]);
 
   const sidebarActions = useStableSidebarActions({
     onClose: closeSidebar,
@@ -1135,14 +1103,14 @@ export function ConsolePage() {
   }
 
   function handleRefreshSearchMetadata() {
-    indexFieldsAttemptedRef.current[selectedConnection.id] = new Set<string>();
+    targetFieldsAttemptedRef.current = null;
     void metadataRefreshMutation.mutateAsync({ force: true }).then(() => {
       toast.success("索引元数据已刷新。");
     }).catch(() => undefined);
   }
 
   const hasMetadataAutoAttempted = Boolean(metadataAutoRefreshRef.current[selectedConnection.id]);
-  const metadataStatus = connectionSearchMetadata
+  const metadataStatus = (connectionSearchMetadata
     ? new Date(connectionSearchMetadata.expiresAt).getTime() > Date.now()
       ? `索引元数据已同步：${formatShanghaiDateTime(connectionSearchMetadata.fetchedAt)} · ${formatAutocompleteClusterLabel(connectionSearchMetadata)}`
       : `索引元数据已过期：${formatShanghaiDateTime(connectionSearchMetadata.fetchedAt)} · ${formatAutocompleteClusterLabel(connectionSearchMetadata)}`
@@ -1150,7 +1118,8 @@ export function ConsolePage() {
       ? "正在拉取索引 / alias 元数据..."
       : hasMetadataAutoAttempted
         ? "索引元数据自动拉取失败，可手动重试。"
-        : "首次进入时会自动拉取索引 / alias 元数据。";
+        : "首次进入时会自动拉取索引 / alias 元数据。") +
+    (Object.values(connectionSearchMetadata?.fieldsTruncatedByIndex ?? {}).some(Boolean) ? " · 字段候选不完整（已限制缓存字段数量）" : "");
 
   function handleFormatJson() {
     const content = editorContentRef.current;
