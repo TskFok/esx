@@ -14,6 +14,8 @@ type ResponseSnapshotSource = {
   durationMs: number;
   executedAt: string;
   bodyText: string;
+  totalBytes?: number;
+  truncated?: boolean;
   errorMessage?: string;
   diagnostics?: string[];
 };
@@ -86,10 +88,13 @@ export function buildResponseSnapshot(
 ): ResponseSnapshot {
   const normalizedMaxBytes = normalizeResponsePreviewBytes(maxPreviewBytes);
   const bodyPreview = createTextPreview(source.bodyText, normalizedMaxBytes);
+  const totalBytes = Number.isSafeInteger(source.totalBytes) && source.totalBytes! >= 0
+    ? source.totalBytes! : bodyPreview.totalBytes;
+  const truncated = bodyPreview.truncated || (source.truncated ?? totalBytes > bodyPreview.previewBytes);
   let isJson = false;
   let prettyPreview: string | undefined;
 
-  if (source.bodyText.trim() && bodyPreview.totalBytes <= normalizedMaxBytes) {
+  if (!truncated && source.bodyText.trim() && bodyPreview.totalBytes <= normalizedMaxBytes) {
     try {
       const pretty = serializeJson(JSON.parse(source.bodyText));
       const preview = createTextPreview(pretty, normalizedMaxBytes);
@@ -105,11 +110,11 @@ export function buildResponseSnapshot(
     status: source.status,
     statusText: source.statusText,
     durationMs: source.durationMs,
-    sizeBytes: bodyPreview.totalBytes,
+    sizeBytes: totalBytes,
     executedAt: source.executedAt,
     bodyPreview: bodyPreview.text,
     prettyPreview,
-    truncated: bodyPreview.truncated,
+    truncated,
     previewBytes: bodyPreview.previewBytes,
     isJson,
     errorMessage: source.errorMessage,
@@ -125,12 +130,17 @@ export function normalizeResponseSnapshot(value: unknown, maxPreviewBytes = RESP
   const normalizedMaxBytes = normalizeResponsePreviewBytes(maxPreviewBytes);
   const bodySource = asString(value.bodyPreview, asString(value.bodyText));
   const bodyPreview = createTextPreview(bodySource, normalizedMaxBytes);
-  const sizeBytes = Math.max(asNumber(value.sizeBytes, bodyPreview.totalBytes), bodyPreview.totalBytes);
+  const sizeBytes = Number.isSafeInteger(value.sizeBytes) && (value.sizeBytes as number) >= 0
+    ? value.sizeBytes as number : bodyPreview.totalBytes;
   const legacyPrettySource = asString(value.prettyPreview, asString(value.bodyPretty));
   const legacyPrettyPreview = legacyPrettySource ? createTextPreview(legacyPrettySource, normalizedMaxBytes) : null;
   const prettyPreview = legacyPrettyPreview?.truncated ? undefined : legacyPrettyPreview?.text;
   const previewBytes = Math.min(asNumber(value.previewBytes, bodyPreview.previewBytes), bodyPreview.previewBytes);
-  const bodyTruncated = bodyPreview.truncated || sizeBytes > bodyPreview.previewBytes;
+  // 旧快照曾把美化文本超限误记为正文截断，仅修复这一已知旧格式。
+  const legacyPrettyOnlyTruncation = asBoolean(value.isJson) && sizeBytes === bodyPreview.totalBytes
+    && legacyPrettyPreview?.truncated;
+  const bodyTruncated = bodyPreview.truncated || (legacyPrettyOnlyTruncation ? false
+    : typeof value.truncated === "boolean" ? value.truncated : sizeBytes > bodyPreview.previewBytes);
 
   return {
     ok: asBoolean(value.ok),

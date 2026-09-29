@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockExecuteAiHttpRequest } = vi.hoisted(() => ({
+const { mockExecuteAiHttpRequest, mockOpenAiHttpStream } = vi.hoisted(() => ({
   mockExecuteAiHttpRequest: vi.fn(),
+  mockOpenAiHttpStream: vi.fn(),
 }));
 
 vi.mock("../tauri", () => ({
   executeAiHttpRequest: mockExecuteAiHttpRequest,
+  openAiHttpStream: mockOpenAiHttpStream,
 }));
 
 import {
@@ -125,4 +127,16 @@ describe("generateRequestContent", () => {
       }),
     ).rejects.toThrow("AI 未配置");
   });
+});
+
+
+it("generates from a cancellable stream without calling non-streaming transport", async () => {
+  mockExecuteAiHttpRequest.mockReset();
+  const signal = new AbortController().signal;
+  mockOpenAiHttpStream.mockResolvedValue(new Response('data: {"choices":[{"delta":{"content":"GET /users/_search"}}]}\n\n'));
+  const onStreamDelta = vi.fn();
+  expect(await generateRequestContent({ description: "查询", aiSettings: settings, apiKey: "fixture", signal, onStreamDelta })).toBe("GET /users/_search");
+  expect(mockOpenAiHttpStream).toHaveBeenCalledWith(expect.any(Object), signal);
+  expect(mockExecuteAiHttpRequest).not.toHaveBeenCalled();
+  expect(onStreamDelta).toHaveBeenCalledWith({ kind: "content", text: "GET /users/_search" });
 });

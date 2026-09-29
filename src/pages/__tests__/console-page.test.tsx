@@ -3,8 +3,10 @@
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { flushSync } from "react-dom";
+import { toast } from "sonner";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CONSOLE_ADMIN_PATH,
   CONSOLE_ERROR_LOGS_PATH,
@@ -132,14 +134,20 @@ vi.mock("../../components/console/ai-settings-dialog", async () => {
     },
   };
 });
-vi.mock("../../components/console/ai-analysis-dialog", () => {
-  return { AiAnalysisDialog: () => null };
-});
+vi.mock("../../lib/request-analysis", () => ({ analyzeRequestContent: vi.fn() }));
+vi.mock("../../lib/ai-generate-client", () => ({ generateRequestContent: vi.fn() }));
+vi.mock("../../lib/http-client", () => ({ executeConsoleRequest: vi.fn() }));
+vi.mock("../../components/console/ai-analysis-dialog", () => ({
+  AiAnalysisDialog: (props: any) => props.open ? <div><button onClick={props.onClose}>关闭分析</button><span>{props.analysisError}</span><span>{props.analysisResult?.meaning}</span><output data-testid="analysis-content">{props.streamingContentText}</output><output data-testid="analysis-reasoning">{props.streamingReasoningText}</output></div> : null,
+}));
 vi.mock("../../components/console/ai-generate-dialog", () => {
-  return { AiGenerateDialog: () => null };
+  return { AiGenerateDialog: (props: any) => props.open ? <div><button onClick={() => props.onGenerate("生成查询")}>开始生成</button><button onClick={props.onClose}>关闭生成</button><span>{props.generateError}</span><span>{props.generatedContent}</span><output data-testid="generate-content">{props.streamingContentText}</output><output data-testid="generate-reasoning">{props.streamingReasoningText}</output></div> : null };
 });
 
 import { useAppState } from "../../providers/app-state";
+import { analyzeRequestContent } from "../../lib/request-analysis";
+import { generateRequestContent } from "../../lib/ai-generate-client";
+import { executeConsoleRequest } from "../../lib/http-client";
 import { ConsolePage } from "../console-page";
 
 const useAppStateMock = vi.mocked(useAppState);
@@ -556,4 +564,152 @@ it("将请求路径的多个目标一次交给批量字段入口，并展示截�
   await waitFor(() => expect(ensureTargetFields).toHaveBeenCalledWith(connection, ["orders", "sales"]));
   expect(ensureTargetFields).toHaveBeenCalledOnce();
   expect(screen.getByText(/字段候选不完整/)).toBeVisible();
+});
+
+
+afterEach(() => vi.unstubAllGlobals());
+
+it.each(["analysis", "generate"] as const)("%s 每帧合并20个增量，关闭后取消并忽略迟到结果", async (kind) => {
+  const state = useAppStateMock();
+  useAppStateMock.mockReturnValue({ ...state, aiSettings: { ...state.aiSettings, enabled: true, apiKeyRequired: false, baseUrl: "https://ai.example.com", model: "test" } });
+  let options: any;
+  let resolve!: (value: any) => void;
+  const client = kind === "analysis" ? vi.mocked(analyzeRequestContent) : vi.mocked(generateRequestContent);
+  client.mockImplementation((input: any) => { options = input; return new Promise<any>(done => { resolve = done; }); });
+  const frames = new Map<number, FrameRequestCallback>();
+  let sequence = 0;
+  vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => { frames.set(++sequence, callback); return sequence; }));
+  vi.stubGlobal("cancelAnimationFrame", vi.fn((id: number) => frames.delete(id)));
+  renderConsolePage(CONSOLE_WORKSPACE_PATH);
+  await screen.findByRole("textbox", { name: "测试请求内容" });
+  fireEvent.click(screen.getByRole("button", { name: kind === "analysis" ? "AI 分析" : "AI 生成" }));
+  if (kind === "generate") fireEvent.click(await screen.findByText("开始生成"));
+  await waitFor(() => expect(options).toBeDefined());
+  await screen.findByTestId(`${kind}-content`);
+  for (let index = 0; index < 20; index++) {
+    act(() => { options.onStreamDelta({ kind: "content", text: "x" }); options.onStreamDelta({ kind: "reasoning", text: "y" }); });
+  }
+  expect(screen.getByTestId(`${kind}-content`)).toHaveTextContent(/^$/);
+  expect(frames.size).toBe(1);
+  act(() => { const pending = [...frames.values()]; frames.clear(); pending.forEach(callback => callback(0)); });
+  expect(screen.getByTestId(`${kind}-content`)).toHaveTextContent("x".repeat(20));
+  expect(screen.getByTestId(`${kind}-reasoning`)).toHaveTextContent("y".repeat(20));
+  act(() => options.onStreamDelta({ kind: "content", text: "pending" }));
+  fireEvent.click(screen.getByText(kind === "analysis" ? "关闭分析" : "关闭生成"));
+  expect(options.signal.aborted).toBe(true);
+  expect(frames.size).toBe(0);
+  await act(async () => { options.onStreamDelta({ kind: "content", text: "late" }); resolve(kind === "analysis" ? { source: "ai" } : "late"); });
+  expect(state.recordAiAnalysisHistory).not.toHaveBeenCalled();
+});
+
+it.each(["取消", "连接", "请求", "卸载"])("运行时%s阻止批次继续与保存", async (action) => {
+  const state = useAppStateMock();
+  useAppStateMock.mockReturnValue({ ...state, getPassword: vi.fn().mockResolvedValue("test"), currentDraft: { ...createDefaultDraft(connection.id), content: "GET /one\n\nGET /two" } });
+  let resolve!: (value: any) => void;
+  vi.mocked(executeConsoleRequest).mockReset().mockImplementation(() => new Promise(done => { resolve = done; }));
+  const view = renderConsolePage(CONSOLE_WORKSPACE_PATH);
+  await screen.findByRole("textbox", { name: "测试请求内容" });
+  fireEvent.keyDown(screen.getByPlaceholderText(/请求名称（为空时/), { key: "Enter", metaKey: true });
+  await waitFor(() => expect(executeConsoleRequest).toHaveBeenCalledOnce());
+  const signal = vi.mocked(executeConsoleRequest).mock.calls[0]![4]!.signal!;
+  if (action === "取消") fireEvent.click(await screen.findByRole("button", { name: "取消运行" }));
+  if (action === "请求") fireEvent.click(screen.getByText("健康检查"));
+  if (action === "卸载") view.unmount();
+  if (action === "连接") { useAppStateMock.mockReturnValue({ ...useAppStateMock(), currentConnection: { ...connection, id: "conn-2" } }); view.rerenderPage(); }
+  expect(signal.aborted).toBe(true);
+  await act(async () => { resolve({ ok: true }); });
+  expect(executeConsoleRequest).toHaveBeenCalledOnce();
+  expect(state.saveRequestFromDraft).not.toHaveBeenCalled();
+  expect(state.recordErrorLog).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["analysis", "连接"], ["analysis", "请求"], ["analysis", "卸载"],
+  ["generate", "连接"], ["generate", "请求"], ["generate", "卸载"],
+] as const)("%s 在%s时取消并忽略迟到异常", async (kind, action) => {
+  const state = useAppStateMock();
+  useAppStateMock.mockReturnValue({ ...state, aiSettings: { ...state.aiSettings, enabled: true, apiKeyRequired: false, baseUrl: "https://ai.example.com", model: "test" } });
+  let options: any;
+  let reject!: (error: Error) => void;
+  const client = kind === "analysis" ? vi.mocked(analyzeRequestContent) : vi.mocked(generateRequestContent);
+  client.mockImplementation((input: any) => { options = input; return new Promise<any>((_, fail) => { reject = fail; }); });
+  const view = renderConsolePage(CONSOLE_WORKSPACE_PATH);
+  await screen.findByRole("textbox", { name: "测试请求内容" });
+  fireEvent.click(screen.getByRole("button", { name: kind === "analysis" ? "AI 分析" : "AI 生成" }));
+  if (kind === "generate") fireEvent.click(await screen.findByText("开始生成"));
+  await waitFor(() => expect(options).toBeDefined());
+  if (action === "请求") fireEvent.click(screen.getByText("健康检查"));
+  if (action === "卸载") view.unmount();
+  if (action === "连接") { useAppStateMock.mockReturnValue({ ...useAppStateMock(), currentConnection: { ...connection, id: "conn-2" } }); view.rerenderPage(); }
+  expect(options.signal.aborted).toBe(true);
+  await act(async () => { options.onStreamDelta({ kind: "content", text: "late" }); reject(new Error("late failure")); });
+  expect(state.recordAiAnalysisHistory).not.toHaveBeenCalled();
+  expect(screen.queryByText("late failure")).not.toBeInTheDocument();
+  expect(screen.queryByText("late")).not.toBeInTheDocument();
+});
+
+
+it.each([true, false])("首次保存请求不会因草稿ID更新取消正常完成（ok=%s）", async (ok) => {
+  const state = useAppStateMock();
+  const response = { ok, status: ok ? 200 : 400, statusText: ok ? "OK" : "Bad Request", bodyPreview: "{}", diagnostics: [], errorMessage: ok ? undefined : "fixture failure" };
+  vi.mocked(executeConsoleRequest).mockReset().mockResolvedValue(response as any);
+  const success = vi.spyOn(toast, "success");
+  const error = vi.spyOn(toast, "error");
+  let rerenderPage!: () => void;
+  useAppStateMock.mockReturnValue({ ...state,
+    getPassword: vi.fn().mockResolvedValue("fixture"),
+    currentDraft: { ...createDefaultDraft(connection.id), content: 'POST /items/_doc\n{"value":1}' },
+    saveRequestFromDraft: vi.fn((payload) => {
+      const request = { ...savedRequest, id: "first-save", content: payload.content };
+      useAppStateMock.mockReturnValue({ ...useAppStateMock(), currentDraft: { ...createDefaultDraft(connection.id), content: payload.content, activeSavedRequestId: request.id } });
+      return request;
+    }),
+    flushAppState: vi.fn(async (commit) => {
+      flushSync(() => { commit?.(); rerenderPage(); });
+      await Promise.resolve();
+    }),
+  });
+  const view = renderConsolePage(CONSOLE_WORKSPACE_PATH);
+  rerenderPage = view.rerenderPage;
+  await screen.findByRole("textbox", { name: "测试请求内容" });
+  fireEvent.keyDown(screen.getByPlaceholderText(/请求名称（为空时/), { key: "Enter", metaKey: true });
+  await waitFor(() => expect(ok ? state.recordAuditLog : state.recordErrorLog).toHaveBeenCalledOnce());
+  expect(vi.mocked(executeConsoleRequest).mock.calls[0]![4]!.signal!.aborted).toBe(false);
+  expect(ok ? success : error).toHaveBeenCalled();
+  success.mockRestore(); error.mockRestore();
+});
+
+it.each(["连接", "请求", "卸载"])("首次保存持久化期间%s仍取消迟到完成通知", async (action) => {
+  const state = useAppStateMock();
+  vi.mocked(executeConsoleRequest).mockReset().mockResolvedValue({ ok: true, status: 200, bodyPreview: "{}" } as any);
+  let rerenderPage!: () => void;
+  let finishSaving!: () => void;
+  const persistence = new Promise<void>(resolve => { finishSaving = resolve; });
+  useAppStateMock.mockReturnValue({ ...state,
+    getPassword: vi.fn().mockResolvedValue("fixture"),
+    currentDraft: { ...createDefaultDraft(connection.id), content: 'POST /items/_doc\n{"value":1}' },
+    saveRequestFromDraft: vi.fn((payload) => {
+      const request = { ...savedRequest, id: "first-save", content: payload.content };
+      useAppStateMock.mockReturnValue({ ...useAppStateMock(), currentDraft: { ...createDefaultDraft(connection.id), content: payload.content, activeSavedRequestId: request.id } });
+      return request;
+    }),
+    flushAppState: vi.fn(async (commit) => {
+      flushSync(() => { commit?.(); rerenderPage(); });
+      await persistence;
+    }),
+  });
+  const view = renderConsolePage(CONSOLE_WORKSPACE_PATH);
+  rerenderPage = view.rerenderPage;
+  await screen.findByRole("textbox", { name: "测试请求内容" });
+  fireEvent.keyDown(screen.getByPlaceholderText(/请求名称（为空时/), { key: "Enter", metaKey: true });
+  await waitFor(() => expect(useAppStateMock().saveRequestFromDraft).toHaveBeenCalledOnce());
+  const signal = vi.mocked(executeConsoleRequest).mock.calls[0]![4]!.signal!;
+  expect(signal.aborted).toBe(false);
+  if (action === "请求") fireEvent.click(screen.getByText("健康检查"));
+  if (action === "卸载") view.unmount();
+  if (action === "连接") { useAppStateMock.mockReturnValue({ ...useAppStateMock(), currentConnection: { ...connection, id: "conn-2" } }); view.rerenderPage(); }
+  expect(signal.aborted).toBe(true);
+  await act(async () => { finishSaving(); });
+  expect(state.recordAuditLog).not.toHaveBeenCalled();
+  expect(state.recordErrorLog).not.toHaveBeenCalled();
 });

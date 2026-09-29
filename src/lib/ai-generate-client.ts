@@ -110,13 +110,14 @@ export async function generateRequestContentWithAi(request: AiGenerateRequest) {
 export async function generateRequestContentWithAiStream(
   request: AiGenerateRequest,
   onDelta: (delta: AiStreamDelta) => void,
+  signal?: AbortSignal,
 ) {
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: buildGenerateUserPrompt(request.description, request.context) },
   ];
 
-  const response = await postAiChatCompletion(request.settings, request.apiKey, messages, true, false);
+  const response = await postAiChatCompletion(request.settings, request.apiKey, messages, true, false, signal);
   if (!response.ok) {
     const bodyText = await response.text();
     throw new Error(extractApiErrorMessage(bodyText, response.status));
@@ -167,6 +168,7 @@ export type GenerateRequestOptions = {
   aiSettings: AiAnalysisSettings;
   apiKey: string | null | undefined;
   context?: AiGenerateContext;
+  signal?: AbortSignal;
   onStreamDelta?: (delta: AiStreamDelta) => void;
 };
 
@@ -186,7 +188,7 @@ export async function generateRequestContent(options: GenerateRequestOptions) {
   };
 
   if (onStreamDelta) {
-    return generateRequestContentWithAiStream(request, onStreamDelta);
+    return generateRequestContentWithAiStream(request, onStreamDelta, options.signal);
   }
 
   return generateRequestContentWithAi(request);

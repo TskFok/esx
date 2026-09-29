@@ -81,6 +81,8 @@ import type { RequestTemplate } from "../lib/request-templates";
 import { formatTagsInput, parseTagsInput } from "../lib/request-tags";
 import { buildConnectionLogContextFromProfile, buildRequestLogContext } from "../lib/error-logs";
 import { extractUnknownErrorDiagnostics, extractUnknownErrorMessage, getResponseErrorMessage } from "../lib/errors";
+import { createAiStreamFrame } from "../lib/ai-stream-frame";
+import { checkRequestAbort, isRequestAbort } from "../lib/request-cancellation";
 import { executeConsoleRequest } from "../lib/http-client";
 import { formatConsoleRequest, parseConsoleRequest, parseConsoleRequests } from "../lib/console-parser";
 import { analyzeRequestContent, type RequestAnalysisResult } from "../lib/request-analysis";
@@ -97,6 +99,7 @@ import type { ConnectionProfile } from "../types/connections";
 import type { ConnectionSearchMetadata, ConsoleDraft, ResponseSnapshot, SavedRequest } from "../types/requests";
 
 type RunPayload = {
+  signal: AbortSignal;
   connection: ConnectionProfile;
   content: string;
   overwriteRequestId: string | null;
@@ -401,6 +404,44 @@ export function ConsolePage() {
   const [generateStreamingReasoning, setGenerateStreamingReasoning] = useState("");
   const [generateStreamingContent, setGenerateStreamingContent] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+  const analysisControllerRef = useRef<AbortController | null>(null);
+  const generateControllerRef = useRef<AbortController | null>(null);
+  const runControllerRef = useRef<AbortController | null>(null);
+  const savedRunContextRef = useRef<{ connectionId: string; requestId: string; signal: AbortSignal } | null>(null);
+  const previousWorkContextRef = useRef({ connectionId: currentConnection?.id, requestId: currentDraft?.activeSavedRequestId });
+  const cancelActiveWork = useCallback(() => {
+    analysisControllerRef.current?.abort();
+    generateControllerRef.current?.abort();
+    runControllerRef.current?.abort();
+  }, []);
+  useEffect(() => {
+    const context = { connectionId: currentConnection?.id, requestId: currentDraft?.activeSavedRequestId };
+    const previous = previousWorkContextRef.current;
+    previousWorkContextRef.current = context;
+    if (previous.connectionId === context.connectionId && previous.requestId === context.requestId) return;
+    analysisControllerRef.current?.abort();
+    generateControllerRef.current?.abort();
+    const saved = savedRunContextRef.current;
+    // 首次保存会激活新请求，只有这次内部转换不取消正在完成的运行。
+    if (!saved || saved.connectionId !== context.connectionId || saved.requestId !== context.requestId
+      || saved.signal !== runControllerRef.current?.signal) {
+      runControllerRef.current?.abort();
+    }
+    savedRunContextRef.current = null;
+    setIsAnalyzing(false);
+    setIsGenerating(false);
+  }, [currentConnection?.id, currentDraft?.activeSavedRequestId]);
+  useEffect(() => cancelActiveWork, [cancelActiveWork]);
+  const closeAnalysis = () => {
+    analysisControllerRef.current?.abort();
+    setIsAnalyzing(false);
+    setAnalysisDialogOpen(false);
+  };
+  const closeGeneration = () => {
+    generateControllerRef.current?.abort();
+    setIsGenerating(false);
+    setGenerateDialogOpen(false);
+  };
   const analysisRequestRef = useRef(0);
   const generateRequestRef = useRef(0);
   const triggerAnalysisRef = useRef<() => void>(() => {});
@@ -605,6 +646,13 @@ export function ConsolePage() {
       return;
     }
 
+    analysisControllerRef.current?.abort();
+    const controller = new AbortController();
+    analysisControllerRef.current = controller;
+    const streamFrame = createAiStreamFrame(controller.signal,
+      (text) => setAnalysisStreamingReasoning(current => current + text),
+      (text) => setAnalysisStreamingContent(current => current + text),
+    );
     const requestId = analysisRequestRef.current + 1;
     analysisRequestRef.current = requestId;
     setIsAnalyzing(true);
@@ -617,34 +665,24 @@ export function ConsolePage() {
 
     try {
       const apiKey = await getAiApiKey(getAiCredentialScope(aiSettings));
+      checkRequestAbort(controller.signal);
       const useAiStream = isAiAnalysisConfigured(aiSettings, apiKey);
       const result = await analyzeRequestContent({
         content,
         aiSettings,
         apiKey,
-        onStreamDelta: useAiStream
-          ? (delta) => {
-              if (analysisRequestRef.current !== requestId) {
-                return;
-              }
-
-              if (delta.kind === "reasoning") {
-                setAnalysisStreamingReasoning((current) => current + delta.text);
-                return;
-              }
-
-              setAnalysisStreamingContent((current) => current + delta.text);
-            }
-          : undefined,
+        signal: controller.signal,
+        onStreamDelta: useAiStream ? streamFrame.push : undefined,
       });
 
-      if (analysisRequestRef.current !== requestId) {
+      if (controller.signal.aborted || analysisRequestRef.current !== requestId) {
         return;
       }
 
+      streamFrame.finish();
       setAnalysisResult(result);
       setAnalysisStreamingReasoning("");
-    setAnalysisStreamingContent("");
+      setAnalysisStreamingContent("");
 
       if (result.source === "ai") {
         recordAiAnalysisHistory({
@@ -657,16 +695,18 @@ export function ConsolePage() {
         toast.message("AI 分析失败，已回退到本地规则分析。");
       }
     } catch (error) {
-      if (analysisRequestRef.current !== requestId) {
+      if (isRequestAbort(error) || controller.signal.aborted || analysisRequestRef.current !== requestId) {
         return;
       }
 
+      streamFrame.finish();
       const message = error instanceof Error ? error.message : "AI 分析失败";
       setAnalysisError(message);
       setAnalysisStreamingReasoning("");
-    setAnalysisStreamingContent("");
+      setAnalysisStreamingContent("");
     } finally {
-      if (analysisRequestRef.current === requestId) {
+      streamFrame.finish();
+      if (!controller.signal.aborted && analysisRequestRef.current === requestId) {
         setIsAnalyzing(false);
       }
     }
@@ -677,6 +717,7 @@ export function ConsolePage() {
       const sshProfile = getSshProfileForConnection(payload.connection);
       const [password, sshSecret] = await Promise.all([getPassword(payload.connection), getSshSecret(sshProfile)]);
 
+      checkRequestAbort(payload.signal);
       if (!password) {
         throw new Error("当前连接未找到已保存密码，请回到连接页重新保存。");
       }
@@ -684,6 +725,7 @@ export function ConsolePage() {
       const requests = parseConsoleRequests(payload.content);
       let lastResponse: ResponseSnapshot | null = null;
       for (const [index, request] of requests.entries()) {
+        checkRequestAbort(payload.signal);
         const safety = classifyRequestSafety(request, payload.connection);
         if (safety.blocked) {
           throw new Error(`第 ${index + 1} 条请求被阻断：${safety.reasons.join(" ")}`);
@@ -701,7 +743,9 @@ export function ConsolePage() {
 
         lastResponse = await executeConsoleRequest(payload.connection, { password, sshSecret }, request, getSshTunnelForProfile(sshProfile), {
           responsePreviewBytes,
+          signal: payload.signal,
         });
+        checkRequestAbort(payload.signal);
         if (!lastResponse.ok) {
           return lastResponse;
         }
@@ -713,22 +757,28 @@ export function ConsolePage() {
       return lastResponse;
     },
     async onSuccess(response, payload) {
+      if (payload.signal.aborted) return;
       let saveErrorMessage: string | null = null;
 
       try {
         await flushAppState(() => {
-          saveRequestFromDraft({
+          if (payload.signal.aborted) return;
+          const saved = saveRequestFromDraft({
             connectionId: payload.connection.id,
             name: payload.requestName,
             content: payload.content,
             response,
             overwriteRequestId: payload.overwriteRequestId,
           });
+          savedRunContextRef.current = { connectionId: payload.connection.id, requestId: saved.id, signal: payload.signal };
         });
       } catch (error) {
         saveErrorMessage = error instanceof Error ? error.message : "保存失败";
+      } finally {
+        savedRunContextRef.current = null;
       }
 
+      if (payload.signal.aborted) return;
       if (!response.ok) {
         const message = getResponseErrorMessage(response, "请求失败");
         recordErrorLog({
@@ -772,6 +822,7 @@ export function ConsolePage() {
       toast.success("请求已完成并保存。");
     },
     onError(error, payload) {
+      if (payload.signal.aborted || isRequestAbort(error)) return;
       const message = extractUnknownErrorMessage(error, "请求失败");
       toast.error(message);
 
@@ -953,6 +1004,13 @@ export function ConsolePage() {
       return;
     }
 
+    generateControllerRef.current?.abort();
+    const controller = new AbortController();
+    generateControllerRef.current = controller;
+    const streamFrame = createAiStreamFrame(controller.signal,
+      (text) => setGenerateStreamingReasoning(current => current + text),
+      (text) => setGenerateStreamingContent(current => current + text),
+    );
     const requestId = generateRequestRef.current + 1;
     generateRequestRef.current = requestId;
     setIsGenerating(true);
@@ -963,6 +1021,7 @@ export function ConsolePage() {
 
     try {
       const apiKey = await getAiApiKey(getAiCredentialScope(aiSettings));
+      checkRequestAbort(controller.signal);
       const useAiStream = isAiAnalysisConfigured(aiSettings, apiKey);
       const content = await generateRequestContent({
         description,
@@ -972,40 +1031,31 @@ export function ConsolePage() {
           indexNames: autocompleteContext.indexNames,
           aliasNames: autocompleteContext.aliasNames,
         },
-        onStreamDelta: useAiStream
-          ? (delta) => {
-              if (generateRequestRef.current !== requestId) {
-                return;
-              }
-
-              if (delta.kind === "reasoning") {
-                setGenerateStreamingReasoning((current) => current + delta.text);
-                return;
-              }
-
-              setGenerateStreamingContent((current) => current + delta.text);
-            }
-          : undefined,
+        signal: controller.signal,
+        onStreamDelta: useAiStream ? streamFrame.push : undefined,
       });
 
-      if (generateRequestRef.current !== requestId) {
+      if (controller.signal.aborted || generateRequestRef.current !== requestId) {
         return;
       }
 
+      streamFrame.finish();
       setGeneratedContent(content);
       setGenerateStreamingReasoning("");
       setGenerateStreamingContent("");
     } catch (error) {
-      if (generateRequestRef.current !== requestId) {
+      if (isRequestAbort(error) || controller.signal.aborted || generateRequestRef.current !== requestId) {
         return;
       }
 
+      streamFrame.finish();
       const message = error instanceof Error ? error.message : "AI 生成失败";
       setGenerateError(message);
       setGenerateStreamingReasoning("");
       setGenerateStreamingContent("");
     } finally {
-      if (generateRequestRef.current === requestId) {
+      streamFrame.finish();
+      if (!controller.signal.aborted && generateRequestRef.current === requestId) {
         setIsGenerating(false);
       }
     }
@@ -1223,7 +1273,10 @@ export function ConsolePage() {
       toast.warning(searchSizeWarning.message);
     }
 
+    const controller = new AbortController();
+    runControllerRef.current = controller;
     runMutation.mutate({
+      signal: controller.signal,
       connection: selectedConnection,
       content,
       overwriteRequestId: activeDraftState.activeSavedRequestId,
@@ -1252,6 +1305,9 @@ export function ConsolePage() {
   }
 
   function handleSelectSavedRequest(requestId: string) {
+    cancelActiveWork();
+    setIsAnalyzing(false);
+    setIsGenerating(false);
     flushEditorContent();
     flushDraftName();
     selectSavedRequest(requestId);
@@ -1675,6 +1731,7 @@ export function ConsolePage() {
               onOpenShortcuts={() => setShortcutsOpen(true)}
             />
 
+            {runMutation.isPending ? <Button variant="outline" onClick={() => runControllerRef.current?.abort()}>取消运行</Button> : null}
             <div
               ref={splitRef}
               className={`mt-4 flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-0 ${
@@ -1806,7 +1863,7 @@ export function ConsolePage() {
       </div>
 
       {analysisDialogMounted ? <Suspense fallback={
-        <LazyDialogFallback open={analysisDialogOpen} title="正在加载 AI 分析" onClose={() => setAnalysisDialogOpen(false)} />
+        <LazyDialogFallback open={analysisDialogOpen} title="正在加载 AI 分析" onClose={closeAnalysis} />
       }>
         <AiAnalysisDialog
           open={analysisDialogOpen}
@@ -1821,7 +1878,7 @@ export function ConsolePage() {
           currentConnectionName={selectedConnection.name}
           aiEnabled={aiSettings.enabled}
           aiConfigured={aiConfiguredForAnalysis}
-          onClose={() => setAnalysisDialogOpen(false)}
+          onClose={closeAnalysis}
           onOpenSettings={() => setAiSettingsDialogOpen(true)}
           onApplySuggestion={handleApplyAnalysisSuggestion}
           onSelectHistory={setSelectedHistoryId}
@@ -1837,7 +1894,7 @@ export function ConsolePage() {
       </Suspense> : null}
 
       {generateDialogMounted ? <Suspense fallback={
-        <LazyDialogFallback open={generateDialogOpen} title="正在加载 AI 生成" onClose={() => setGenerateDialogOpen(false)} />
+        <LazyDialogFallback open={generateDialogOpen} title="正在加载 AI 生成" onClose={closeGeneration} />
       }>
         <AiGenerateDialog
           open={generateDialogOpen}
@@ -1848,7 +1905,7 @@ export function ConsolePage() {
           generateError={generateError}
           aiEnabled={aiSettings.enabled}
           aiConfigured={aiConfiguredForAnalysis}
-          onClose={() => setGenerateDialogOpen(false)}
+          onClose={closeGeneration}
           onOpenSettings={() => setAiSettingsDialogOpen(true)}
           onGenerate={(description) => {
             void runGeneration(description);

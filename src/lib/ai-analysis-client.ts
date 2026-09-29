@@ -1,7 +1,7 @@
 import type { AiAnalysisSettings } from "../types/ai-settings";
 import { getAiCredentialScope, supportsKimiThinkingMode } from "../types/ai-settings";
 import { readOpenAiSseStream, type AiStreamDelta } from "./ai-sse";
-import { executeAiHttpRequest, type TauriHttpResponse } from "./tauri";
+import { executeAiHttpRequest, openAiHttpStream, type TauriHttpResponse } from "./tauri";
 import { ensureTrailingSlashless } from "./utils";
 import type { RequestAnalysisResult } from "./request-analyzer";
 
@@ -357,18 +357,20 @@ export async function postAiChatCompletion(
   messages: Array<{ role: string; content: string }>,
   stream: boolean,
   jsonResponse = !stream,
+  signal?: AbortSignal,
 ) {
   const { url } = validateAiRequestSettings(settings, apiKey);
   const accept = stream ? "text/event-stream" : "application/json";
-  const response = await executeAiHttpRequest({
+  const payload = {
     url,
     method: "POST",
     apiKey,
     accept,
     contentType: "application/json",
     bodyText: buildChatCompletionBody(settings, messages, stream, jsonResponse),
-  });
-  return responseFromTauriHttp(response, accept);
+  };
+  if (stream) return openAiHttpStream(payload, signal);
+  return responseFromTauriHttp(await executeAiHttpRequest(payload), accept);
 }
 
 export async function testAiConnection(request: AiConnectionTestRequest): Promise<AiConnectionTestResult> {
@@ -418,13 +420,14 @@ export async function analyzeRequestContentWithAi(request: AiAnalysisRequest): P
 export async function analyzeRequestContentWithAiStream(
   request: AiAnalysisRequest,
   onDelta: (delta: AiStreamDelta) => void,
+  signal?: AbortSignal,
 ): Promise<RequestAnalysisResult> {
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     { role: "user", content: buildUserPrompt(request.content) },
   ];
 
-  const response = await postAiChatCompletion(request.settings, request.apiKey, messages, true);
+  const response = await postAiChatCompletion(request.settings, request.apiKey, messages, true, false, signal);
   if (!response.ok) {
     const bodyText = await response.text();
     throw new Error(extractApiErrorMessage(bodyText, response.status));

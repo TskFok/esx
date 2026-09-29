@@ -5,9 +5,10 @@ import {
   getResponseErrorMessage,
   isGenericFailureMessage,
 } from "./errors";
-import { buildResponseSnapshot } from "./response-snapshot";
+import { buildResponseSnapshot, normalizeResponsePreviewBytes } from "./response-snapshot";
 import { buildClusterOverview, buildIndicesStatus, buildOperationsStatus } from "./status";
 import { ensureTrailingSlashless } from "./utils";
+import { checkRequestAbort, isRequestAbort } from "./request-cancellation";
 import { executeEsHttpRequest, executeSshHttpRequest, type TauriHttpResponse } from "./tauri";
 import type { ConnectionProfile, SshTunnelConfig } from "../types/connections";
 import type { ParsedConsoleRequest } from "./console-parser";
@@ -76,6 +77,8 @@ function buildSnapshot(
     durationMs,
     executedAt,
     bodyText: result.bodyText,
+    totalBytes: result.totalBytes,
+    truncated: result.truncated,
     errorMessage: result.errorMessage,
     diagnostics: result.diagnostics ?? [],
   }, responsePreviewBytes);
@@ -637,8 +640,12 @@ async function executeConsoleRequestRaw(
   connection: ConnectionProfile,
   credentials: RequestCredentials,
   parsed: ParsedConsoleRequest,
-  sshTunnelOverride?: SshTunnelConfig | null,
+  sshTunnelOverride: SshTunnelConfig | null | undefined,
+  readMode: "full" | "preview",
+  previewBytes?: number,
+  signal?: AbortSignal,
 ) {
+  checkRequestAbort(signal);
   const startedAt = performance.now();
   const executedAt = new Date().toISOString();
   const sshTunnel = sshTunnelOverride ?? connection.sshTunnel ?? null;
@@ -661,7 +668,9 @@ async function executeConsoleRequestRaw(
         tls: normalizedConnection.tls,
         sshTunnel,
         sshSecret: credentials.sshSecret ?? null,
-      });
+        readMode,
+        previewBytes,
+      }, signal);
 
       return {
         response,
@@ -682,6 +691,8 @@ async function executeConsoleRequestRaw(
       contentType: parsed.contentType,
       insecureTls: isInsecureTls(normalizedConnection),
       tls: normalizedConnection.tls,
+      readMode,
+      previewBytes,
     });
 
     return {
@@ -690,6 +701,8 @@ async function executeConsoleRequestRaw(
         status: response.status,
         statusText: response.statusText,
         bodyText: response.bodyText,
+        totalBytes: response.totalBytes,
+        truncated: response.truncated,
         errorMessage: response.errorMessage,
         diagnostics: response.diagnostics ?? [],
       },
@@ -697,6 +710,7 @@ async function executeConsoleRequestRaw(
       executedAt,
     };
   } catch (error) {
+    if (isRequestAbort(error)) throw error;
     const message = extractUnknownErrorMessage(error, "请求失败");
     return {
       response: {
@@ -718,9 +732,10 @@ export async function executeConsoleRequest(
   credentials: RequestCredentials,
   parsed: ParsedConsoleRequest,
   sshTunnelOverride?: SshTunnelConfig | null,
-  options?: { responsePreviewBytes?: number },
+  options?: { responsePreviewBytes?: number; signal?: AbortSignal },
 ) {
-  const result = await executeConsoleRequestRaw(connection, credentials, parsed, sshTunnelOverride);
+  const result = await executeConsoleRequestRaw(connection, credentials, parsed, sshTunnelOverride,
+    "preview", normalizeResponsePreviewBytes(options?.responsePreviewBytes), options?.signal);
   return buildSnapshot(result.response, result.durationMs, result.executedAt, options?.responsePreviewBytes);
 }
 
@@ -742,6 +757,7 @@ export async function executeAdminOperation(
       contentType: operation.bodyText ? "application/json" : null,
     },
     sshTunnelOverride,
+    "full",
   );
 
   return {
@@ -850,6 +866,7 @@ async function runSearchMetadataProbe(
       contentType: null,
     },
     sshTunnelOverride,
+    "full",
   );
   const snapshot = buildSnapshot(result.response, result.durationMs, result.executedAt);
 
@@ -874,6 +891,7 @@ async function runServerStatusProbe(
       contentType: null,
     },
     sshTunnelOverride,
+    "full",
   );
   const snapshot = buildSnapshot(result.response, result.durationMs, result.executedAt);
 
@@ -1145,7 +1163,7 @@ async function runConnectionProbe(
     bodyJson: null,
     bodyKind: "empty",
     contentType: null,
-  });
+  }, undefined, "full");
 
   return {
     probe,

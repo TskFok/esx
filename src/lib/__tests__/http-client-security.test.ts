@@ -66,6 +66,6 @@ describe("Elasticsearch credential destination", () => {
     expect(sendSsh).toHaveBeenCalledWith(expect.objectContaining({
       baseUrl: connection.baseUrl, sshTunnel: tunnel,
       tls: { mode: "certificateFingerprint", fingerprint: "SHA256:tls-pin" },
-    }));
+    }), undefined);
   });
 });

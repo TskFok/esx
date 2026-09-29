@@ -156,3 +156,16 @@ describe("response snapshot previews", () => {
     expect(normalizeResponsePreviewBytes(512 * 1024)).toBe(512 * 1024);
   });
 });
+
+it("preserves native byte size and truncation after persistence", () => {
+  const decoded = buildResponseSnapshot({ ok: true, status: 200, statusText: "OK", bodyText: "é", totalBytes: 1, truncated: false, durationMs: 0, executedAt: "" });
+  expect(normalizeResponseSnapshot(decoded)).toMatchObject({ sizeBytes: 1, truncated: false });
+  const lossyPrefix = buildResponseSnapshot({ ok: true, status: 200, statusText: "OK", bodyText: "�", totalBytes: 2, truncated: true, durationMs: 0, executedAt: "" });
+  expect(normalizeResponseSnapshot(lossyPrefix)).toMatchObject({ sizeBytes: 2, truncated: true });
+});
+
+it("trusts explicit native completeness when BOM or charset decoding shortens the body", () => {
+  const snapshot = buildResponseSnapshot({ ok: true, status: 200, statusText: "OK", bodyText: "{}", totalBytes: 5, truncated: false, durationMs: 0, executedAt: "" });
+  expect(snapshot).toMatchObject({ sizeBytes: 5, truncated: false, isJson: true, prettyPreview: "{}" });
+  expect(normalizeResponseSnapshot(snapshot)).toMatchObject({ sizeBytes: 5, truncated: false, isJson: true });
+});

@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockExecuteAiHttpRequest } = vi.hoisted(() => ({
+const { mockExecuteAiHttpRequest, mockOpenAiHttpStream } = vi.hoisted(() => ({
   mockExecuteAiHttpRequest: vi.fn(),
+  mockOpenAiHttpStream: vi.fn(),
 }));
 
 vi.mock("../tauri", () => ({
   executeAiHttpRequest: mockExecuteAiHttpRequest,
+  openAiHttpStream: mockOpenAiHttpStream,
 }));
 
 import { analyzeRequestContent, analyzeRequestContentLocally } from "../request-analysis";
@@ -13,6 +15,7 @@ import { analyzeRequestContent, analyzeRequestContentLocally } from "../request-
 describe("analyzeRequestContent", () => {
   beforeEach(() => {
     mockExecuteAiHttpRequest.mockReset();
+    mockOpenAiHttpStream.mockReset();
   });
 
   it("uses local analysis when ai is disabled", async () => {
@@ -60,15 +63,10 @@ describe("analyzeRequestContent", () => {
   });
 
   it("streams ai deltas when callback is provided", async () => {
-    mockExecuteAiHttpRequest.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      bodyText:
-        'data: {"choices":[{"delta":{"content":"{\\"valid\\":true,"}}]}\n\n' +
-        'data: {"choices":[{"delta":{"content":"\\"meaning\\":\\"测试\\",\\"details\\":[],\\"issues\\":[],\\"suggestion\\":null}"}}]}\n\n' +
-        "data: [DONE]\n\n",
-    });
+    mockOpenAiHttpStream.mockResolvedValue(new Response(
+      'data: {"choices":[{"delta":{"content":' + JSON.stringify(JSON.stringify({ valid: true, meaning: "测试", details: [], issues: [], suggestion: null })) + '}}]}\n\n'
+        + "data: [DONE]\n\n",
+    ));
 
     const deltas: Array<{ kind: "reasoning" | "content"; text: string }> = [];
     const result = await analyzeRequestContent({
@@ -87,6 +85,7 @@ describe("analyzeRequestContent", () => {
 
     expect(deltas.some((delta) => delta.kind === "content")).toBe(true);
     expect(result.source).toBe("ai");
+    expect(mockExecuteAiHttpRequest).not.toHaveBeenCalled();
     expect(result.valid).toBe(true);
   });
 });
@@ -97,4 +96,16 @@ describe("analyzeRequestContentLocally", () => {
     expect(result.valid).toBe(true);
     expect(result.source).toBe("local");
   });
+});
+
+
+it("does not fall back to local analysis after stream cancellation", async () => {
+  const error = new DOMException("cancelled", "AbortError");
+  mockOpenAiHttpStream.mockRejectedValue(error);
+  const signal = new AbortController().signal;
+  await expect(analyzeRequestContent({
+    content: "GET /", apiKey: "fixture", signal, onStreamDelta: vi.fn(),
+    aiSettings: { enabled: true, baseUrl: "http://localhost/v1", model: "fixture", providerId: "openai", apiKeyRequired: true, thinkingModeEnabled: false },
+  })).rejects.toBe(error);
+  expect(mockOpenAiHttpStream).toHaveBeenCalledWith(expect.any(Object), signal);
 });

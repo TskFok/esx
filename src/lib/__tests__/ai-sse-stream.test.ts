@@ -26,3 +26,15 @@ describe("readOpenAiSseStream", () => {
     expect(accumulated).toBe('{"valid":true}');
   });
 });
+
+it("reassembles UTF-8 codepoints split across byte chunks", async () => {
+  const bytes = new TextEncoder().encode('data: {"choices":[{"delta":{"content":"中文😀"}}]}\n\n');
+  const onDelta = (delta: { text: string }) => seen.push(delta.text);
+  const seen: string[] = [];
+  const stream = new ReadableStream<Uint8Array>({ start(controller) {
+    for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
+    controller.close();
+  } });
+  expect(await readOpenAiSseStream(stream, onDelta)).toBe("中文😀");
+  expect(seen).toEqual(["中文😀"]);
+});
