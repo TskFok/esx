@@ -1,9 +1,14 @@
+#[cfg(test)]
+use std::io::{Read, Write};
+#[cfg(not(unix))]
+use std::path::Path;
+mod ai_stream;
+mod ssh_transport;
+mod http_response_reader;
+mod http_client_pool;
 use std::{
     collections::HashMap,
     fs,
-    io::{Read, Write},
-    net::TcpStream,
-    path::Path,
     sync::{Arc, LazyLock, Mutex},
     time::Duration,
 };
@@ -405,6 +410,8 @@ struct ExecuteEsHttpRequestPayload {
     content_type: Option<String>,
     insecure_tls: bool,
     tls: Option<ConnectionTlsConfig>,
+    read_mode: Option<String>,
+    preview_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -433,6 +440,7 @@ struct ExecuteAiHttpRequestPayload {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecuteSshHttpRequestPayload {
+    request_id: Option<String>,
     base_url: String,
     url: String,
     method: String,
@@ -446,6 +454,8 @@ struct ExecuteSshHttpRequestPayload {
     tls: Option<ConnectionTlsConfig>,
     ssh_tunnel: SshTunnelConfig,
     ssh_secret: Option<String>,
+    read_mode: Option<String>,
+    preview_bytes: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -464,6 +474,8 @@ struct HttpResponsePayload {
     body_text: String,
     error_message: Option<String>,
     diagnostics: Vec<String>,
+    total_bytes: u64,
+    truncated: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -495,6 +507,8 @@ fn build_request_failed_payload(message: String, diagnostics: Vec<String>) -> Ht
         ok: false,
         status: 0,
         status_text: "REQUEST_FAILED".into(),
+        total_bytes: message.len() as u64,
+        truncated: false,
         body_text: message.clone(),
         error_message: Some(message),
         diagnostics,
@@ -676,9 +690,18 @@ fn build_fingerprint_tls_config(expected_fingerprint: &str) -> Result<rustls::Cl
         .with_no_client_auth())
 }
 
+#[cfg(test)]
 fn es_http_client_builder(
     tls: Option<&ConnectionTlsConfig>,
     insecure_tls: bool,
+) -> Result<reqwest::blocking::ClientBuilder, String> {
+    es_http_client_builder_with_ca(tls, insecure_tls, None)
+}
+
+fn es_http_client_builder_with_ca(
+    tls: Option<&ConnectionTlsConfig>,
+    insecure_tls: bool,
+    ca_bytes: Option<&[u8]>,
 ) -> Result<reqwest::blocking::ClientBuilder, String> {
     let mode = resolve_tls_mode(tls, insecure_tls);
     let mut builder = reqwest::blocking::Client::builder()
@@ -703,7 +726,14 @@ fn es_http_client_builder(
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "CA 证书模式需要提供证书路径。".to_string())?;
-            let certificate_bytes = fs::read(ca_path).map_err(|error| format!("无法读取 CA 证书 {ca_path}：{error}"))?;
+            let owned_bytes;
+            let certificate_bytes = match ca_bytes {
+                Some(bytes) => bytes,
+                None => {
+                    owned_bytes = fs::read(ca_path).map_err(|error| format!("无法读取 CA 证书 {ca_path}：{error}"))?;
+                    &owned_bytes
+                }
+            };
             let certificate = reqwest::Certificate::from_pem(&certificate_bytes)
                 .or_else(|_| reqwest::Certificate::from_der(&certificate_bytes))
                 .map_err(|error| format!("无法加载 CA 证书 {ca_path}：{error}"))?;
@@ -715,8 +745,7 @@ fn es_http_client_builder(
 }
 
 fn build_es_http_client(tls: Option<&ConnectionTlsConfig>, insecure_tls: bool) -> Result<reqwest::blocking::Client, String> {
-    es_http_client_builder(tls, insecure_tls)?.build()
-        .map_err(|error| format!("无法创建 Elasticsearch HTTP 客户端：{error}"))
+    http_client_pool::HTTP_CLIENT_POOL.es_client(tls, insecure_tls)
 }
 
 fn map_reqwest_error(error: reqwest::Error) -> String {
@@ -732,7 +761,7 @@ fn map_reqwest_error(error: reqwest::Error) -> String {
     error.to_string()
 }
 
-fn authenticate_ssh(session: &Session, config: &SshTunnelConfig, ssh_secret: Option<&str>) -> Result<(), String> {
+fn authenticate_ssh(session: &Session, config: &SshTunnelConfig, ssh_secret: Option<&str>, private_key: Option<&[u8]>) -> Result<(), String> {
     match config.auth_method {
         SshAuthMethod::Password => {
             let password = ssh_secret
@@ -749,14 +778,22 @@ fn authenticate_ssh(session: &Session, config: &SshTunnelConfig, ssh_secret: Opt
                 return Err("SSH 私钥路径不能为空。".into());
             }
 
-            session
-                .userauth_pubkey_file(
-                    &config.username,
-                    None,
-                    Path::new(private_key_path),
+            let private_key = private_key.ok_or_else(|| "未读取 SSH 私钥。".to_string())?;
+            #[cfg(unix)]
+            session.userauth_pubkey_memory(
+                &config.username,
+                None,
+                std::str::from_utf8(private_key).map_err(|e| e.to_string())?,
+                ssh_secret.filter(|secret| !secret.is_empty()),
+            ).map_err(|error| format!("SSH 私钥认证失败：{error}"))?;
+            #[cfg(not(unix))]
+            {
+                let _ = private_key;
+                session.userauth_pubkey_file(
+                    &config.username, None, Path::new(private_key_path),
                     ssh_secret.filter(|secret| !secret.is_empty()),
-                )
-                .map_err(|error| format!("SSH 私钥认证失败：{error}"))?;
+                ).map_err(|error| format!("SSH 私钥认证失败：{error}"))?;
+            }
         }
     }
 
@@ -767,7 +804,12 @@ fn authenticate_ssh(session: &Session, config: &SshTunnelConfig, ssh_secret: Opt
     }
 }
 
+#[cfg(test)]
 fn perform_ssh_validation(payload: ValidateSshTunnelPayload) -> TunnelValidationResponsePayload {
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    perform_ssh_validation_until(payload, &cancel, std::time::Instant::now() + ssh_transport::TOTAL_TIMEOUT)
+}
+fn perform_ssh_validation_until(payload: ValidateSshTunnelPayload, cancel: &ssh_transport::CancellationToken, deadline: std::time::Instant) -> TunnelValidationResponsePayload {
     let auth_label = match payload.ssh_tunnel.auth_method {
         SshAuthMethod::Password => "密码",
         SshAuthMethod::PrivateKey => "私钥",
@@ -782,20 +824,11 @@ fn perform_ssh_validation(payload: ValidateSshTunnelPayload) -> TunnelValidation
 
     let result = (|| -> Result<(), String> {
         require_ssh_trusted_key(&payload.ssh_tunnel, true)?;
-        let tcp_stream = TcpStream::connect((payload.ssh_tunnel.host.as_str(), payload.ssh_tunnel.port))
-            .map_err(|error| format!("无法连接 SSH 主机 {}:{}：{error}", payload.ssh_tunnel.host, payload.ssh_tunnel.port))?;
-        diagnostics.push("SSH TCP 连接已建立。".into());
-
-        let mut session = Session::new().map_err(|error| format!("无法创建 SSH 会话：{error}"))?;
-        session.set_tcp_stream(tcp_stream);
-        session.handshake().map_err(|error| format!("SSH 握手失败：{error}"))?;
-        diagnostics.push("SSH 握手成功。".into());
-
+        let lease = ssh_transport::POOL.validation_until(&payload.ssh_tunnel, payload.ssh_secret.as_deref(), cancel, deadline)?;
+        let session = lease.session();
         let fingerprint = verify_ssh_host_key(&payload.ssh_tunnel, session.host_key_hash(ssh2::HashType::Sha256), true)?;
         diagnostics.push(format!("SSH 主机指纹：{fingerprint}"));
-        authenticate_ssh(&session, &payload.ssh_tunnel, payload.ssh_secret.as_deref())?;
         diagnostics.push("SSH 认证成功。".into());
-
         let _ = session.disconnect(None, "esx validation completed", None);
         Ok(())
     })();
@@ -862,6 +895,8 @@ fn build_remote_curl_script(payload: &ExecuteSshHttpRequestPayload) -> String {
         "silent".to_string(),
         "show-error".to_string(),
         "http1.1".to_string(),
+        "connect-timeout = 10".to_string(),
+        "max-time = 60".to_string(),
         format!("request = {}", curl_config_value(&payload.method)),
         format!("header = {}", curl_config_value("Accept: application/json, text/plain, */*")),
         format!("header = {}", curl_config_value("Connection: close")),
@@ -926,22 +961,11 @@ fn build_remote_curl_script(payload: &ExecuteSshHttpRequestPayload) -> String {
     script
 }
 
-fn parse_remote_curl_output(stdout: &str) -> Result<(u16, String), String> {
-    const STATUS_MARKER: &str = "\n__ESX_STATUS__:";
-
-    let marker_index = stdout
-        .rfind(STATUS_MARKER)
-        .ok_or_else(|| "无法从远程 curl 输出中解析 HTTP 状态码。".to_string())?;
-    let body_text = stdout[..marker_index].to_string();
-    let status_line = stdout[marker_index + STATUS_MARKER.len()..].trim();
-    let status = status_line
-        .parse::<u16>()
-        .map_err(|error| format!("远程 curl 返回了无法识别的状态码：{error}"))?;
-
-    Ok((status, body_text))
+fn perform_es_http_request(payload: ExecuteEsHttpRequestPayload) -> Result<HttpResponsePayload, DiagnosticFailure> {
+    perform_es_http_request_with_timeout(payload, Duration::from_secs(60))
 }
 
-fn perform_es_http_request(payload: ExecuteEsHttpRequestPayload) -> Result<HttpResponsePayload, DiagnosticFailure> {
+fn perform_es_http_request_with_timeout(payload: ExecuteEsHttpRequestPayload, timeout: Duration) -> Result<HttpResponsePayload, DiagnosticFailure> {
     let url = validate_es_request_url(&payload.base_url, &payload.url)
         .map_err(|error| DiagnosticFailure::new(error, vec![]))?;
     let mut diagnostics = vec![format!("开始执行 Elasticsearch 请求：{} {}{}", payload.method, url.origin().ascii_serialization(), url.path())];
@@ -954,6 +978,8 @@ fn perform_es_http_request(payload: ExecuteEsHttpRequestPayload) -> Result<HttpR
         }
     }
 
+    let mode = http_response_reader::read_mode(payload.read_mode.as_deref(), payload.preview_bytes)
+        .map_err(|error| DiagnosticFailure::new(error, diagnostics.clone()))?;
     let client = build_es_http_client(payload.tls.as_ref(), payload.insecure_tls).map_err(|error| {
         diagnostics.push(error.clone());
         DiagnosticFailure::new(error, diagnostics.clone())
@@ -962,8 +988,10 @@ fn perform_es_http_request(payload: ExecuteEsHttpRequestPayload) -> Result<HttpR
         diagnostics.push(error.to_string());
         DiagnosticFailure::new(format!("HTTP 方法无效：{error}"), diagnostics.clone())
     })?;
+    // 请求级期限也传入 reqwest 异步 body，避免逐块 Read 重置总超时。
     let mut request = client
         .request(method, url)
+        .timeout(timeout)
         .header("Accept", "application/json, text/plain, */*")
         .header(
             "Authorization",
@@ -992,7 +1020,16 @@ fn perform_es_http_request(payload: ExecuteEsHttpRequestPayload) -> Result<HttpR
         .canonical_reason()
         .map(|value| value.to_string())
         .unwrap_or_else(|| status.as_str().to_string());
-    let body_text = response.text().map_err(|error| {
+    let charset = response.headers().get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').skip(1).find_map(|parameter| {
+            let (name, value) = parameter.trim().split_once('=')?;
+            name.trim().eq_ignore_ascii_case("charset").then(|| value.trim().trim_matches('"').to_owned())
+        }));
+    let result = match charset.as_deref() {
+        Some(charset) => http_response_reader::read_response_with_charset(response, mode, Some(charset)),
+        None => http_response_reader::read_response(response, mode),
+    }.map_err(|error| {
         let message = format!("读取 Elasticsearch 响应失败：{error}");
         diagnostics.push(message.clone());
         DiagnosticFailure::new(message, diagnostics.clone())
@@ -1003,7 +1040,9 @@ fn perform_es_http_request(payload: ExecuteEsHttpRequestPayload) -> Result<HttpR
         ok: status.is_success(),
         status: status_code,
         status_text,
-        body_text,
+        body_text: result.body_text,
+        total_bytes: result.total_bytes,
+        truncated: result.truncated,
         error_message: None,
         diagnostics,
     })
@@ -1048,6 +1087,8 @@ fn perform_es_connection_validation(payload: ValidateEsConnectionPayload) -> Htt
             content_type: None,
             insecure_tls: payload.insecure_tls,
             tls: payload.tls.clone(),
+            read_mode: Some("full".into()),
+            preview_bytes: None,
         };
         match perform_es_http_request(probe_payload) {
             Ok(response) => {
@@ -1079,11 +1120,7 @@ fn perform_ai_http_request(payload: ExecuteAiHttpRequestPayload) -> Result<HttpR
     let parsed_url = validate_http_url(&payload.url).map_err(|error| DiagnosticFailure::new(error, vec![]))?;
     let mut diagnostics = vec![format!("开始执行 AI HTTP 请求：{} {}{}", payload.method, parsed_url.origin().ascii_serialization(), parsed_url.path())];
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .connect_timeout(Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
+    let client = http_client_pool::HTTP_CLIENT_POOL.ai_client()
         .map_err(|error| {
             diagnostics.push(error.to_string());
             DiagnosticFailure::new(format!("无法创建 AI HTTP 客户端：{error}"), diagnostics.clone())
@@ -1092,7 +1129,7 @@ fn perform_ai_http_request(payload: ExecuteAiHttpRequestPayload) -> Result<HttpR
         diagnostics.push(error.to_string());
         DiagnosticFailure::new(format!("AI HTTP 方法无效：{error}"), diagnostics.clone())
     })?;
-    let mut request = client.request(method, parsed_url);
+    let mut request = client.request(method, parsed_url).timeout(Duration::from_secs(120));
     request = request.header("Accept", payload.accept.as_deref().unwrap_or("application/json"));
     if let Some(api_key) = payload.api_key.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
         request = request.header("Authorization", format!("Bearer {api_key}"));
@@ -1125,13 +1162,21 @@ fn perform_ai_http_request(payload: ExecuteAiHttpRequestPayload) -> Result<HttpR
         ok: status.is_success(),
         status: status_code,
         status_text,
+        total_bytes: body_text.len() as u64,
+        truncated: false,
         body_text,
         error_message: None,
         diagnostics,
     })
 }
 
+#[cfg(test)]
 fn perform_ssh_http_request(payload: ExecuteSshHttpRequestPayload) -> Result<HttpResponsePayload, DiagnosticFailure> {
+    let registration = ssh_transport::Registration::new(payload.request_id.clone()).map_err(|error| DiagnosticFailure::new(error, vec![]))?;
+    perform_ssh_http_request_registered(payload, registration, std::time::Instant::now() + ssh_transport::TOTAL_TIMEOUT)
+}
+
+fn perform_ssh_http_request_registered(payload: ExecuteSshHttpRequestPayload, registration: ssh_transport::Registration, deadline: std::time::Instant) -> Result<HttpResponsePayload, DiagnosticFailure> {
     let url = validate_es_request_url(&payload.base_url, &payload.url)
         .map_err(|error| DiagnosticFailure::new(error, vec![]))?;
     if matches!(resolve_tls_mode(payload.tls.as_ref(), payload.insecure_tls), ConnectionTlsMode::CaCertificate | ConnectionTlsMode::CertificateFingerprint) {
@@ -1167,83 +1212,17 @@ fn perform_ssh_http_request(payload: ExecuteSshHttpRequestPayload) -> Result<Htt
         })?;
     diagnostics.push(format!("目标 Elasticsearch：{}:{}", host, target_port));
 
-    diagnostics.push("开始建立 SSH 会话。".into());
-    let tcp_stream = TcpStream::connect((payload.ssh_tunnel.host.as_str(), payload.ssh_tunnel.port))
-        .map_err(|error| {
-            diagnostics.push(error.to_string());
-            DiagnosticFailure::new(
-                format!("无法连接 SSH 主机 {}:{}：{error}", payload.ssh_tunnel.host, payload.ssh_tunnel.port),
-                diagnostics.clone(),
-            )
-        })?;
-
-    let mut session = Session::new().map_err(|error| {
-        diagnostics.push(error.to_string());
-        DiagnosticFailure::new(format!("无法创建 SSH 会话：{error}"), diagnostics.clone())
-    })?;
-    session.set_tcp_stream(tcp_stream);
-    session.handshake().map_err(|error| {
-        diagnostics.push(error.to_string());
-        DiagnosticFailure::new(format!("SSH 握手失败：{error}"), diagnostics.clone())
-    })?;
-    verify_ssh_host_key(&payload.ssh_tunnel, session.host_key_hash(ssh2::HashType::Sha256), false)
+    let mode = http_response_reader::read_mode(payload.read_mode.as_deref(), payload.preview_bytes)
         .map_err(|error| DiagnosticFailure::new(error, diagnostics.clone()))?;
-    authenticate_ssh(&session, &payload.ssh_tunnel, payload.ssh_secret.as_deref()).map_err(|error| {
-        diagnostics.push(error.clone());
-        DiagnosticFailure::new(error, diagnostics.clone())
-    })?;
-    diagnostics.push("SSH 会话已建立，开始在远程主机执行 curl。".into());
-
-    let command = build_remote_curl_command(&payload);
-    let mut channel = session.channel_session().map_err(|error| {
-        diagnostics.push(error.to_string());
-        DiagnosticFailure::new(format!("无法创建 SSH 执行通道：{error}"), diagnostics.clone())
-    })?;
-    channel.exec(&command).map_err(|error| {
-        diagnostics.push(error.to_string());
-        DiagnosticFailure::new(format!("无法在 SSH 主机上启动 curl：{error}"), diagnostics.clone())
-    })?;
-
-    let script = build_remote_curl_script(&payload);
-    channel.write_all(script.as_bytes()).map_err(|error| {
-        diagnostics.push(error.to_string());
-        DiagnosticFailure::new(format!("无法向 SSH 主机写入远程 curl 脚本：{error}"), diagnostics.clone())
-    })?;
-    let _ = channel.send_eof();
-
-    let mut stdout = String::new();
-    channel.read_to_string(&mut stdout).map_err(|error| {
-        diagnostics.push(error.to_string());
-        DiagnosticFailure::new(format!("读取远程 curl 标准输出失败：{error}"), diagnostics.clone())
-    })?;
-
-    let mut stderr = String::new();
-    channel.stderr().read_to_string(&mut stderr).map_err(|error| {
-        diagnostics.push(error.to_string());
-        DiagnosticFailure::new(format!("读取远程 curl 错误输出失败：{error}"), diagnostics.clone())
-    })?;
-
-    let _ = channel.wait_close();
-    let exit_status = channel.exit_status().unwrap_or(-1);
-    if !stderr.trim().is_empty() {
-        diagnostics.push(format!("远程 curl stderr：{}", stderr.trim()));
-    }
-    diagnostics.push(format!("远程 curl 退出码：{}", exit_status));
-
-    if exit_status != 0 {
-        let message = if !stderr.trim().is_empty() {
-            format!("远程 curl 执行失败：{}", stderr.trim())
-        } else {
-            format!("远程 curl 执行失败，退出码 {}", exit_status)
-        };
-        diagnostics.push(message.clone());
-        return Err(DiagnosticFailure::new(message, diagnostics));
-    }
-
-    let (status_code, body_text) = parse_remote_curl_output(&stdout).map_err(|error| {
-        diagnostics.push(error.clone());
-        DiagnosticFailure::new(error, diagnostics.clone())
-    })?;
+    let limit = match mode { http_response_reader::ReadMode::Full => None, http_response_reader::ReadMode::Preview { max_bytes } => Some(max_bytes) };
+    let mut lease = ssh_transport::POOL.checkout_until(&payload.ssh_tunnel, payload.ssh_secret.as_deref(), &registration.cancel, deadline)
+        .map_err(|error| DiagnosticFailure::new(error, diagnostics.clone()))?;
+    let response = ssh_transport::execute(lease.session(), &build_remote_curl_command(&payload), &build_remote_curl_script(&payload), limit, &registration.cancel, deadline)
+        .map_err(|error| DiagnosticFailure::new(error, diagnostics.clone()))?;
+    lease.reuse();
+    if !response.stderr.is_empty() { diagnostics.push(format!("远程 curl stderr：{}", response.stderr)); }
+    let status_code = response.status;
+    let body_text = response.body;
     let status = StatusCode::from_u16(status_code).unwrap_or(StatusCode::BAD_GATEWAY);
     let status_text = status
         .canonical_reason()
@@ -1256,6 +1235,8 @@ fn perform_ssh_http_request(payload: ExecuteSshHttpRequestPayload) -> Result<Htt
         ok: status.is_success(),
         status: status_code,
         status_text,
+        total_bytes: response.total_bytes,
+        truncated: response.truncated,
         body_text,
         error_message: None,
         diagnostics: {
@@ -1283,6 +1264,25 @@ async fn validate_es_connection(payload: ValidateEsConnectionPayload) -> Result<
 }
 
 #[tauri::command]
+async fn execute_ai_http_request_stream(
+    payload: ExecuteAiHttpRequestPayload,
+    request_id: String,
+    on_event: tauri::ipc::Channel<ai_stream::AiStreamEvent>,
+) -> Result<(), String> {
+    ai_stream::run(payload, request_id, move |event| on_event.send(event).map_err(|error| error.to_string())).await
+}
+
+#[tauri::command]
+fn cancel_ai_http_request(request_id: String) -> Result<(), String> {
+    ai_stream::cancel(&request_id)
+}
+
+#[tauri::command]
+fn ack_ai_stream_chunk(request_id: String, sequence: u64) -> Result<(), String> {
+    ai_stream::ack(&request_id, sequence)
+}
+
+#[tauri::command]
 async fn execute_ai_http_request(payload: ExecuteAiHttpRequestPayload) -> Result<HttpResponsePayload, String> {
     tauri::async_runtime::spawn_blocking(move || match perform_ai_http_request(payload) {
         Ok(response) => response,
@@ -1294,19 +1294,37 @@ async fn execute_ai_http_request(payload: ExecuteAiHttpRequestPayload) -> Result
 
 #[tauri::command]
 async fn execute_ssh_http_request(payload: ExecuteSshHttpRequestPayload) -> Result<HttpResponsePayload, String> {
-    tauri::async_runtime::spawn_blocking(move || match perform_ssh_http_request(payload) {
-        Ok(response) => response,
-        Err(error) => build_request_failed_payload(error.message, error.diagnostics),
-    })
-    .await
-    .map_err(|error| error.to_string())
+    let deadline = std::time::Instant::now() + ssh_transport::TOTAL_TIMEOUT;
+    let registration = ssh_transport::Registration::new(payload.request_id.clone())?;
+    let permit = ssh_transport::admit(&registration.cancel, deadline).await?;
+    let wait_cancel = registration.cancel.clone();
+    let work = tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        match perform_ssh_http_request_registered(payload, registration, deadline) {
+            Ok(response) => response,
+            Err(error) => build_request_failed_payload(error.message, error.diagnostics),
+        }
+    });
+    ssh_transport::await_work(&wait_cancel, deadline, work).await
+}
+
+#[tauri::command]
+fn cancel_ssh_http_request(request_id: String) -> Result<(), String> {
+    ssh_transport::cancel(&request_id);
+    Ok(())
 }
 
 #[tauri::command]
 async fn validate_ssh_tunnel(payload: ValidateSshTunnelPayload) -> Result<TunnelValidationResponsePayload, String> {
-    tauri::async_runtime::spawn_blocking(move || perform_ssh_validation(payload))
-        .await
-        .map_err(|error| error.to_string())
+    let deadline = std::time::Instant::now() + ssh_transport::TOTAL_TIMEOUT;
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let permit = ssh_transport::admit(&cancel, deadline).await?;
+    let wait_cancel = cancel.clone();
+    let work = tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        perform_ssh_validation_until(payload, &cancel, deadline)
+    });
+    ssh_transport::await_work(&wait_cancel, deadline, work).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1334,7 +1352,11 @@ pub fn run() {
             execute_es_http_request,
             validate_es_connection,
             execute_ai_http_request,
+            execute_ai_http_request_stream,
+            cancel_ai_http_request,
+            ack_ai_stream_chunk,
             execute_ssh_http_request,
+            cancel_ssh_http_request,
             validate_ssh_tunnel,
         ])
         .run(tauri::generate_context!())
@@ -1366,6 +1388,34 @@ mod tests {
                 "authMethod": "password", "privateKeyPath": "", "hostKeyPolicy": "strict" },
             "sshSecret": "fixture-password"
         })).unwrap()
+    }
+
+    #[test]
+    fn es_total_timeout_stops_dripping_preview_and_full_responses() {
+        use std::io::{Read, Write};
+        for mode in ["full", "preview"] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+                let mut request = [0; 4096];
+                socket.read(&mut request).unwrap();
+                socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\n").unwrap();
+                for _ in 0..40 {
+                    if socket.write_all(b"x").is_err() { break; }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            });
+            let mut payload = request_payload(&url, &url);
+            payload.read_mode = Some(mode.into());
+            payload.preview_bytes = Some(2);
+            let started = std::time::Instant::now();
+            let result = perform_es_http_request_with_timeout(payload, Duration::from_millis(180));
+            assert!(result.is_err());
+            assert!(started.elapsed() < Duration::from_millis(700));
+            server.join().unwrap();
+        }
     }
 
     #[test]
@@ -1479,6 +1529,7 @@ mod tests {
     #[test]
     fn remote_curl_command_does_not_expose_authorization_secret() {
         let payload = ExecuteSshHttpRequestPayload {
+            request_id: None,
             base_url: "https://es.example.com:9200".into(),
             url: "https://es.example.com:9200/orders/_bulk".into(),
             method: "POST".into(),
@@ -1493,6 +1544,8 @@ mod tests {
             content_type: Some("application/x-ndjson".into()),
             insecure_tls: false,
             tls: None,
+            read_mode: None,
+            preview_bytes: None,
             ssh_tunnel: SshTunnelConfig {
                 host: "jump.example.com".into(),
                 port: 22,
@@ -1512,3 +1565,20 @@ mod tests {
         assert!(!command.contains("secret"));
     }
 }
+
+#[cfg(test)]
+mod ssh_timeout_tests {
+    #[test]
+    fn remote_curl_has_bounded_execution() {
+        let payload: super::ExecuteSshHttpRequestPayload = serde_json::from_value(serde_json::json!({
+            "baseUrl":"http://localhost:9200", "url":"http://localhost:9200", "method":"GET", "username":"", "password":"", "bodyText":"", "insecureTls":false,
+            "sshTunnel": { "host":"localhost", "port":22, "username":"test", "authMethod":"password", "privateKeyPath":"" }
+        })).unwrap();
+        let script = super::build_remote_curl_script(&payload);
+        assert!(script.contains("connect-timeout = 10"));
+        assert!(script.contains("max-time = 60"));
+    }
+}
+
+#[cfg(test)]
+mod transport_bench;

@@ -954,6 +954,7 @@ dependencies = [
 name = "esx"
 version = "1.3.0"
 dependencies = [
+ "encoding_rs",
  "keyring",
  "reqwest 0.12.28",
  "ring",
@@ -968,6 +969,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-prevent-default",
  "tauri-plugin-store",
+ "tokio",
 ]
 
 [[package]]
