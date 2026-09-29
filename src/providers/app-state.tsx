@@ -1026,10 +1026,25 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       saveRequestFromDraft(payload) {
         const { request, next } = applySaveRequestFromDraft(state, payload);
 
-        setState((current) => ({
-          ...current,
-          ...next,
-        }));
+        setState((current) => {
+          const requests = [...current.requests];
+          const existingIndex = requests.findIndex((item) => item.id === request.id);
+          if (existingIndex >= 0) {
+            requests[existingIndex] = request;
+          } else {
+            requests.push(request);
+          }
+
+          // 同批 flush 可能刚提交其他连接的缓冲，只合并本次保存涉及的数据。
+          return {
+            ...current,
+            requests,
+            drafts: {
+              ...current.drafts,
+              [payload.connectionId]: next.drafts[payload.connectionId],
+            },
+          };
+        });
 
         return request;
       },

@@ -109,6 +109,28 @@ describe("应用状态持久化", () => {
     }), expect.any(Set));
   });
 
+  it("显式保存一个连接的请求时保留同批次提交的另一个连接草稿", async () => {
+    const hook = await openState();
+    const save = hook.result.current.saveRequestFromDraft;
+    act(() => { hook.result.current.registerPendingDraftFlush(() => {
+      hook.result.current.updateDraft("connection-b", (draft) => ({ ...draft, content: "GET /last-character", name: "最后名字" }));
+    }); });
+    await act(async () => { await hook.result.current.flushAppState(() => {
+      save({ connectionId: "connection-a", name: "请求A", content: "GET /a", response: null });
+    }); });
+    expect(writeStorage.mock.lastCall?.[0].drafts["connection-b"]).toMatchObject({ content: "GET /last-character", name: "最后名字" });
+    expect(writeStorage.mock.lastCall?.[0].requests).toEqual([expect.objectContaining({ connectionId: "connection-a", path: "/a" })]);
+  });
+
+  it("同一提交中的多个显式保存不会覆盖先前请求", async () => {
+    const hook = await openState();
+    await act(async () => { await hook.result.current.flushAppState(() => {
+      hook.result.current.saveRequestFromDraft({ connectionId: "a", name: "A", content: "GET /a", response: null });
+      hook.result.current.saveRequestFromDraft({ connectionId: "b", name: "B", content: "GET /b", response: null });
+    }); });
+    expect(writeStorage.mock.lastCall?.[0].requests.map((request: { path: string }) => request.path)).toEqual(["/a", "/b"]);
+  });
+
   it("读取失败后不会把空白状态写回磁盘", async () => {
     readStorage.mockRejectedValueOnce(new Error("read failure"));
     const hook = renderHook(() => useAppState(), { wrapper: AppStateProvider });
