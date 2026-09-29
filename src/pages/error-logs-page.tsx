@@ -13,12 +13,12 @@ export function ErrorLogsPage() {
   }
 
   return (
-    <div className="h-dvh overflow-hidden p-4 sm:p-6" onContextMenu={(event) => event.preventDefault()}>
-      <div className="flex h-full min-h-0 justify-end">
-        <Card className="flex h-full w-full max-w-md min-h-0 flex-col p-4 sm:p-5">
+    <div className="app-shell" onContextMenu={(event) => event.preventDefault()}>
+      <main className="workspace-main h-full min-h-0">
+        <Card className="flex h-full min-h-0 flex-col p-4 sm:p-5">
           <ErrorLogsPanel closeTitle="返回连接页" onClose={() => navigate("/connections")} />
         </Card>
-      </div>
+      </main>
     </div>
   );
 }

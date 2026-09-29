@@ -101,12 +101,12 @@ function MetricBlock({
   detail: string;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+    <div className="rounded-md border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-        <div className="rounded-lg bg-slate-100 p-1.5 text-slate-600">{icon}</div>
+        <p className="text-xs font-medium text-slate-500">{label}</p>
+        <div className="rounded bg-secondary p-1.5 text-primary">{icon}</div>
       </div>
-      <p className="mt-2 text-lg font-bold leading-tight text-slate-950">{value}</p>
+      <p className="mt-2 text-lg font-semibold leading-tight text-slate-950">{value}</p>
       <p className="mt-1 text-xs leading-5 text-slate-500">{detail}</p>
     </div>
   );
@@ -122,9 +122,9 @@ export function CompactMetric({
   detail: string;
 }) {
   return (
-    <div className="rounded-lg bg-slate-50 px-2.5 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-bold leading-tight text-slate-950">{value}</p>
+    <div className="rounded bg-background px-2.5 py-2">
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-semibold leading-tight text-slate-950">{value}</p>
       <p className="mt-0.5 text-[11px] leading-4 text-slate-500">{detail}</p>
     </div>
   );
@@ -134,10 +134,10 @@ export function HealthDistribution({ status }: { status: ClusterOverviewSnapshot
   const segments = getHealthSegments(status);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+    <div className="rounded-md border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">健康分布</p>
+          <p className="text-sm font-semibold text-slate-900">健康分布</p>
           <p className="mt-0.5 text-xs leading-5 text-slate-500">按 index 健康状态统计</p>
         </div>
         <span
@@ -163,7 +163,7 @@ export function HealthDistribution({ status }: { status: ClusterOverviewSnapshot
       </div>
       <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs sm:grid-cols-4">
         {segments.map((segment) => (
-          <div key={segment.health} className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1">
+          <div key={segment.health} className="flex items-center gap-1.5 rounded bg-background px-2 py-1">
             <span className={cn("h-2 w-2 rounded-full", healthDotClasses[segment.health])} />
             <span className="text-slate-500">{healthLabels[segment.health]}</span>
             <span className="ml-auto font-bold text-slate-900">{segment.count}</span>
@@ -184,13 +184,13 @@ export function ShardOverview({ status }: { status: ClusterOverviewSnapshot }) {
     shardCounts.other;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">分片状态</p>
+    <div className="rounded-md border border-slate-200 bg-white p-3">
+      <p className="text-sm font-semibold text-slate-900">分片状态</p>
       <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs">
-        <p className="rounded-lg bg-emerald-50 px-2 py-1 text-emerald-700">Started {shardCounts.started}</p>
-        <p className="rounded-lg bg-cyan-50 px-2 py-1 text-cyan-700">Relocating {shardCounts.relocating}</p>
-        <p className="rounded-lg bg-amber-50 px-2 py-1 text-amber-700">Initializing {shardCounts.initializing}</p>
-        <p className="rounded-lg bg-rose-50 px-2 py-1 text-rose-700">Unassigned {shardCounts.unassigned}</p>
+        <p className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">Started {shardCounts.started}</p>
+        <p className="rounded bg-cyan-50 px-2 py-1 text-cyan-700">Relocating {shardCounts.relocating}</p>
+        <p className="rounded bg-amber-50 px-2 py-1 text-amber-700">Initializing {shardCounts.initializing}</p>
+        <p className="rounded bg-rose-50 px-2 py-1 text-rose-700">Unassigned {shardCounts.unassigned}</p>
       </div>
       <p className="mt-2 text-xs leading-5 text-slate-500">
         {total > 0 ? `已读取 ${formatNumber(total)} 个分片。` : "分片接口未返回可汇总数据。"}
@@ -206,8 +206,8 @@ export function RiskFindingsPanel({ risks }: { risks: ServerRiskFinding[] }) {
         <div className="flex items-start gap-2">
           <Activity className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
           <div>
-            <p className="text-sm font-bold text-emerald-950">暂无明显运维风险</p>
-            <p className="mt-0.5 text-xs leading-5 text-emerald-800 sm:text-sm">
+            <p className="text-sm font-semibold text-emerald-950">暂无明显运维风险</p>
+            <p className="mt-0.5 text-xs leading-5 text-emerald-800">
               当前快照未触发集群健康、磁盘、Heap、CPU、Thread Pool、Breaker 或索引膨胀风险规则。
             </p>
           </div>
@@ -223,9 +223,8 @@ export function RiskFindingsPanel({ risks }: { risks: ServerRiskFinding[] }) {
     <Card className="p-3 sm:p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Risk Findings</p>
-          <h2 className="mt-1 text-lg font-bold text-slate-950">风险结论</h2>
-          <p className="mt-0.5 text-xs leading-5 text-slate-500 sm:text-sm">
+          <h2 className="text-sm font-semibold text-slate-900">风险结论</h2>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
             命中 {risks.length} 条规则，严重 {criticalCount} 条，警告 {warningCount} 条。
           </p>
         </div>
@@ -241,15 +240,15 @@ export function RiskFindingsPanel({ risks }: { risks: ServerRiskFinding[] }) {
 
       <div className="mt-3 grid gap-2 lg:grid-cols-2">
         {risks.map((risk) => (
-          <div key={risk.id} className="rounded-xl border border-slate-200 bg-white p-2.5">
+          <div key={risk.id} className="rounded-md border border-slate-200 bg-white p-3">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className={cn("rounded-full border px-1.5 py-px text-[10px] font-bold", riskSeverityClasses[risk.severity])}>
                 {riskSeverityLabels[risk.severity]}
               </span>
-              <p className="text-sm font-bold text-slate-950">{risk.title}</p>
+              <p className="text-sm font-semibold text-slate-950">{risk.title}</p>
             </div>
-            <p className="mt-1.5 text-xs leading-5 text-slate-600 sm:text-sm">{risk.detail}</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">{risk.recommendation}</p>
+            <p className="mt-1.5 text-xs leading-5 text-slate-600">{risk.detail}</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{risk.recommendation}</p>
           </div>
         ))}
       </div>
@@ -265,18 +264,17 @@ export function DiagnosticsPanel({ actions }: { actions: DiagnosticAction[] }) {
   return (
     <Card className="p-3 sm:p-4">
       <div>
-        <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Diagnostics</p>
-        <h2 className="mt-1 text-lg font-bold text-slate-950">建议诊断请求</h2>
-        <p className="mt-0.5 text-xs leading-5 text-slate-500 sm:text-sm">
+        <h2 className="text-sm font-semibold text-slate-900">建议诊断请求</h2>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
           根据当前状态快照推荐下一步排障入口，可复制到 Console 执行。
         </p>
       </div>
       <div className="mt-3 grid gap-2 lg:grid-cols-2">
         {actions.map((action) => (
-          <div key={action.id} className="rounded-xl border border-slate-200 bg-white p-2.5">
-            <p className="text-sm font-bold text-slate-950">{action.title}</p>
+          <div key={action.id} className="rounded-md border border-slate-200 bg-white p-3">
+            <p className="text-sm font-semibold text-slate-950">{action.title}</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">{action.reason}</p>
-            <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">
+            <pre className="mt-2 overflow-x-auto rounded bg-slate-950 p-2 text-[11px] leading-5 text-slate-100">
               GET {action.path}
             </pre>
           </div>

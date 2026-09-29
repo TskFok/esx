@@ -170,7 +170,7 @@ describe("ConnectionEditorPanel", () => {
   it("saving 时禁用取消和保存，create/edit 使用对应标题", () => {
     const createView = renderPanel({ mode: "create", saving: true, incomplete: false });
     expect(screen.getByText("新增连接")).toBeInTheDocument();
-    expect(screen.getByText("连接直接保存为独立项。SSH 通道可选填。")).toBeInTheDocument();
+    expect(screen.getByText("配置 Elasticsearch 地址、认证和可选 SSH 通道。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "验证并保存连接" })).toBeDisabled();
     createView.unmount();

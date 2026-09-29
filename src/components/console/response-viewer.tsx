@@ -17,7 +17,7 @@ export function ResponseViewer({ response, fallbackValue }: ResponseViewerProps)
 
   if (response.previewEvicted) {
     return (
-      <div className="flex h-full items-center justify-center rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-sm text-amber-900">
+      <div className="flex h-full items-center justify-center rounded-md border border-amber-200 bg-amber-50/60 p-4 text-xs text-amber-900">
         历史预览已清理。再次执行请求可生成新预览。
       </div>
     );
@@ -28,7 +28,7 @@ export function ResponseViewer({ response, fallbackValue }: ResponseViewerProps)
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/60">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-amber-200 bg-amber-50/60">
       <div className="border-b border-amber-200 px-4 py-3 text-xs font-semibold text-amber-900">
         已截断，显示前 {formatBytes(response.previewBytes)} / 原始大小 {formatBytes(response.sizeBytes)}
       </div>

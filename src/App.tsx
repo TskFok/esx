@@ -92,7 +92,7 @@ export default function App() {
       ) : (
         <div className="flex min-h-screen items-center justify-center">
           <div className="glass-panel flex items-center gap-3 px-6 py-5 text-sm font-semibold text-slate-700">
-            <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
             正在加载本地连接与请求...
           </div>
         </div>

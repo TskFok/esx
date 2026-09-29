@@ -328,9 +328,9 @@ function OperationCard({
   return (
     <Card className="p-3 sm:p-4">
       <div className="flex items-start gap-2">
-        <div className="rounded-xl bg-emerald-50 p-2 text-emerald-700">{icon}</div>
+        <div className="rounded bg-secondary p-2 text-primary">{icon}</div>
         <div className="min-w-0">
-          <h3 className="text-sm font-bold text-slate-950 sm:text-base">{title}</h3>
+          <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
           <p className="mt-0.5 text-xs leading-5 text-slate-500">{description}</p>
         </div>
       </div>
@@ -370,21 +370,20 @@ function RequestPreviewPanel({
   const tokens = execution?.operation.id === "analyze" ? parseAnalyzeTokens(execution.bodyText) : [];
 
   return (
-    <Card className="sticky bottom-3 z-10 border-slate-200/90 bg-white/95 p-3 shadow-panel backdrop-blur sm:p-4">
+    <Card className="sticky bottom-3 z-10 border-slate-200 bg-white p-3 sm:p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Request Preview</p>
-          <h2 className="mt-1 text-base font-bold text-slate-950">请求预览与执行结果</h2>
+          <h2 className="text-sm font-semibold text-slate-900">请求预览与执行结果</h2>
           <p className="mt-0.5 text-xs leading-5 text-slate-500">
             所有向导都会先生成 Console 请求，可发送到 Console 审阅，也可在此直接执行。
           </p>
         </div>
         <div className="flex flex-wrap gap-1">
-          <Button variant="outline" className="h-8 rounded-lg px-2.5 text-xs" disabled={!preview} onClick={onSendToConsole}>
+          <Button variant="outline" size="sm" className="px-2.5 text-xs" disabled={!preview} onClick={onSendToConsole}>
             <Send className="mr-1 h-3.5 w-3.5" />
             发送到 Console
           </Button>
-          <Button className="h-8 rounded-lg px-2.5 text-xs" disabled={!preview || executing} onClick={onExecute}>
+          <Button size="sm" className="px-2.5 text-xs" disabled={!preview || executing} onClick={onExecute}>
             {executing ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1 h-3.5 w-3.5" />}
             直接执行
           </Button>
@@ -392,17 +391,17 @@ function RequestPreviewPanel({
       </div>
 
       {preview ? (
-        <pre className="mt-3 max-h-56 overflow-auto rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">
+        <pre className="mt-3 max-h-56 overflow-auto rounded-md bg-slate-950 p-3 text-xs leading-5 text-slate-100">
           {preview.content}
         </pre>
       ) : (
-        <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+        <div className="mt-3 rounded-md border border-dashed border-slate-200 bg-background p-3 text-xs text-slate-500">
           选择一个向导并生成请求后，这里会显示完整 Console 请求。
         </div>
       )}
 
       {execution ? (
-        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="mt-3 rounded-md border border-slate-200 bg-background p-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className={cn(
               "rounded-full border px-2 py-0.5 text-[10px] font-bold",
@@ -752,26 +751,25 @@ export function AdminPanel({
 
   return (
     <div className={className}>
-      <div className="shrink-0 overflow-hidden rounded-xl bg-slate-950 px-4 py-3 text-white">
+      <div className="shrink-0 border-b border-slate-200 bg-white pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.24em] text-emerald-300">ESX Admin</p>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2">
-              <h1 className="text-base font-bold leading-tight">治理工作台</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="section-title">治理工作台</h1>
               {connection.readonly ? (
-                <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[10px] font-bold text-amber-100">
+                <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
                   只读连接
                 </span>
               ) : null}
             </div>
-            <p className="mt-1 text-xs leading-5 text-slate-300">
+            <p className="mt-1 text-xs leading-5 text-slate-500">
               {connection.name} · {connection.baseUrl} · 当前环境 {connection.environment}
             </p>
           </div>
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 shrink-0 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+            className="shrink-0 px-2 text-xs text-slate-600 hover:bg-slate-100 hover:text-slate-900"
             title={closeTitle}
             aria-label={closeTitle}
             onClick={onClose}
@@ -787,14 +785,14 @@ export function AdminPanel({
                   type="button"
                   aria-label={SECTION_LABELS[section]}
                   className={cn(
-                    "rounded-2xl border p-3 text-left transition",
+                    "rounded-md border p-3 text-left transition",
                     activeSection === section
-                      ? "border-emerald-300/60 bg-emerald-400/15 text-white"
-                      : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white",
+                      ? "border-primary bg-secondary text-primary"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-background hover:text-slate-900",
                   )}
                   onClick={() => { setActiveSection(section); setSelectedResourceId(null); setResourcePage(1); }}
                 >
-                  <p className="text-sm font-bold">{SECTION_LABELS[section]}</p>
+                  <p className="text-sm font-semibold">{SECTION_LABELS[section]}</p>
                   <p className="mt-1 text-xs leading-5 opacity-80">{SECTION_DESCRIPTIONS[section]}</p>
                 </button>
               ))}
@@ -804,15 +802,15 @@ export function AdminPanel({
         <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-0.5">
         <div className="grid gap-3 lg:grid-cols-[320px_minmax(0,1fr)]">
           <Card className="h-fit overflow-hidden p-0">
-            <div className="border-b border-slate-100 p-3">
+            <div className="border-b border-slate-200 p-3">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Resources</p>
-                  <h2 className="mt-1 text-base font-bold text-slate-950">资源列表</h2>
+                  <h2 className="text-sm font-semibold text-slate-900">资源列表</h2>
                   <p className="mt-0.5 text-xs leading-5 text-slate-500">按当前功能区筛选 index、alias、template、pipeline。</p>
                 </div>
                 <Button
-                  className="h-8 rounded-lg px-2.5 text-xs"
+                  size="sm"
+                  className="px-2.5 text-xs"
                   onClick={() => { void resourcesQuery.refetch(); }}
                   disabled={resourcesQuery.isFetching}
                 >
@@ -829,7 +827,7 @@ export function AdminPanel({
             </div>
             <div className="max-h-[680px] overflow-y-auto p-2">
               {visibleResources.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-500">
+                <div className="rounded-md border border-dashed border-slate-200 bg-background p-4 text-center text-xs leading-5 text-slate-500">
                   {resourcesQuery.isPending ? "正在读取当前功能区资源…" : "暂无资源数据。点击刷新重试。"}
                 </div>
               ) : (
@@ -840,10 +838,10 @@ export function AdminPanel({
                       data-testid="admin-resource-row"
                       type="button"
                       className={cn(
-                        "w-full rounded-xl border p-2.5 text-left transition",
+                        "w-full rounded-md border p-2.5 text-left transition",
                         selectedResourceId === resource.id
-                          ? "border-emerald-200 bg-emerald-50"
-                          : "border-slate-200 bg-white hover:bg-slate-50",
+                          ? "border-primary bg-secondary"
+                          : "border-slate-200 bg-white hover:bg-background",
                       )}
                       onClick={() => {
                         setSelectedResourceId(resource.id);
@@ -859,7 +857,7 @@ export function AdminPanel({
                       }}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="min-w-0 truncate text-sm font-bold text-slate-950">{resource.name}</p>
+                        <p className="min-w-0 truncate text-xs font-semibold text-slate-950">{resource.name}</p>
                         <ResourceKindBadge kind={resource.kind} />
                       </div>
                       <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{resource.detail}</p>
@@ -1083,7 +1081,7 @@ export function AdminPanel({
                         3. 解除 read_only
                       </Button>
                     </div>
-                    <div className="rounded-xl border border-amber-100 bg-amber-50 p-2.5 text-xs leading-5 text-amber-800">
+                    <div className="rounded-md border border-amber-100 bg-amber-50 p-2.5 text-xs leading-5 text-amber-800">
                       shrink/split 需要满足 ES 前置条件，例如源索引只读、分片路由满足要求、目标索引不存在。页面只生成明确步骤，执行前请结合集群状态确认。
                     </div>
                   </OperationCard>
@@ -1106,7 +1104,7 @@ export function AdminPanel({
                     </Button>
                   </div>
                   {mappingDiff ? (
-                    <div className="rounded-xl border border-slate-200 bg-white p-2.5">
+                    <div className="rounded-md border border-slate-200 bg-white p-2.5">
                       <div className="flex flex-wrap gap-1 text-xs">
                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-bold text-emerald-700">新增 {mappingDiff.summary.added}</span>
                         <span className="rounded-full bg-rose-50 px-2 py-0.5 font-bold text-rose-700">删除 {mappingDiff.summary.removed}</span>

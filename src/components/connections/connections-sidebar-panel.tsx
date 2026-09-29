@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import {
   CirclePlus,
+  Database,
   Download,
   PanelLeftClose,
   Pencil,
@@ -48,17 +49,22 @@ export function ConnectionsSidebarPanel({
 
   return (
     <div className={className}>
-      <div className="mb-3 flex flex-col gap-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.28em] text-slate-400">ESX Console</p>
-            <h1 className="mt-0.5 text-lg font-bold leading-tight">连接管理</h1>
+      <div className="mb-5 flex flex-col gap-4 border-b border-[#27304f] pb-5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[#8ba2ff]/70 bg-[#8ba2ff]/10 text-[#8ba2ff]">
+              <Database className="h-[18px] w-[18px]" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold leading-tight text-white">ESX</h1>
+              <p className="mt-0.5 text-[10px] text-[#8b90a3]">连接管理</p>
+            </div>
           </div>
           {onClose ? (
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 shrink-0 rounded-lg px-2 text-xs text-slate-200 hover:bg-white/10 hover:text-white"
+              className="h-8 shrink-0 rounded-md px-2 text-xs text-[#b5b6c0] hover:bg-white/10 hover:text-white"
               title={closeTitle}
               aria-label={closeTitle}
               onClick={onClose}
@@ -70,11 +76,19 @@ export function ConnectionsSidebarPanel({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
-        <div className="flex flex-wrap gap-1">
+        <Button
+          size="sm"
+          className="mb-3 h-10 w-full justify-start rounded-md border border-[#8ba2ff] bg-[#8ba2ff] px-3 text-xs font-medium text-[#13182d] shadow-none hover:bg-[#a7b7ff] hover:shadow-none"
+          onClick={onCreateConnection}
+        >
+          <CirclePlus className="mr-2 h-4 w-4" />
+          新建连接
+        </Button>
+        <div className="flex gap-2 border-b border-[#27304f] pb-4">
           <Button
             variant="outline"
             size="sm"
-            className="h-8 rounded-lg px-2 text-xs"
+            className="h-8 flex-1 rounded-md border-[#46506a] bg-transparent px-2 text-xs text-[#dfe5ef] shadow-none hover:bg-white/10 hover:text-white"
             onClick={() => importInputRef.current?.click()}
           >
             <Upload className="mr-1 h-3.5 w-3.5" />
@@ -96,30 +110,21 @@ export function ConnectionsSidebarPanel({
           <Button
             variant="outline"
             size="sm"
-            className="h-8 rounded-lg px-2 text-xs"
+            className="h-8 flex-1 rounded-md border-[#46506a] bg-transparent px-2 text-xs text-[#dfe5ef] shadow-none hover:bg-white/10 hover:text-white"
             disabled={connections.length === 0}
             onClick={onExportClick}
           >
             <Download className="mr-1 h-3.5 w-3.5" />
             导出
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 rounded-lg px-2 text-xs"
-            onClick={onCreateConnection}
-          >
-            <CirclePlus className="mr-1 h-3.5 w-3.5" />
-            新建连接
-          </Button>
         </div>
 
-        <p className="mt-3 text-xs font-semibold text-slate-300">已保存连接</p>
+        <p className="mt-5 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8b90a3]">已保存连接</p>
 
         <div className="mt-2">
           {connections.length === 0 ? (
-            <div className="rounded-lg border border-white/10 bg-white/5 p-2 text-xs leading-5 text-slate-400">
-              <p className="font-semibold text-slate-300">还没有任何连接</p>
+            <div className="rounded-md border border-dashed border-[#46506a] bg-white/5 p-3 text-xs leading-5 text-[#b5b6c0]">
+              <p className="font-medium text-[#dfe5ef]">还没有任何连接</p>
               <p>点击「新建连接」后，连接会直接出现在这里。</p>
             </div>
           ) : (
@@ -135,10 +140,10 @@ export function ConnectionsSidebarPanel({
                     role="button"
                     tabIndex={0}
                     aria-label={`${connection.name}，打开 Console`}
-                    className={`cursor-pointer rounded-lg border p-2 text-xs transition ${
+                    className={`cursor-pointer rounded-md border p-3 text-xs transition-colors ${
                       isCurrent
-                        ? "border-white/30 bg-white text-slate-950"
-                        : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                        ? "border-[#8ba2ff]/60 bg-[#465282]/60 text-white shadow-[inset_3px_0_0_#8ba2ff]"
+                        : "border-[#27304f] bg-white/[0.03] text-[#dfe5ef] hover:border-[#8ba2ff]/30 hover:bg-white/[0.08]"
                     }`}
                     onClick={() => onOpenConnection(connection.id)}
                     onKeyDown={(event) => {
@@ -148,29 +153,29 @@ export function ConnectionsSidebarPanel({
                       }
                     }}
                   >
-                    <p className="truncate font-bold leading-snug">{connection.name}</p>
-                    <p className={`mt-1 truncate text-[10px] ${isCurrent ? "text-slate-600" : "text-slate-400"}`}>
+                    <p className="truncate text-[13px] font-medium leading-snug">{connection.name}</p>
+                    <p className={`mt-1 truncate font-mono text-[10px] ${isCurrent ? "text-[#b8c5ff]" : "text-[#8b90a3]"}`}>
                       {connection.baseUrl}
                     </p>
                     {connection.insecureTls || sshProfile ? (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {connection.insecureTls ? (
-                          <span className="rounded-full bg-amber-100 px-1.5 py-px text-[9px] font-semibold text-amber-800">
+                          <span className="rounded bg-amber-300/15 px-1.5 py-px text-[9px] font-medium text-amber-200">
                             自签名 TLS
                           </span>
                         ) : null}
                         {sshProfile ? (
-                          <span className="rounded-full bg-sky-100 px-1.5 py-px text-[9px] font-semibold text-sky-800">
+                          <span className="rounded bg-[#8ba2ff]/15 px-1.5 py-px text-[9px] font-medium text-[#b8c5ff]">
                             SSH 通道
                           </span>
                         ) : null}
                       </div>
                     ) : null}
-                    <div className="mt-1.5 flex justify-end gap-0.5">
+                    <div className="mt-2 flex justify-end gap-0.5 border-t border-[#46506a]/50 pt-1.5">
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 px-2 text-[10px] text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                        className="h-7 rounded px-2 text-[10px] text-[#c9d3eb] hover:bg-white/10 hover:text-white"
                         aria-label="测试"
                         disabled={isTesting}
                         onKeyDown={(event) => event.stopPropagation()}
@@ -185,7 +190,7 @@ export function ConnectionsSidebarPanel({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 w-7 px-0 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                        className="h-7 w-7 rounded px-0 text-[#c9d3eb] hover:bg-white/10 hover:text-white"
                         title="编辑"
                         aria-label="编辑"
                         onKeyDown={(event) => event.stopPropagation()}
@@ -199,7 +204,7 @@ export function ConnectionsSidebarPanel({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 w-7 px-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        className="h-7 w-7 rounded px-0 text-[#ff9aac] hover:bg-[#ff6280]/10 hover:text-[#ffb5c2]"
                         title="删除"
                         aria-label="删除"
                         onKeyDown={(event) => event.stopPropagation()}

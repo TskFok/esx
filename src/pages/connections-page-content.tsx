@@ -626,10 +626,10 @@ export function ConnectionsPage() {
   );
 
   return (
-    <div className="h-dvh overflow-hidden p-4 sm:p-6">
-      <div className="flex h-full min-h-0 gap-3 lg:flex-row">
+    <div className="app-shell h-dvh overflow-hidden bg-background">
+      <div className="flex h-full min-h-0 lg:flex-row">
         <aside
-          className="hidden min-h-0 shrink-0 flex-col overflow-hidden rounded-2xl bg-slate-950 px-3 py-3 text-slate-50 shadow-xl shadow-slate-900/25 lg:flex"
+          className="app-sidebar hidden min-h-0 shrink-0 flex-col overflow-hidden border-r border-[#27304f] bg-[#0f1633] px-3 py-5 text-[#dfe5ef] lg:flex"
           style={{ width: CONSOLE_SIDEBAR_WIDTH_DEFAULT }}
         >
           {sidebarPanel}
@@ -641,9 +641,9 @@ export function ConnectionsPage() {
         >
           {sidebarPanel}
         </ConsoleMobileDrawer>
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <main className="workspace-main flex min-h-0 min-w-0 flex-1 flex-col bg-background p-3 sm:p-5">
           {!isLgSplit ? (
-            <Button variant="outline" className="mb-3 shrink-0 self-start" onClick={() => setMobileDrawerOpen(true)}>
+            <Button variant="outline" className="mb-3 h-10 shrink-0 self-start rounded-md border-border bg-white px-3 text-xs text-slate-900 shadow-none" onClick={() => setMobileDrawerOpen(true)}>
               <PanelLeftOpen className="mr-2 h-4 w-4" />
               连接列表
             </Button>

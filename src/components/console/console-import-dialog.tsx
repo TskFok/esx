@@ -86,7 +86,7 @@ export function ConsoleImportDialog({
         ) : null}
 
         {payload ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3">
             <p>
               来源连接：<span className="font-semibold text-slate-800">{payload.connectionName}</span>
             </p>
@@ -95,7 +95,7 @@ export function ConsoleImportDialog({
             </p>
           </div>
         ) : encrypted ? (
-          <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500">
+          <p className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500">
             输入密码后将预览导入内容。
           </p>
         ) : null}
@@ -103,7 +103,7 @@ export function ConsoleImportDialog({
         <label className="block">
           <span className="mb-2 block font-semibold text-slate-700">导入到连接</span>
           <select
-            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-800"
+            className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-800"
             value={connectionId}
             onChange={(event) => setConnectionId(event.target.value)}
           >
@@ -117,7 +117,7 @@ export function ConsoleImportDialog({
 
         <fieldset className="space-y-2">
           <legend className="mb-2 font-semibold text-slate-700">导入方式</legend>
-          <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 px-4 py-3">
+          <label className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 px-4 py-3">
             <input
               type="radio"
               name="import-mode"
@@ -130,7 +130,7 @@ export function ConsoleImportDialog({
               <span className="text-slate-500">保留目标连接现有请求，在末尾追加导入内容。</span>
             </span>
           </label>
-          <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-rose-200 bg-rose-50/40 px-4 py-3">
+          <label className="flex cursor-pointer items-start gap-2 rounded-md border border-rose-200 bg-rose-50/40 px-4 py-3">
             <input
               type="radio"
               name="import-mode"

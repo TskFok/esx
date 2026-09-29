@@ -146,9 +146,9 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
         tabIndex={0}
         aria-label={request.name}
         aria-pressed={selectionMode ? isSelected : isActive}
-        className={`cursor-pointer rounded-lg border p-2 text-xs transition ${highlighted
-          ? "border-white/30 bg-white text-slate-950"
-          : "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+        className={`cursor-pointer rounded-md border p-2 text-xs transition ${highlighted
+          ? "border-[#8ba2ff]/40 bg-[#465282]/60 text-white shadow-[inset_3px_0_0_#8ba2ff]"
+          : "border-white/10 bg-white/5 text-[#dfe5ef] hover:border-[#8ba2ff]/20 hover:bg-[#465282]/30"
         } ${draggedId === request.id ? "opacity-50" : ""}`}
         onClick={() => handleClick(request.id)}
         onKeyDown={(event) => {
@@ -165,7 +165,7 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
               onChange={() => onToggleRequestSelection(request.id)} />
           ) : null}
           {canReorder ? (
-            <span className="mt-0.5 cursor-grab text-slate-400 active:cursor-grabbing" title="拖拽排序" onClick={(event) => event.stopPropagation()}>
+            <span className="mt-0.5 cursor-grab text-[#9ca8c7] active:cursor-grabbing" title="拖拽排序" onClick={(event) => event.stopPropagation()}>
               <GripVertical className="h-3.5 w-3.5" />
             </span>
           ) : null}
@@ -173,13 +173,13 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
             <div className="flex items-center justify-between gap-2">
               <p className="truncate font-bold leading-snug">{request.name}</p>
               {request.lastStatus ? (
-                <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-slate-700">{request.lastStatus}</span>
+                <span className="shrink-0 rounded-md bg-white/10 px-1.5 py-px text-[11px] font-semibold uppercase text-[#dfe5ef]">{request.lastStatus}</span>
               ) : null}
             </div>
             {request.tags.length > 0 ? (
               <div className="mt-1 flex flex-wrap gap-1">
                 {request.tags.map((tag) => (
-                  <span key={tag} className={`rounded-full px-1.5 py-px text-[9px] font-semibold ${highlighted ? "bg-slate-200 text-slate-700" : "bg-white/10 text-slate-300"}`}>{tag}</span>
+                  <span key={tag} className={`rounded-md px-1.5 py-px text-[11px] font-medium ${highlighted ? "bg-[#8ba2ff]/20 text-white" : "bg-white/10 text-[#b8c5e8]"}`}>{tag}</span>
                 ))}
               </div>
             ) : null}
@@ -187,11 +187,11 @@ function ConsoleRequestListInner(props: ConsoleRequestListProps): ReactElement {
         </div>
         {!selectionMode ? (
           <div className="mt-1.5 flex justify-end gap-0.5">
-            <Button variant="ghost" size="sm" className="h-7 w-7 px-0 text-slate-600 hover:bg-slate-100 hover:text-slate-900" title="编辑请求" aria-label="编辑请求"
+            <Button variant="ghost" size="sm" className="h-7 w-7 rounded-md px-0 text-[#b8c5e8] hover:bg-white/10 hover:text-white" title="编辑请求" aria-label="编辑请求"
               onClick={(event) => { event.stopPropagation(); onEditRequest(request); }}><Pencil className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="sm" className="h-7 w-7 px-0 text-slate-600 hover:bg-slate-100 hover:text-slate-900" title="复制请求" aria-label="复制请求"
+            <Button variant="ghost" size="sm" className="h-7 w-7 rounded-md px-0 text-[#b8c5e8] hover:bg-white/10 hover:text-white" title="复制请求" aria-label="复制请求"
               onClick={(event) => { event.stopPropagation(); onDuplicateRequest(request.id, request.name); }}><CopyPlus className="h-3.5 w-3.5" /></Button>
-            <Button variant="ghost" size="sm" className="h-7 w-7 px-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700" title="删除请求" aria-label="删除请求"
+            <Button variant="ghost" size="sm" className="h-7 w-7 rounded-md px-0 text-rose-300 hover:bg-rose-400/15 hover:text-rose-200" title="删除请求" aria-label="删除请求"
               onClick={(event) => { event.stopPropagation(); onDeleteRequest(request); }}><Trash2 className="h-3.5 w-3.5" /></Button>
           </div>
         ) : null}

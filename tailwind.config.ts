@@ -13,6 +13,19 @@ export default {
     },
     extend: {
       colors: {
+        slate: {
+          50: "#f8faff",
+          100: "#f0f3f9",
+          200: "#e4eaf2",
+          300: "#ccd5e4",
+          400: "#7c8ca8",
+          500: "#60708b",
+          600: "#415681",
+          700: "#29426b",
+          800: "#1f365b",
+          900: "#173369",
+          950: "#0f1633",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -49,14 +62,11 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["Manrope", "Noto Sans SC", "system-ui", "sans-serif"],
+        sans: ["IBM Plex Sans", "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Noto Sans SC", "sans-serif"],
+        mono: ["JetBrains Mono", "SFMono-Regular", "Consolas", "monospace"],
       },
       boxShadow: {
-        panel: "0 20px 60px rgba(16, 24, 40, 0.08)",
-      },
-      backgroundImage: {
-        "hero-grid":
-          "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0)), radial-gradient(circle at top left, rgba(62, 178, 135, 0.16), transparent 25%), radial-gradient(circle at 85% 10%, rgba(31, 94, 196, 0.12), transparent 30%)",
+        panel: "0 8px 22px rgba(23, 51, 105, 0.08)",
       },
     },
   },

@@ -64,13 +64,13 @@ export function ConnectionExportDialog({
         </>
       }
     >
-      <div className="grid gap-5 text-sm leading-6 text-slate-600">
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
+      <div className="grid gap-5 text-xs leading-5 text-slate-600">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-amber-900">
           导出文件包含 Elasticsearch 凭据和 SSH 凭据，请使用强密码保存，并只分享给可信设备。
         </div>
 
         <label className="block">
-          <span className="mb-2 block font-semibold text-slate-700">导出密码</span>
+          <span className="mb-1.5 block font-medium text-slate-900">导出密码</span>
           <Input
             type="password"
             autoFocus
@@ -80,7 +80,7 @@ export function ConnectionExportDialog({
         </label>
 
         <label className="block">
-          <span className="mb-2 block font-semibold text-slate-700">确认密码</span>
+          <span className="mb-1.5 block font-medium text-slate-900">确认密码</span>
           <Input
             type="password"
             value={confirmPassword}

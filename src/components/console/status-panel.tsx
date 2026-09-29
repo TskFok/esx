@@ -152,11 +152,10 @@ export function StatusPanel({
 
   return (
     <div className={className}>
-      <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-3">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
         <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.22em] text-emerald-600">ESX Status</p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2">
-            <h1 className="text-base font-bold leading-tight text-slate-900">服务器状态</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="section-title">服务器状态</h1>
             {overviewQuery.data ? (
               <span
                 className={cn(
@@ -174,7 +173,7 @@ export function StatusPanel({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button className="h-8 rounded-lg px-2.5 text-xs" onClick={refreshCurrentTab} disabled={currentQuery.isFetching}>
+          <Button size="sm" className="px-2.5 text-xs" onClick={refreshCurrentTab} disabled={currentQuery.isFetching}>
             {currentQuery.isFetching ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
             ) : (
@@ -185,7 +184,7 @@ export function StatusPanel({
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 shrink-0 rounded-lg px-2 text-xs"
+            className="shrink-0 px-2 text-xs"
             title={closeTitle}
             aria-label={closeTitle}
             onClick={onClose}
@@ -195,14 +194,14 @@ export function StatusPanel({
         </div>
       </div>
 
-      <div className="mt-2 flex items-center gap-1">
+      <div className="mt-3 flex items-center gap-1 border-b border-slate-200 pb-2">
         {(Object.keys(tabLabels) as StatusTab[]).map((tab) => (
           <button
             key={tab}
             type="button"
             className={cn(
-              "rounded-lg px-2.5 py-1 text-xs font-bold uppercase tracking-[0.12em]",
-              activeTab === tab ? "bg-emerald-50 text-emerald-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+              "inline-flex h-8 items-center rounded-md px-3 text-xs font-semibold",
+              activeTab === tab ? "bg-secondary text-primary" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
             )}
             onClick={() => activateTab(tab)}
           >
@@ -222,8 +221,8 @@ export function StatusPanel({
         {isCurrentLoading ? (
           <Card className="flex min-h-[240px] items-center justify-center p-5">
             <div className="text-center">
-              <Loader2 className="mx-auto h-6 w-6 animate-spin text-emerald-600" />
-              <p className="mt-2 text-xs font-semibold text-slate-700 sm:text-sm">{tabLoadingLabels[activeTab]}</p>
+              <Loader2 className="mx-auto h-5 w-5 animate-spin text-primary" />
+              <p className="mt-2 text-xs font-semibold text-slate-700">{tabLoadingLabels[activeTab]}</p>
             </div>
           </Card>
         ) : activeTab === "overview" ? (
@@ -250,9 +249,9 @@ export function StatusPanel({
 
 function EmptyStatusCard() {
   return (
-    <Card className="p-5 text-center sm:p-6">
-      <p className="text-sm font-bold text-slate-900">还没有服务器状态数据</p>
-      <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">点击刷新状态重新读取当前连接。</p>
+    <Card className="border-dashed p-6 text-center">
+      <p className="text-sm font-semibold text-slate-900">还没有服务器状态数据</p>
+      <p className="mt-1 text-xs leading-5 text-slate-500">点击刷新状态重新读取当前连接。</p>
     </Card>
   );
 }

@@ -240,9 +240,8 @@ describe("ConnectionsPage", () => {
     await screen.findByPlaceholderText("例如 生产 ES / 预发日志集群");
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
-    const confirmDialog = screen.getByRole("heading", { name: "确认删除" }).closest(".glass-panel");
-    expect(confirmDialog).toBeTruthy();
-    fireEvent.click(within(confirmDialog as HTMLElement).getByRole("button", { name: "删除" }));
+    const confirmDialog = screen.getByRole("dialog", { name: "确认删除" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "删除" }));
 
     await waitFor(() => {
       expect(deleteConnectionMock).toHaveBeenCalledWith("conn-1");

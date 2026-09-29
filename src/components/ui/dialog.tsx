@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "./button";
 
@@ -25,6 +25,9 @@ export function Dialog({
   children,
   footer,
 }: DialogProps) {
+  const titleId = useId();
+  const descriptionId = useId();
+
   useEffect(() => {
     if (!open) {
       return;
@@ -68,23 +71,27 @@ export function Dialog({
       onClick={onClose}
     >
       <div
-        className={`glass-panel mx-auto flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden border border-white/90 bg-white/95 p-6 sm:p-8 ${panelClassName ?? "max-w-2xl"}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        className={`mx-auto flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden rounded-lg border border-border bg-white p-5 shadow-panel sm:p-6 ${panelClassName ?? "max-w-2xl"}`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex shrink-0 items-start justify-between gap-4">
           <div>
-            <h3 className="text-2xl font-extrabold text-slate-900">{title}</h3>
-            {description ? <p className="mt-2 text-sm leading-7 text-slate-500">{description}</p> : null}
+            <h3 id={titleId} className="text-lg font-semibold text-slate-900">{title}</h3>
+            {description ? <p id={descriptionId} className="mt-1 text-xs leading-5 text-slate-600">{description}</p> : null}
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" aria-label="关闭弹窗" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
         </div>
 
-        <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">{children}</div>
+        <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">{children}</div>
 
         {footer ? (
-          <div className="mt-6 flex shrink-0 flex-wrap justify-end gap-3 border-t border-slate-200/80 pt-4 sm:flex-nowrap">
+          <div className="mt-5 flex shrink-0 flex-wrap justify-end gap-2 border-t border-border pt-4 sm:flex-nowrap">
             {footer}
           </div>
         ) : null}

@@ -56,10 +56,10 @@ describe("ConsoleRequestToolbar", () => {
     }
   });
 
-  it("applies responsive input layout classes", () => {
+  it("labels the request name input and applies flexible layout classes", () => {
     renderToolbar();
 
-    expect(within(getToolbar()).getByPlaceholderText(/请求名称/)).toHaveClass(
+    expect(within(getToolbar()).getByRole("textbox", { name: "请求名称" })).toHaveClass(
       ...CONSOLE_REQUEST_NAME_INPUT_CLASS.split(" "),
     );
   });
@@ -98,7 +98,7 @@ describe("ConsoleRequestToolbar", () => {
   it("runs save shortcut on Command+Enter in request name input", () => {
     const props = renderToolbar();
 
-    fireEvent.keyDown(within(getToolbar()).getByPlaceholderText(/请求名称/), {
+    fireEvent.keyDown(within(getToolbar()).getByRole("textbox", { name: "请求名称" }), {
       key: "Enter",
       metaKey: true,
     });

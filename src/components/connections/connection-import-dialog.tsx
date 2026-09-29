@@ -63,9 +63,9 @@ export function ConnectionImportDialog({
         </>
       }
     >
-      <div className="grid gap-5 text-sm leading-6 text-slate-600">
+      <div className="grid gap-5 text-xs leading-5 text-slate-600">
         <label className="block">
-          <span className="mb-2 block font-semibold text-slate-700">导出密码</span>
+          <span className="mb-1.5 block font-medium text-slate-900">导出密码</span>
           <Input
             type="password"
             autoFocus
@@ -77,7 +77,7 @@ export function ConnectionImportDialog({
         </label>
 
         {payload ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-950">
+          <div className="rounded-md border border-border bg-muted px-4 py-3 text-slate-900">
             <p>
               连接数量：<span className="font-semibold">{payload.connections.length}</span>
             </p>
@@ -89,7 +89,7 @@ export function ConnectionImportDialog({
             </p>
           </div>
         ) : (
-          <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-500">
+          <p className="rounded-md border border-border bg-muted px-4 py-3 text-slate-600">
             输入密码后先解析文件，预览数量无误后再写入本机连接。
           </p>
         )}

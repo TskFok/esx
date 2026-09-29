@@ -1,4 +1,4 @@
-import { CirclePlus, Loader2, Pencil, ShieldAlert, Trash2, Zap } from "lucide-react";
+import { CirclePlus, Database, Loader2, Pencil, ShieldAlert, Trash2, Zap } from "lucide-react";
 import type { ConnectionEditorMode } from "../../lib/connection-form";
 import type { ConnectionFormValues, SshProfile } from "../../types/connections";
 import { Button } from "../ui/button";
@@ -43,9 +43,13 @@ export function ConnectionEditorPanel({
 }: ConnectionEditorPanelProps) {
   if (mode === "idle") {
     return (
-      <Card className="flex h-full min-h-0 flex-col items-center justify-center p-8 text-center">
-        <p className="text-sm leading-6 text-slate-600">选择左侧连接进入 Console，或新建一条连接。</p>
-        <Button className="mt-4" onClick={onCreate}>
+      <Card className="flex h-full min-h-0 flex-col items-center justify-center rounded-md border-border bg-white p-8 text-center shadow-sm">
+        <span className="mb-5 flex h-12 w-12 items-center justify-center rounded-md border border-primary/20 bg-secondary text-primary">
+          <Database className="h-6 w-6" aria-hidden="true" />
+        </span>
+        <h2 className="section-title text-slate-900">选择连接以开始工作</h2>
+        <p className="section-subtitle mt-2 max-w-sm text-slate-600">选择左侧连接进入 Console，或新建一条连接。</p>
+        <Button className="mt-5 h-10 rounded-md px-4 text-xs shadow-none" onClick={onCreate}>
           <CirclePlus className="mr-1 h-4 w-4" />
           新建连接
         </Button>
@@ -56,23 +60,19 @@ export function ConnectionEditorPanel({
   const testingSelectedSsh = Boolean(selectedSshProfile && testingSshProfileId === selectedSshProfile.id);
 
   return (
-    <Card className="flex h-full min-h-0 flex-col overflow-hidden p-6 sm:p-8">
-      <div className="shrink-0">
-        <h2 className="text-2xl font-extrabold text-slate-900">{mode === "edit" ? "编辑连接" : "新增连接"}</h2>
-        <p className="mt-2 text-sm leading-7 text-slate-500">连接直接保存为独立项。SSH 通道可选填。</p>
+    <Card className="mx-auto flex h-full min-h-0 w-full max-w-[900px] flex-col overflow-hidden rounded-md border-border bg-white shadow-sm">
+      <div className="panel-heading shrink-0 border-b border-border px-5 py-4 sm:px-6">
+        <div>
+          <h2 className="section-title text-slate-900">{mode === "edit" ? "编辑连接" : "新增连接"}</h2>
+          <p className="section-subtitle mt-1 text-slate-600">配置 Elasticsearch 地址、认证和可选 SSH 通道。</p>
+        </div>
       </div>
 
-      <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="sm:col-span-2 rounded-xl border border-emerald-100 bg-emerald-50/80 p-2.5">
-            <div className="text-xs font-semibold text-emerald-950">保存方式</div>
-            <p className="mt-1 text-xs leading-5 text-emerald-900 sm:text-sm">
-              连接不再区分项目和模块，保存后即可直接在这里切换或进入 Console。
-            </p>
-          </div>
-
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+        <div className="grid gap-x-4 gap-y-5 sm:grid-cols-2">
+          <h3 className="sm:col-span-2 text-sm font-semibold text-slate-900">基本信息</h3>
           <label className="block sm:col-span-2">
-            <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">连接名称</span>
+            <span className="mb-1.5 block text-xs font-medium text-slate-900">连接名称</span>
             <Input
               placeholder="例如 生产 ES / 预发日志集群"
               value={values.name}
@@ -81,27 +81,27 @@ export function ConnectionEditorPanel({
           </label>
 
           <label className="block sm:col-span-2">
-            <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">Elasticsearch 地址</span>
+            <span className="mb-1.5 block text-xs font-medium text-slate-900">Elasticsearch 地址</span>
             <Input
               placeholder={selectedSshProfile ? "http://10.0.0.12:9200" : "https://your-es-host:9200"}
               value={values.baseUrl}
               onChange={(event) => onChange({ ...values, baseUrl: event.target.value })}
             />
-            <p className="mt-1 text-[11px] leading-4 text-slate-500 sm:text-xs sm:leading-5">
+            <p className="mt-1.5 text-[11px] leading-5 text-slate-600">
               {selectedSshProfile
                 ? "已选择 SSH 通道时，这里仍然填写 Elasticsearch 的内网 HTTP 地址，例如 `http://10.0.0.12:9200`。"
                 : "例如 `https://es.example.com:9200`。如果填写的是 Kibana 页面地址，登录校验会返回 404 或网页内容。"}
             </p>
           </label>
 
-          <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-white p-2.5">
-            <p className="text-xs font-semibold text-slate-900 sm:text-sm">认证方式</p>
-            <div className="mt-2 flex flex-wrap gap-1">
+          <div className="sm:col-span-2 border-t border-border pt-5">
+            <p className="text-sm font-semibold text-slate-900">认证方式</p>
+            <div className="mt-3 flex flex-wrap gap-2">
               {(["basic", "apiKey", "bearer"] as const).map((authType) => (
                 <Button
                   key={authType}
                   variant={values.authType === authType ? "default" : "outline"}
-                  className="h-8 rounded-lg px-2.5 text-xs"
+                  className="h-8 rounded-md px-3 text-xs shadow-none"
                   onClick={() => onChange({ ...values, authType })}
                 >
                   {authType === "basic" ? "Basic" : authType === "apiKey" ? "API Key" : "Bearer"}
@@ -113,7 +113,7 @@ export function ConnectionEditorPanel({
           {values.authType === "basic" ? (
             <>
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">Elasticsearch 用户名</span>
+                <span className="mb-1.5 block text-xs font-medium text-slate-900">Elasticsearch 用户名</span>
                 <Input
                   placeholder="elastic"
                   value={values.username}
@@ -122,7 +122,7 @@ export function ConnectionEditorPanel({
               </label>
 
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">Elasticsearch 密码</span>
+                <span className="mb-1.5 block text-xs font-medium text-slate-900">Elasticsearch 密码</span>
                 <Input
                   type="password"
                   placeholder="请输入密码"
@@ -133,7 +133,7 @@ export function ConnectionEditorPanel({
             </>
           ) : values.authType === "apiKey" ? (
             <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">API Key</span>
+              <span className="mb-1.5 block text-xs font-medium text-slate-900">API Key</span>
               <Input
                 type="password"
                 placeholder="请输入 Elasticsearch API Key"
@@ -143,7 +143,7 @@ export function ConnectionEditorPanel({
             </label>
           ) : (
             <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">Bearer Token</span>
+              <span className="mb-1.5 block text-xs font-medium text-slate-900">Bearer Token</span>
               <Input
                 type="password"
                 placeholder="请输入 Bearer Token"
@@ -153,11 +153,11 @@ export function ConnectionEditorPanel({
             </label>
           )}
 
-          <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-white p-2.5">
+          <div className="sm:col-span-2 border-t border-border pt-5">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <p className="text-xs font-semibold text-slate-900 sm:text-sm">环境与写入保护</p>
-                <p className="mt-1 text-xs leading-5 text-slate-500">生产环境会对危险操作启用更严格确认；只读连接会阻断写入请求。</p>
+                <p className="text-sm font-semibold text-slate-900">环境与写入保护</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">生产环境会对危险操作启用更严格确认；只读连接会阻断写入请求。</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-600">只读</span>
@@ -167,12 +167,12 @@ export function ConnectionEditorPanel({
                 />
               </div>
             </div>
-            <div className="mt-2 flex flex-wrap gap-1">
+            <div className="mt-3 flex flex-wrap gap-2">
               {(["dev", "test", "staging", "prod"] as const).map((environment) => (
                 <Button
                   key={environment}
                   variant={values.environment === environment ? "default" : "outline"}
-                  className="h-8 rounded-lg px-2.5 text-xs"
+                  className="h-8 rounded-md px-3 text-xs shadow-none"
                   onClick={() => onChange({ ...values, environment })}
                 >
                   {environment === "prod" ? "生产" : environment === "staging" ? "预发" : environment === "test" ? "测试" : "开发"}
@@ -181,23 +181,23 @@ export function ConnectionEditorPanel({
             </div>
           </div>
 
-          <div className="sm:col-span-2 rounded-xl border border-cyan-100 bg-cyan-50/80 p-2.5">
+          <div className="sm:col-span-2 border-t border-border pt-5">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="pr-2">
-                <div className="text-xs font-semibold text-cyan-950 sm:text-sm">访问方式</div>
-                <p className="mt-1 text-xs leading-5 text-cyan-900 sm:text-sm">
+                <div className="text-sm font-semibold text-slate-900">访问方式</div>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
                   直连时不经过 SSH。若 Elasticsearch 只能从服务器内网访问，请先选择一条已保存 SSH 通道。
                 </p>
               </div>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   variant={!values.sshProfileId ? "default" : "outline"}
-                  className="h-8 rounded-lg px-2.5 text-xs"
+                  className="h-8 rounded-md px-3 text-xs shadow-none"
                   onClick={() => onChange({ ...values, sshProfileId: "" })}
                 >
                   直连
                 </Button>
-                <Button variant="outline" className="h-8 rounded-lg px-2.5 text-xs" onClick={onCreateSsh}>
+                <Button variant="outline" className="h-8 rounded-md px-3 text-xs shadow-none" onClick={onCreateSsh}>
                   <CirclePlus className="mr-1 h-3.5 w-3.5" />
                   新建 SSH 通道
                 </Button>
@@ -205,34 +205,34 @@ export function ConnectionEditorPanel({
             </div>
 
             {sshProfiles.length === 0 ? (
-              <div className="mt-2 rounded-lg border border-dashed border-cyan-200 bg-white/70 p-2.5 text-xs leading-5 text-cyan-900">
+              <div className="mt-3 rounded-md border border-dashed border-primary/20 p-3 text-xs leading-5 text-slate-600">
                 还没有可用 SSH 通道。需要访问内网时，先点击“新建 SSH 通道”。
               </div>
             ) : (
-              <div className="mt-2 space-y-2">
+              <div className="mt-3 space-y-2">
                 {sshProfiles.map((profile) => {
                   const isSelected = values.sshProfileId === profile.id;
                   return (
                     <button
                       key={profile.id}
                       type="button"
-                      className={`w-full rounded-lg border px-2.5 py-2.5 text-left text-xs transition sm:text-sm ${
+                      className={`w-full rounded-md border px-3 py-2.5 text-left text-xs transition-colors sm:text-sm ${
                         isSelected
-                          ? "border-cyan-400 bg-white shadow-sm"
-                          : "border-cyan-100 bg-white/70 hover:border-cyan-300"
+                          ? "border-primary bg-secondary"
+                          : "border-border bg-white hover:border-primary/40"
                       }`}
                       onClick={() => onChange({ ...values, sshProfileId: profile.id })}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
-                          <p className="font-bold text-slate-900">{profile.name}</p>
-                          <p className="mt-1 text-[11px] leading-4 text-slate-500 sm:text-xs sm:leading-5">
+                          <p className="font-medium text-slate-900">{profile.name}</p>
+                          <p className="mt-1 text-[11px] leading-4 text-slate-600 sm:text-xs sm:leading-5">
                             {profile.tunnel.username}@{profile.tunnel.host}:{profile.tunnel.port} ·
                             {profile.tunnel.authMethod === "password" ? " 密码认证" : " 私钥认证"}
                           </p>
                         </div>
                         {isSelected ? (
-                          <span className="rounded-full bg-cyan-100 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-cyan-700">
+                          <span className="rounded bg-primary/10 px-1.5 py-px text-[9px] font-medium uppercase tracking-wider text-primary">
                             已选中
                           </span>
                         ) : null}
@@ -244,11 +244,11 @@ export function ConnectionEditorPanel({
             )}
 
             {selectedSshProfile ? (
-              <div className="mt-2 flex flex-wrap items-center gap-1">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 rounded-lg px-2 text-xs"
+                  className="h-8 rounded-md px-2 text-xs shadow-none"
                   aria-label="测试 SSH 通道"
                   disabled={testingSelectedSsh}
                   onClick={() => onTestSsh(selectedSshProfile)}
@@ -259,7 +259,7 @@ export function ConnectionEditorPanel({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 rounded-lg px-2 text-xs"
+                  className="h-8 rounded-md px-2 text-xs shadow-none"
                   onClick={() => onEditSsh(selectedSshProfile)}
                 >
                   <Pencil className="mr-1 h-3.5 w-3.5" />
@@ -268,7 +268,7 @@ export function ConnectionEditorPanel({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 rounded-lg px-2 text-xs"
+                  className="h-8 rounded-md px-2 text-xs shadow-none"
                   onClick={() => onChange({ ...values, sshProfileId: "" })}
                 >
                   清除选择
@@ -276,7 +276,7 @@ export function ConnectionEditorPanel({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-8 rounded-lg px-2 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                  className="h-8 rounded-md px-2 text-xs text-[#ad0017] hover:bg-[#fff0f1] hover:text-[#ad0017]"
                   onClick={() => onDeleteSsh(selectedSshProfile)}
                 >
                   <Trash2 className="mr-1 h-3.5 w-3.5" />
@@ -286,22 +286,22 @@ export function ConnectionEditorPanel({
             ) : null}
           </div>
 
-          <div className="sm:col-span-2 rounded-xl border border-amber-100 bg-amber-50/80 p-2.5">
+          <div className="sm:col-span-2 border-t border-border pt-5">
             <div className="pr-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-900 sm:text-sm">
+              <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
                 <ShieldAlert className="h-3.5 w-3.5" />
                 TLS 校验策略
               </div>
-              <p className="mt-1 text-xs leading-5 text-amber-800 sm:text-sm">
+              <p className="mt-1 text-xs leading-5 text-slate-600">
                 默认校验最安全。跳过校验仅建议用于内网或测试环境；生产连接应使用默认校验、CA 证书或证书指纹。
               </p>
             </div>
-            <div className="mt-2 flex flex-wrap gap-1">
+            <div className="mt-3 flex flex-wrap gap-2">
               {(["default", "insecure", "caCertificate", "certificateFingerprint"] as const).map((tlsMode) => (
                 <Button
                   key={tlsMode}
                   variant={values.tlsMode === tlsMode ? "default" : "outline"}
-                  className="h-8 rounded-lg px-2.5 text-xs"
+                  className="h-8 rounded-md px-3 text-xs shadow-none"
                   onClick={() =>
                     onChange({
                       ...values,
@@ -316,7 +316,7 @@ export function ConnectionEditorPanel({
             </div>
             {values.tlsMode === "caCertificate" ? (
               <label className="mt-2 block">
-                <span className="mb-1 block text-xs font-semibold text-amber-900 sm:text-sm">CA 证书路径</span>
+                <span className="mb-1.5 block text-xs font-medium text-slate-900">CA 证书路径</span>
                 <Input
                   placeholder="/path/to/ca.crt"
                   value={values.tlsCaPath}
@@ -326,7 +326,7 @@ export function ConnectionEditorPanel({
             ) : null}
             {values.tlsMode === "certificateFingerprint" ? (
               <label className="mt-2 block">
-                <span className="mb-1 block text-xs font-semibold text-amber-900 sm:text-sm">证书 SHA256 指纹</span>
+                <span className="mb-1.5 block text-xs font-medium text-slate-900">证书 SHA256 指纹</span>
                 <Input
                   placeholder="SHA256:..."
                   value={values.tlsFingerprint}
@@ -338,11 +338,11 @@ export function ConnectionEditorPanel({
         </div>
       </div>
 
-      <div className="mt-6 flex shrink-0 flex-wrap justify-end gap-3 border-t border-slate-200/80 pt-4 sm:flex-nowrap">
-        <Button variant="outline" onClick={onCancel} disabled={saving}>
+      <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-border bg-white px-5 py-4 sm:flex-nowrap sm:px-6">
+        <Button variant="outline" className="h-10 rounded-md px-4 text-xs shadow-none" onClick={onCancel} disabled={saving}>
           取消
         </Button>
-        <Button onClick={onSave} disabled={saving || incomplete}>
+        <Button className="h-10 rounded-md px-4 text-xs shadow-none" onClick={onSave} disabled={saving || incomplete}>
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           验证并保存连接
         </Button>

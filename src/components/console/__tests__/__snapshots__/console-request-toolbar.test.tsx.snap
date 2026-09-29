@@ -2,20 +2,20 @@
 
 exports[`ConsoleRequestToolbar > matches toolbar markup snapshot 1`] = `
 <div
-  class="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:flex-wrap sm:items-center md:flex-nowrap"
+  class="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3"
   data-testid="console-request-toolbar"
 >
   <div
-    class="flex flex-wrap gap-3 sm:contents"
+    class="flex flex-wrap items-center gap-2"
     data-testid="console-toolbar-actions"
   >
     <button
-      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      class="inline-flex items-center justify-center font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-border bg-white text-foreground hover:bg-slate-50 py-2 h-8 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs"
       type="button"
     >
       <svg
         aria-hidden="true"
-        class="lucide lucide-check mr-2 h-4 w-4 shrink-0"
+        class="lucide lucide-check mr-1.5 h-4 w-4 shrink-0"
         fill="none"
         height="24"
         stroke="currentColor"
@@ -33,13 +33,13 @@ exports[`ConsoleRequestToolbar > matches toolbar markup snapshot 1`] = `
       格式化 JSON
     </button>
     <button
-      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      class="inline-flex items-center justify-center font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-border bg-white text-foreground hover:bg-slate-50 py-2 h-8 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs"
       title="AI 分析 (⌘⇧A)"
       type="button"
     >
       <svg
         aria-hidden="true"
-        class="lucide lucide-sparkles mr-2 h-4 w-4 shrink-0"
+        class="lucide lucide-sparkles mr-1.5 h-4 w-4 shrink-0"
         fill="none"
         height="24"
         stroke="currentColor"
@@ -68,13 +68,13 @@ exports[`ConsoleRequestToolbar > matches toolbar markup snapshot 1`] = `
       AI 分析
     </button>
     <button
-      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      class="inline-flex items-center justify-center font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-border bg-white text-foreground hover:bg-slate-50 py-2 h-8 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs"
       title="AI 生成请求"
       type="button"
     >
       <svg
         aria-hidden="true"
-        class="lucide lucide-wand-sparkles mr-2 h-4 w-4 shrink-0"
+        class="lucide lucide-wand-sparkles mr-1.5 h-4 w-4 shrink-0"
         fill="none"
         height="24"
         stroke="currentColor"
@@ -113,13 +113,13 @@ exports[`ConsoleRequestToolbar > matches toolbar markup snapshot 1`] = `
       AI 生成
     </button>
     <button
-      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      class="inline-flex items-center justify-center font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-border bg-white text-foreground hover:bg-slate-50 py-2 h-8 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs"
       title="请求模板"
       type="button"
     >
       <svg
         aria-hidden="true"
-        class="lucide lucide-layout-template mr-2 h-4 w-4 shrink-0"
+        class="lucide lucide-layout-template mr-1.5 h-4 w-4 shrink-0"
         fill="none"
         height="24"
         stroke="currentColor"
@@ -156,13 +156,13 @@ exports[`ConsoleRequestToolbar > matches toolbar markup snapshot 1`] = `
     </button>
     <button
       aria-label="AI 分析设置"
-      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      class="inline-flex items-center justify-center font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-border bg-white text-foreground hover:bg-slate-50 py-2 h-8 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs"
       title="AI 分析设置"
       type="button"
     >
       <svg
         aria-hidden="true"
-        class="lucide lucide-settings2 lucide-settings-2 mr-2 h-4 w-4 shrink-0"
+        class="lucide lucide-settings2 lucide-settings-2 mr-1.5 h-4 w-4 shrink-0"
         fill="none"
         height="24"
         stroke="currentColor"
@@ -194,13 +194,13 @@ exports[`ConsoleRequestToolbar > matches toolbar markup snapshot 1`] = `
     </button>
     <button
       aria-label="快捷键帮助"
-      class="inline-flex items-center justify-center rounded-2xl text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60 border border-border bg-white text-foreground hover:bg-slate-50 h-11 px-5 py-2.5 shrink-0 whitespace-nowrap"
+      class="inline-flex items-center justify-center font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-border bg-white text-foreground hover:bg-slate-50 py-2 h-8 shrink-0 whitespace-nowrap rounded-md px-2.5 text-xs"
       title="快捷键帮助 (? 或 ⌘/)"
       type="button"
     >
       <svg
         aria-hidden="true"
-        class="lucide lucide-circle-question-mark mr-2 h-4 w-4 shrink-0"
+        class="lucide lucide-circle-question-mark mr-1.5 h-4 w-4 shrink-0"
         fill="none"
         height="24"
         stroke="currentColor"
@@ -226,14 +226,25 @@ exports[`ConsoleRequestToolbar > matches toolbar markup snapshot 1`] = `
       快捷键
     </button>
   </div>
-  <input
-    autocapitalize="off"
-    autocomplete="off"
-    autocorrect="off"
-    class="flex h-12 rounded-2xl border border-border bg-white px-4 py-3 text-sm shadow-sm outline-none transition placeholder:text-slate-400 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:opacity-50 w-full sm:min-w-0 sm:flex-1 md:min-w-[12rem]"
-    placeholder="请求名称（为空时默认使用 METHOD /path，Command + Enter 运行并保存）"
-    spellcheck="false"
-    value="search users"
-  />
+  <div
+    class="flex min-w-[12rem] flex-1 items-center gap-2"
+  >
+    <label
+      class="shrink-0 text-xs font-medium text-slate-600"
+      for="console-request-name"
+    >
+      请求名称
+    </label>
+    <input
+      autocapitalize="off"
+      autocomplete="off"
+      autocorrect="off"
+      class="flex w-full border border-input bg-white px-3 py-2 text-foreground outline-none transition-colors placeholder:text-slate-500 focus:border-primary focus:ring-2 focus:ring-primary/15 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50 h-9 min-w-0 flex-1 rounded-md text-sm"
+      id="console-request-name"
+      placeholder="请求名称（为空时默认使用 METHOD /path，Command + Enter 运行并保存）"
+      spellcheck="false"
+      value="search users"
+    />
+  </div>
 </div>
 `;

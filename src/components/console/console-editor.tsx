@@ -137,7 +137,7 @@ function registerLanguage(monacoInstance: Monaco) {
     base: "vs",
     inherit: true,
     rules: [
-      { token: "keyword", foreground: "0f766e", fontStyle: "bold" },
+      { token: "keyword", foreground: "3953c3", fontStyle: "bold" },
       { token: "string.escape", foreground: "2563eb" },
       { token: "string", foreground: "b45309" },
       { token: "number", foreground: "7c3aed" },
@@ -145,13 +145,13 @@ function registerLanguage(monacoInstance: Monaco) {
     ],
     colors: {
       "editor.background": "#ffffff",
-      "editorLineNumber.foreground": "#94a3b8",
-      "editorLineNumber.activeForeground": "#0f172a",
+      "editorLineNumber.foreground": "#7c8ca8",
+      "editorLineNumber.activeForeground": "#173369",
       "editorLineNumber.dimmedForeground": "#cbd5e1",
       "editorGutter.background": "#ffffff",
-      "editorCursor.foreground": "#059669",
-      "editor.selectionBackground": "#d1fae5",
-      "editor.lineHighlightBackground": "#f8fafc",
+      "editorCursor.foreground": "#3953c3",
+      "editor.selectionBackground": "#d7e3fa",
+      "editor.lineHighlightBackground": "#f8faff",
     },
   });
 
@@ -247,7 +247,7 @@ export function ConsoleEditor({
       fontLigatures: false,
       lineNumbersMinChars: 3,
       scrollBeyondLastLine: false,
-      padding: { top: 16, bottom: 16 },
+      padding: { top: 12, bottom: 12 },
       readOnly,
       tabSize: 2,
       insertSpaces: true,

@@ -40,7 +40,7 @@ function AnalysisResultView({ result }: { result: RequestAnalysisResult }) {
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
           {result.source === "ai" ? "AI 分析结果" : "本地规则分析"}
         </p>
-        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3">
+        <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-4 py-3">
           <p className="text-sm font-semibold text-emerald-800">格式正确</p>
           <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-700">{result.meaning}</p>
         </div>
@@ -49,7 +49,7 @@ function AnalysisResultView({ result }: { result: RequestAnalysisResult }) {
             <p className="text-sm font-semibold text-slate-700">请求体说明</p>
             <ul className="mt-2 space-y-2 text-sm leading-7 text-slate-600">
               {result.details.map((detail) => (
-                <li key={detail} className="rounded-xl bg-slate-50 px-3 py-2">
+                <li key={detail} className="rounded-md bg-slate-50 px-3 py-2">
                   {detail}
                 </li>
               ))}
@@ -65,7 +65,7 @@ function AnalysisResultView({ result }: { result: RequestAnalysisResult }) {
       <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
         {result.source === "ai" ? "AI 分析结果" : "本地规则分析"}
       </p>
-      <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3">
+      <div className="rounded-lg border border-amber-100 bg-amber-50/70 px-4 py-3">
         <p className="text-sm font-semibold text-amber-800">格式存在问题</p>
         <ul className="mt-2 space-y-2 text-sm leading-7 text-slate-700">
           {result.issues.map((issue) => (
@@ -76,7 +76,7 @@ function AnalysisResultView({ result }: { result: RequestAnalysisResult }) {
       {result.suggestion ? (
         <div>
           <p className="text-sm font-semibold text-slate-700">可能正确的请求内容</p>
-          <pre className="mt-2 overflow-x-auto rounded-2xl bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-100">
+          <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-100">
             {result.suggestion}
           </pre>
         </div>
@@ -89,7 +89,7 @@ function AnalysisResultView({ result }: { result: RequestAnalysisResult }) {
 
 function HistoryCompareColumn({ entry, label }: { entry: AiAnalysisHistoryEntry; label: string }) {
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4">
+    <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-4">
       <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
       <p className="mt-2 text-sm font-semibold text-slate-900">{entry.requestPreview}</p>
       <p className="mt-1 text-xs text-slate-500">
@@ -98,7 +98,7 @@ function HistoryCompareColumn({ entry, label }: { entry: AiAnalysisHistoryEntry;
       </p>
       <div className="mt-4">
         <p className="text-sm font-semibold text-slate-700">请求内容</p>
-        <pre className="mt-2 max-h-48 overflow-auto rounded-xl bg-slate-950 px-3 py-3 text-xs leading-6 text-slate-100">
+        <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-slate-950 px-3 py-3 text-xs leading-6 text-slate-100">
           {entry.requestContent}
         </pre>
       </div>
@@ -211,7 +211,7 @@ export function AiAnalysisDialog({
       }
     >
       <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+        <aside className="rounded-lg border border-slate-200 bg-slate-50/70 p-3">
           <div className="mb-3 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-semibold text-slate-900">分析历史</p>
@@ -222,7 +222,7 @@ export function AiAnalysisDialog({
               ) : null}
             </div>
 
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+            <div className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-800">仅当前连接</p>
                 <p className="truncate text-[11px] text-slate-500">{currentConnectionName}</p>
@@ -263,9 +263,9 @@ export function AiAnalysisDialog({
                 <button
                   key={entry.id}
                   type="button"
-                  className={`w-full rounded-xl border px-3 py-2 text-left transition ${
+                  className={`w-full rounded-md border px-3 py-2 text-left transition ${
                     isHistoryHighlighted(entry.id)
-                      ? "border-emerald-200 bg-white shadow-sm"
+                      ? "border-primary/40 bg-secondary"
                       : "border-transparent bg-white/70 hover:border-slate-200 hover:bg-white"
                   }`}
                   onClick={() => handleHistoryClick(entry.id)}
@@ -291,7 +291,7 @@ export function AiAnalysisDialog({
           ) : (
             <>
               {selectedHistory ? (
-                <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3">
                   <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">历史记录</p>
                   <p className="mt-2 text-sm font-semibold text-slate-800">{selectedHistory.requestPreview}</p>
                   <p className="mt-1 text-xs text-slate-500">
@@ -302,8 +302,8 @@ export function AiAnalysisDialog({
               ) : null}
 
               {isAnalyzing && !showStreaming ? (
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-                  <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+                <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
                   正在分析请求格式...
                 </div>
               ) : null}
@@ -313,7 +313,7 @@ export function AiAnalysisDialog({
                   {hasStreamingReasoning ? (
                     <div className="space-y-3">
                       <p className="text-xs font-semibold uppercase tracking-wider text-violet-500">思考过程</p>
-                      <pre className="max-h-56 overflow-auto rounded-2xl border border-violet-100 bg-violet-50/70 px-4 py-3 text-xs leading-6 text-slate-700">
+                      <pre className="max-h-56 overflow-auto rounded-lg border border-violet-100 bg-violet-50/70 px-4 py-3 text-xs leading-6 text-slate-700">
                         {streamingReasoningText}
                       </pre>
                     </div>
@@ -324,12 +324,12 @@ export function AiAnalysisDialog({
                       <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                         {hasStreamingReasoning ? "生成结果" : "AI 流式输出"}
                       </p>
-                      <pre className="max-h-[420px] overflow-auto rounded-2xl bg-slate-950 px-4 py-3 text-xs leading-6 text-emerald-100">
+                      <pre className="max-h-[420px] overflow-auto rounded-lg bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-100">
                         {streamingContentText}
                       </pre>
                     </div>
                   ) : hasStreamingReasoning ? (
-                    <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                       <Loader2 className="h-4 w-4 animate-spin text-violet-600" />
                       思考完成，正在生成分析结果...
                     </div>
@@ -338,7 +338,7 @@ export function AiAnalysisDialog({
               ) : null}
 
               {!isAnalyzing && analysisError ? (
-                <div className="rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-3">
+                <div className="rounded-lg border border-rose-100 bg-rose-50/70 px-4 py-3">
                   <p className="text-sm font-semibold text-rose-800">分析失败</p>
                   <p className="mt-2 text-sm leading-7 text-slate-700">{analysisError}</p>
                 </div>

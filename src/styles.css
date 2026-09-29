@@ -4,26 +4,26 @@
 
 @layer base {
   :root {
-    --background: 206 45% 98%;
-    --foreground: 211 37% 15%;
+    --background: 223 64% 98%;
+    --foreground: 220 64% 25%;
     --card: 0 0% 100%;
-    --card-foreground: 211 37% 15%;
+    --card-foreground: 220 64% 25%;
     --popover: 0 0% 100%;
-    --popover-foreground: 211 37% 15%;
-    --primary: 160 59% 42%;
+    --popover-foreground: 220 64% 25%;
+    --primary: 229 55% 49%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 200 38% 94%;
-    --secondary-foreground: 211 37% 18%;
-    --muted: 204 29% 94%;
-    --muted-foreground: 214 14% 45%;
-    --accent: 40 95% 92%;
-    --accent-foreground: 30 41% 21%;
+    --secondary: 224 60% 95%;
+    --secondary-foreground: 229 55% 49%;
+    --muted: 220 20% 97%;
+    --muted-foreground: 221 33% 38%;
+    --accent: 224 60% 95%;
+    --accent-foreground: 229 55% 49%;
     --destructive: 0 75% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border: 210 32% 88%;
-    --input: 210 32% 88%;
-    --ring: 160 59% 42%;
-    --radius: 1rem;
+    --border: 214 35% 92%;
+    --input: 217 28% 84%;
+    --ring: 229 55% 49%;
+    --radius: 0.5rem;
   }
 
   * {
@@ -34,6 +34,7 @@
   html,
   body,
   #root {
+    width: 100%;
     min-height: 100%;
   }
 
@@ -44,12 +45,10 @@
   body {
     @apply bg-background font-sans text-foreground antialiased;
     margin: 0;
+    min-width: 320px;
     overflow-x: hidden;
-    background-image:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0)),
-      radial-gradient(circle at top left, rgba(62, 178, 135, 0.12), transparent 24%),
-      radial-gradient(circle at 85% 10%, rgba(36, 115, 204, 0.12), transparent 24%);
-    background-attachment: fixed;
+    font-size: 13px;
+    text-rendering: optimizeLegibility;
   }
 
   a {
@@ -63,28 +62,93 @@
   select {
     font: inherit;
   }
+
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  [tabindex] {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
+  }
+
+  select {
+    @apply rounded-md border border-input bg-white px-3 text-xs;
+    min-height: 2.5rem;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: #b8c2d4;
+    background-clip: padding-box;
+  }
 }
 
 @layer components {
   .glass-panel {
-    @apply rounded-[28px] border border-white/70 bg-white/80 shadow-panel backdrop-blur;
+    @apply rounded-lg border border-border bg-white;
+  }
+
+  .app-shell {
+    @apply h-dvh w-full overflow-hidden bg-background;
+  }
+
+  .app-sidebar {
+    @apply min-h-0 shrink-0 flex-col overflow-hidden border-r border-white/10 bg-slate-950 px-3 py-5 text-slate-50;
+  }
+
+  .workspace-main {
+    @apply min-h-0 min-w-0 flex-1 p-3 sm:p-5;
+  }
+
+  .panel-heading {
+    @apply flex flex-wrap items-center justify-between gap-3;
   }
 
   .section-title {
-    @apply text-2xl font-extrabold tracking-tight text-slate-900;
+    @apply text-xl font-semibold tracking-tight text-slate-900;
   }
 
   .section-subtitle {
-    @apply text-sm leading-7 text-slate-500;
+    @apply text-xs leading-5 text-slate-600;
+  }
+
+  .workspace-resizer {
+    @apply hidden w-1.5 shrink-0 cursor-col-resize select-none items-stretch justify-center transition-colors hover:bg-secondary active:bg-secondary lg:flex;
+  }
+
+  .editor-panel-heading {
+    @apply flex h-28 shrink-0 flex-col items-stretch justify-between gap-2 border-b border-border bg-slate-50/70 px-4 py-3;
+  }
+
+  .console-workspace-split {
+    @apply mt-3 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto lg:flex-row lg:gap-0 lg:overflow-hidden;
   }
 }
 
 .monaco-editor,
 .monaco-editor .overflow-guard {
-  border-radius: 24px;
+  border-radius: 0;
 }
 
 .monaco-editor .margin,
 .monaco-editor-background {
   background: #ffffff !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

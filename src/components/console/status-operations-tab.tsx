@@ -33,7 +33,7 @@ function OperationsPanel({ operations }: { operations: ServerOperationStatus }) 
   if (operations.nodeCount === 0) {
     return (
       <Card className="p-4">
-        <div className="flex items-start gap-2 text-sm text-slate-600">
+        <div className="flex items-start gap-2 text-xs text-slate-600">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div>
             <p className="font-bold text-slate-900">节点运维指标未返回</p>
@@ -49,9 +49,8 @@ function OperationsPanel({ operations }: { operations: ServerOperationStatus }) 
       <Card className="p-3 sm:p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Operations</p>
-            <h2 className="mt-1 text-lg font-bold text-slate-950">核心运维指标</h2>
-            <p className="mt-0.5 text-xs leading-5 text-slate-500 sm:text-sm">
+            <h2 className="text-sm font-semibold text-slate-900">核心运维指标</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
               来自 `_nodes/stats`，吞吐为节点启动以来累计数据。
             </p>
           </div>
@@ -104,7 +103,7 @@ function OperationsPanel({ operations }: { operations: ServerOperationStatus }) 
         </div>
 
         <div className="mt-3 grid gap-2 lg:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 p-2.5">
+          <div className="rounded-md border border-slate-200 p-3">
             <div className="flex items-center gap-2">
               <Search className="h-4 w-4 text-cyan-600" />
               <p className="text-xs font-bold text-slate-950">Search 吞吐</p>
@@ -114,7 +113,7 @@ function OperationsPanel({ operations }: { operations: ServerOperationStatus }) 
               <CompactMetric label="Fetch" value={formatNumber(operations.search.fetchTotal)} detail={`平均 ${formatMillis(operations.search.fetchAvgMs)}`} />
             </div>
           </div>
-          <div className="rounded-xl border border-slate-200 p-2.5">
+          <div className="rounded-md border border-slate-200 p-3">
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4 text-emerald-600" />
               <p className="text-xs font-bold text-slate-950">Indexing 吞吐</p>
@@ -124,7 +123,7 @@ function OperationsPanel({ operations }: { operations: ServerOperationStatus }) 
               <CompactMetric label="Delete" value={formatNumber(operations.indexing.deleteTotal)} detail={`平均 ${formatMillis(operations.indexing.deleteAvgMs)}`} />
             </div>
           </div>
-          <div className="rounded-xl border border-slate-200 p-2.5">
+          <div className="rounded-md border border-slate-200 p-3">
             <div className="flex items-center gap-2">
               <RefreshCcw className="h-4 w-4 text-amber-600" />
               <p className="text-xs font-bold text-slate-950">Refresh</p>
@@ -140,17 +139,16 @@ function OperationsPanel({ operations }: { operations: ServerOperationStatus }) 
       <Card className="p-3 sm:p-4">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Nodes</p>
-            <h2 className="mt-1 text-lg font-bold text-slate-950">节点压力</h2>
+            <h2 className="text-sm font-semibold text-slate-900">节点压力</h2>
           </div>
           <Gauge className="h-4 w-4 text-slate-500" />
         </div>
         <div className="mt-3 space-y-2">
           {operations.nodes.slice(0, 6).map((node) => (
-            <div key={node.id} className="rounded-xl border border-slate-200 p-2.5">
+            <div key={node.id} className="rounded-md border border-slate-200 p-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-xs font-bold text-slate-950 sm:text-sm">{node.name}</p>
+                  <p className="truncate text-xs font-semibold text-slate-950">{node.name}</p>
                   <p className="mt-0.5 text-[11px] text-slate-500">{node.id}</p>
                 </div>
                 <span className={cn("shrink-0 rounded-full border px-1.5 py-px text-[10px] font-bold", diskWatermarkClasses[node.diskWatermark])}>
@@ -158,13 +156,13 @@ function OperationsPanel({ operations }: { operations: ServerOperationStatus }) 
                 </span>
               </div>
               <div className="mt-2 grid grid-cols-3 gap-1.5 text-[11px]">
-                <p className="rounded-lg bg-slate-50 px-2 py-1">
+                <p className="rounded bg-background px-2 py-1">
                   CPU <span className="font-bold text-slate-900">{formatPercent(node.cpuPercent)}</span>
                 </p>
-                <p className="rounded-lg bg-slate-50 px-2 py-1">
+                <p className="rounded bg-background px-2 py-1">
                   Heap <span className="font-bold text-slate-900">{formatPercent(node.heapPercent)}</span>
                 </p>
-                <p className="rounded-lg bg-slate-50 px-2 py-1">
+                <p className="rounded bg-background px-2 py-1">
                   Disk <span className="font-bold text-slate-900">{formatPercent(node.diskUsedPercent)}</span>
                 </p>
               </div>
@@ -176,7 +174,7 @@ function OperationsPanel({ operations }: { operations: ServerOperationStatus }) 
             <p className="text-xs font-bold text-slate-950">Thread Pool 热点</p>
             <div className="mt-2 space-y-1.5">
               {operations.topThreadPools.slice(0, 4).map((pool) => (
-                <p key={pool.name} className="flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
+                <p key={pool.name} className="flex items-center gap-2 rounded bg-background px-2 py-1 text-[11px] text-slate-600">
                   <span className="min-w-0 flex-1 truncate font-bold text-slate-900">{pool.name}</span>
                   <span>Q {formatNumber(pool.queue)}</span>
                   <span>R {formatNumber(pool.rejected)}</span>
@@ -199,9 +197,8 @@ function TrendPanel({ history }: { history: OperationsStatusSnapshot[] }) {
   return (
     <Card className="p-3 sm:p-4">
       <div>
-        <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-600">Trend</p>
-        <h2 className="mt-1 text-lg font-bold text-slate-950">最近快照增量</h2>
-        <p className="mt-0.5 text-xs leading-5 text-slate-500 sm:text-sm">
+        <h2 className="text-sm font-semibold text-slate-900">最近快照增量</h2>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
           基于最近两次手动/页面刷新计算，间隔 {formatNumber(trend.intervalSeconds)} 秒。
         </p>
       </div>

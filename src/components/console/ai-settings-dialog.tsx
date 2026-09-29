@@ -184,7 +184,7 @@ export function AiSettingsDialog({
   const showModelSelect = availableModels.length > 0 && !manualModelInput;
   const showThinkingModeSwitch = supportsKimiThinkingMode(formValues.model);
   const modelFieldClassName =
-    "flex h-12 w-full rounded-2xl border border-border bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 disabled:cursor-not-allowed disabled:opacity-50";
+    "flex h-10 w-full rounded-md border border-input bg-white px-3 py-2 text-xs text-slate-900 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50";
 
   return (
     <Dialog
@@ -229,9 +229,9 @@ export function AiSettingsDialog({
                 <button
                   key={preset.id}
                   type="button"
-                  className={`rounded-2xl border px-4 py-3 text-left transition ${
+                  className={`rounded-lg border px-4 py-3 text-left transition ${
                     active
-                      ? "border-emerald-300 bg-emerald-50 shadow-sm"
+                      ? "border-primary/40 bg-secondary"
                       : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                   }`}
                   onClick={() => handleSelectPreset(preset)}
@@ -244,7 +244,7 @@ export function AiSettingsDialog({
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+        <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3">
           <div>
             <p className="text-sm font-semibold text-slate-900">启用 AI 分析</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">开启后，Console 会优先调用 AI 分析请求格式。</p>
@@ -338,7 +338,7 @@ export function AiSettingsDialog({
         </div>
 
         {showThinkingModeSwitch ? (
-          <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3">
             <div>
               <p className="text-sm font-semibold text-slate-900">思考模式</p>
               <p className="mt-1 text-xs leading-5 text-slate-500">

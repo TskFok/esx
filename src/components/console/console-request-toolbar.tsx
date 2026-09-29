@@ -101,20 +101,24 @@ export function ConsoleRequestToolbar({
           快捷键
         </Button>
       </div>
-      <Input
-        className={CONSOLE_REQUEST_NAME_INPUT_CLASS}
-        value={requestName}
-        onChange={(event) => onRequestNameChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) {
-            return;
-          }
+      <div className="flex min-w-[12rem] flex-1 items-center gap-2">
+        <label htmlFor="console-request-name" className="shrink-0 text-xs font-medium text-slate-600">请求名称</label>
+        <Input
+          id="console-request-name"
+          className={CONSOLE_REQUEST_NAME_INPUT_CLASS}
+          value={requestName}
+          onChange={(event) => onRequestNameChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) {
+              return;
+            }
 
-          event.preventDefault();
-          onRunAndSave();
-        }}
-        placeholder="请求名称（为空时默认使用 METHOD /path，Command + Enter 运行并保存）"
-      />
+            event.preventDefault();
+            onRunAndSave();
+          }}
+          placeholder="请求名称（为空时默认使用 METHOD /path，Command + Enter 运行并保存）"
+        />
+      </div>
     </div>
   );
 }

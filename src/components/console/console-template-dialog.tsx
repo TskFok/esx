@@ -28,7 +28,7 @@ export function ConsoleTemplateDialog({ open, onClose, onApply }: ConsoleTemplat
           <button
             key={template.id}
             type="button"
-            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/40"
+            className="rounded-md border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-primary/40 hover:bg-secondary"
             onClick={() => onApply(template)}
           >
             <div className="flex flex-wrap items-center gap-2">

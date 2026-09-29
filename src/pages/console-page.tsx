@@ -1630,9 +1630,9 @@ export function ConsolePage() {
   );
 
   return (
-    <div className="h-dvh overflow-hidden p-4 sm:p-6" onContextMenu={(event) => event.preventDefault()}>
+    <div className="app-shell" onContextMenu={(event) => event.preventDefault()}>
       <div
-        className={`flex h-full min-h-0 gap-3 ${showDockedSidebar ? "lg:flex-row" : ""} ${
+        className={`flex h-full min-h-0 ${showDockedSidebar ? "lg:flex-row" : ""} ${
           sidebarDragging ? "select-none" : ""
         }`}
         style={sidebarDragging ? { cursor: "col-resize" } : undefined}
@@ -1640,7 +1640,7 @@ export function ConsolePage() {
         {showDockedSidebar ? (
           <>
             <aside
-              className="hidden min-h-0 shrink-0 flex-col overflow-hidden rounded-2xl bg-slate-950 px-3 py-3 text-slate-50 shadow-xl shadow-slate-900/25 lg:flex"
+              className="app-sidebar hidden lg:flex"
               style={{ width: sidebarWidth }}
             >
               {sidebarPanel}
@@ -1651,8 +1651,8 @@ export function ConsolePage() {
               aria-orientation="vertical"
               aria-label="拖动调整侧边栏宽度，双击恢复默认宽度"
               title="拖动调整宽度，双击恢复默认宽度"
-              className={`hidden w-2 shrink-0 cursor-col-resize select-none lg:flex lg:items-stretch lg:justify-center lg:active:bg-slate-100 ${
-                sidebarDragging ? "lg:bg-emerald-50" : "lg:hover:bg-slate-50"
+              className={`workspace-resizer ${
+                sidebarDragging ? "bg-secondary" : ""
               }`}
               onPointerDown={handleSidebarPointerDown}
               onPointerMove={handleSidebarPointerMove}
@@ -1661,7 +1661,7 @@ export function ConsolePage() {
               onLostPointerCapture={endSidebarDrag}
               onDoubleClick={handleSidebarDoubleClick}
             >
-              <div className="pointer-events-none my-3 w-px flex-1 rounded-full bg-slate-200 shadow-sm lg:hover:bg-emerald-400" />
+              <div className="pointer-events-none w-px flex-1 bg-border" />
             </div>
           </>
         ) : null}
@@ -1670,13 +1670,13 @@ export function ConsolePage() {
           {sidebarPanel}
         </ConsoleMobileDrawer>
 
-        <main className="min-h-0 min-w-0 flex-1">
-          <Card className="flex h-full min-h-0 min-w-0 flex-col p-5 sm:p-6">
+        <main className="workspace-main">
+          <div className="flex h-full min-h-0 min-w-0 flex-col">
             {showContextBar ? (
-              <div className="mb-3 flex flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-center">
+              <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-border pb-3">
                 <Button
                   variant="outline"
-                  className="shrink-0 self-start"
+                  className="h-8 shrink-0"
                   title="显示连接与请求 (⌘B)"
                   aria-label="显示连接与请求"
                   onClick={toggleSidebar}
@@ -1734,7 +1734,7 @@ export function ConsolePage() {
             {runMutation.isPending ? <Button variant="outline" onClick={() => runControllerRef.current?.abort()}>取消运行</Button> : null}
             <div
               ref={splitRef}
-              className={`mt-4 flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-0 ${
+              className={`console-workspace-split ${
                 splitDragging ? "select-none" : ""
               }`}
               style={splitDragging ? { cursor: "col-resize" } : undefined}
@@ -1745,16 +1745,15 @@ export function ConsolePage() {
                 } ${splitDragging ? "pointer-events-none" : ""}`}
                 style={isLgSplit ? { width: `${editorFraction * 100}%` } : undefined}
               >
-                <div className="border-b border-slate-100 px-5 py-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-sm font-bold text-slate-900">请求内容</p>
-                      <p className="mt-1 text-xs text-slate-500">Command + Enter 运行并保存</p>
-                      <p className="mt-1 text-xs text-slate-500">{metadataStatus}</p>
+                <div className="editor-panel-heading">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">请求内容</p>
+                      <p className="mt-1 truncate text-[11px] leading-4 text-slate-500" title={metadataStatus}>{metadataStatus}</p>
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="self-end"
                       onClick={handleRefreshSearchMetadata}
                       disabled={metadataRefreshMutation.isPending}
                     >
@@ -1765,9 +1764,8 @@ export function ConsolePage() {
                       )}
                       刷新索引
                     </Button>
-                  </div>
                 </div>
-                <div className="min-h-0 flex-1 p-4">
+                <div className="min-h-0 flex-1 overflow-hidden py-1">
                   <LazyConsoleEditor
                     autocompleteContext={autocompleteContext}
                     onRunShortcut={handleRunAndSave}
@@ -1782,8 +1780,8 @@ export function ConsolePage() {
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="拖动调整请求区与返回区宽度"
-                className={`hidden w-2 shrink-0 cursor-col-resize select-none lg:flex lg:items-stretch lg:justify-center lg:active:bg-slate-100 ${
-                  splitDragging ? "lg:bg-emerald-50" : "lg:hover:bg-slate-50"
+                className={`workspace-resizer ${
+                  splitDragging ? "bg-secondary" : ""
                 }`}
                 onPointerDown={handleSplitPointerDown}
                 onPointerMove={handleSplitPointerMove}
@@ -1791,7 +1789,7 @@ export function ConsolePage() {
                 onPointerCancel={endSplitDrag}
                 onLostPointerCapture={endSplitDrag}
               >
-                <div className="pointer-events-none my-3 w-px flex-1 rounded-full bg-slate-200 shadow-sm lg:hover:bg-emerald-400" />
+                <div className="pointer-events-none my-3 w-px flex-1 bg-border" />
               </div>
 
               <Card
@@ -1799,20 +1797,19 @@ export function ConsolePage() {
                   responseExpanded ? "min-h-[360px]" : "self-start"
                 } ${splitDragging ? "pointer-events-none" : ""}`}
               >
-                <div className={`${responseExpanded ? "border-b" : ""} border-slate-100 px-5 py-4`}>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className={`editor-panel-heading ${responseExpanded ? "" : "border-b-0"}`}>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-slate-900">返回内容</p>
-                        {runMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> : null}
+                        <p className="text-sm font-semibold text-slate-900">返回内容</p>
+                        {runMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : null}
                       </div>
-                      <p className="mt-1 text-xs text-slate-500">{responseSummary}</p>
+                      <p className="mt-1 truncate text-[11px] leading-4 text-slate-600" title={responseSummary}>{responseSummary}</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
                         预览 KB
                         <Input
-                          className="h-9 w-24 rounded-xl px-3 py-2 text-xs"
+                          className="h-8 w-20 px-2 py-1 text-xs"
                           inputMode="numeric"
                           min={minResponsePreviewKb}
                           step={64}
@@ -1846,10 +1843,9 @@ export function ConsolePage() {
                         {responseExpanded ? "收起" : "展开"}
                       </Button>
                     </div>
-                  </div>
                 </div>
                 {responseExpanded ? (
-                  <div id="console-response-body" className="min-h-0 flex-1 p-4">
+                  <div id="console-response-body" className="min-h-0 flex-1 overflow-hidden py-1">
                     <ResponseViewer response={response} fallbackValue={responseFallbackValue} />
                   </div>
                 ) : null}
@@ -1858,7 +1854,7 @@ export function ConsolePage() {
                 </>
               }
             />
-          </Card>
+          </div>
         </main>
       </div>
 

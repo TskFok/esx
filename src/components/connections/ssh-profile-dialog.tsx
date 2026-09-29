@@ -61,9 +61,9 @@ export function SshProfileDialog({
         </>
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-x-4 gap-y-5 sm:grid-cols-2">
         <label className="block sm:col-span-2">
-          <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">SSH 通道名称</span>
+          <span className="mb-1.5 block text-xs font-medium text-slate-900">SSH 通道名称</span>
           <Input
             placeholder="例如 生产跳板机 / 测试堡垒机"
             value={values.name}
@@ -72,7 +72,7 @@ export function SshProfileDialog({
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">SSH 主机</span>
+          <span className="mb-1.5 block text-xs font-medium text-slate-900">SSH 主机</span>
           <Input
             placeholder="bastion.example.com"
             value={values.sshHost}
@@ -81,7 +81,7 @@ export function SshProfileDialog({
         </label>
 
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">SSH 端口</span>
+          <span className="mb-1.5 block text-xs font-medium text-slate-900">SSH 端口</span>
           <Input
             type="number"
             min="1"
@@ -93,7 +93,7 @@ export function SshProfileDialog({
         </label>
 
         <label className="block sm:col-span-2">
-          <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">SSH 用户名</span>
+          <span className="mb-1.5 block text-xs font-medium text-slate-900">SSH 用户名</span>
           <Input
             placeholder="ubuntu / root / deploy"
             value={values.sshUsername}
@@ -102,18 +102,18 @@ export function SshProfileDialog({
         </label>
 
         <div className="sm:col-span-2">
-          <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">SSH 认证方式</span>
-          <div className="flex flex-wrap gap-1">
+          <span className="mb-1.5 block text-xs font-medium text-slate-900">SSH 认证方式</span>
+          <div className="flex flex-wrap gap-2">
             <Button
               variant={values.sshAuthMethod === "password" ? "default" : "outline"}
-              className="h-8 rounded-lg px-2.5 text-xs"
+              className="h-8 rounded-md px-3 text-xs"
               onClick={() => onChange({ ...values, sshAuthMethod: "password" })}
             >
               密码
             </Button>
             <Button
               variant={values.sshAuthMethod === "privateKey" ? "default" : "outline"}
-              className="h-8 rounded-lg px-2.5 text-xs"
+              className="h-8 rounded-md px-3 text-xs"
               onClick={() => onChange({ ...values, sshAuthMethod: "privateKey" })}
             >
               私钥
@@ -123,7 +123,7 @@ export function SshProfileDialog({
 
         {values.sshAuthMethod === "password" ? (
           <label className="block sm:col-span-2">
-            <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">SSH 密码</span>
+            <span className="mb-1.5 block text-xs font-medium text-slate-900">SSH 密码</span>
             <Input
               type="password"
               placeholder="请输入 SSH 密码"
@@ -134,7 +134,7 @@ export function SshProfileDialog({
         ) : (
           <>
             <div className="sm:col-span-2">
-              <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">SSH 私钥路径</span>
+              <span className="mb-1.5 block text-xs font-medium text-slate-900">SSH 私钥路径</span>
               <div className="flex gap-2">
                 <Input
                   placeholder="~/.ssh/id_rsa"
@@ -144,7 +144,7 @@ export function SshProfileDialog({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-12 shrink-0 rounded-2xl px-4"
+                  className="h-10 shrink-0 rounded-md px-3"
                   disabled={saving}
                   onClick={() => {
                     void handlePickPrivateKey();
@@ -157,7 +157,7 @@ export function SshProfileDialog({
             </div>
 
             <label className="block sm:col-span-2">
-              <span className="mb-1 block text-xs font-semibold text-slate-700 sm:text-sm">私钥口令（可选）</span>
+              <span className="mb-1.5 block text-xs font-medium text-slate-900">私钥口令（可选）</span>
               <Input
                 type="password"
                 placeholder="如果私钥有口令，请在这里填写"

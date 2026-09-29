@@ -180,8 +180,8 @@ describe("ConnectionsSidebarPanel", () => {
     const currentRow = screen.getByRole("button", { name: "开发集群，打开 Console" });
     const otherRow = screen.getByRole("button", { name: "生产集群，打开 Console" });
 
-    expect(currentRow).toHaveClass("border-white/30", "bg-white", "text-slate-950");
-    expect(otherRow).toHaveClass("border-white/10", "bg-white/5", "text-slate-100");
+    expect(currentRow).toHaveClass("border-[#8ba2ff]/60", "bg-[#465282]/60", "text-white");
+    expect(otherRow).toHaveClass("border-[#27304f]", "bg-white/[0.03]", "text-[#dfe5ef]");
     expect(currentRow).toHaveAttribute("tabindex", "0");
     expect(otherRow).toHaveAttribute("tabindex", "0");
   });

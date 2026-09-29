@@ -87,11 +87,11 @@ export function AiGenerateDialog({
     >
       <div className="space-y-4">
         {!aiEnabled ? (
-          <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-sm leading-7 text-amber-900">
+          <div className="rounded-lg border border-amber-100 bg-amber-50/70 px-4 py-3 text-sm leading-7 text-amber-900">
             AI 功能未启用，请先在 AI 设置中开启。
           </div>
         ) : !aiConfigured ? (
-          <div className="rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 text-sm leading-7 text-amber-900">
+          <div className="rounded-lg border border-amber-100 bg-amber-50/70 px-4 py-3 text-sm leading-7 text-amber-900">
             AI 服务尚未配置完成，请填写服务地址与模型。
           </div>
         ) : null}
@@ -111,7 +111,7 @@ export function AiGenerateDialog({
         </div>
 
         {generateError ? (
-          <div className="rounded-2xl border border-rose-100 bg-rose-50/70 px-4 py-3 text-sm leading-7 text-rose-800">
+          <div className="rounded-lg border border-rose-100 bg-rose-50/70 px-4 py-3 text-sm leading-7 text-rose-800">
             {generateError}
           </div>
         ) : null}
@@ -121,7 +121,7 @@ export function AiGenerateDialog({
             {hasStreamingReasoning ? (
               <div>
                 <p className="text-sm font-semibold text-slate-700">AI 思考过程</p>
-                <pre className="mt-2 max-h-40 overflow-auto rounded-2xl bg-slate-100 px-4 py-3 text-xs leading-6 text-slate-700">
+                <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-slate-100 px-4 py-3 text-xs leading-6 text-slate-700">
                   {streamingReasoningText}
                 </pre>
               </div>
@@ -130,7 +130,7 @@ export function AiGenerateDialog({
               <p className="text-sm font-semibold text-slate-700">
                 {hasStreamingReasoning ? "生成结果" : "AI 流式输出"}
               </p>
-              <pre className="mt-2 max-h-64 overflow-auto rounded-2xl bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-100">
+              <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-100">
                 {streamingContentText || (hasStreamingReasoning ? "思考完成，正在生成请求内容..." : "等待 AI 响应...")}
               </pre>
             </div>
@@ -140,7 +140,7 @@ export function AiGenerateDialog({
         {generatedContent && !showStreaming ? (
           <div>
             <p className="text-sm font-semibold text-slate-700">生成的请求内容</p>
-            <pre className="mt-2 max-h-80 overflow-auto rounded-2xl bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-100">
+            <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-slate-950 px-4 py-3 text-xs leading-6 text-slate-100">
               {generatedContent}
             </pre>
           </div>

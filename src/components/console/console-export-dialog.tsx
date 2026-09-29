@@ -58,7 +58,7 @@ export function ConsoleExportDialog({
       }
     >
       <div className="grid gap-5 text-sm leading-6 text-slate-600">
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
+        <div className="flex items-center justify-between rounded-md border border-slate-200 px-4 py-3">
           <div>
             <p className="font-semibold text-slate-800">加密导出</p>
             <p className="mt-1 text-slate-500">使用 AES-GCM 加密文件内容，适合包含敏感请求体的环境。</p>

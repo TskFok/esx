@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ConsoleSidebarPanel, type ConsoleSidebarPanelProps } from "../console-sidebar-panel";
 import type { SavedRequest } from "../../../types/requests";
 
-const SIDEBAR_NAV_GHOST_CLASSES = ["text-slate-200", "hover:bg-white/10", "hover:text-white"];
+const SIDEBAR_NAV_GHOST_CLASSES = ["text-[#b8c5e8]", "hover:bg-[#465282]/50", "hover:text-white"];
 
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
@@ -62,7 +62,7 @@ function renderSidebar(overrides: Partial<ConsoleSidebarPanelProps> = {}) {
 }
 
 describe("ConsoleSidebarPanel navigation", () => {
-  it("连接页在标题行，控制台与其它面板按钮在导航行", () => {
+  it("连接页在品牌块下方，四个面板按钮按顺序位于竖向导航", () => {
     renderSidebar();
 
     const connectionsButton = screen.getByRole("button", { name: "连接页" });
@@ -71,9 +71,10 @@ describe("ConsoleSidebarPanel navigation", () => {
 
     expect(connectionsButton.compareDocumentPosition(consoleButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(consoleButton.compareDocumentPosition(statusButton) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("navigation", { name: "工作区导航" })).toHaveClass("grid");
     expect(connectionsButton).not.toHaveClass("bg-secondary");
-    expect(connectionsButton).toHaveClass(...SIDEBAR_NAV_GHOST_CLASSES);
-    expect(consoleButton).toHaveClass("hover:bg-white/10", "hover:text-white");
+    expect(connectionsButton).toHaveClass("text-[#b8c5e8]", "hover:text-white");
+    expect(consoleButton).toHaveClass("bg-[#465282]/60", "hover:text-white");
     expect(statusButton).toHaveClass(...SIDEBAR_NAV_GHOST_CLASSES);
   });
 

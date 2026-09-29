@@ -14,11 +14,11 @@ export function ConsoleContextBreadcrumb({ segments, onSegmentClick }: ConsoleCo
 
         return (
           <span key={`${segment.kind}-${segment.label}-${index}`} className="flex min-w-0 items-center gap-1">
-            {index > 0 ? <ChevronRight className="h-3 w-3 shrink-0 text-slate-300" aria-hidden /> : null}
+            {index > 0 ? <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden /> : null}
             <button
               type="button"
-              className={`truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100 hover:text-slate-700 ${
-                isLast ? "font-semibold text-slate-700" : "text-slate-500"
+              className={`truncate rounded-md px-1.5 py-1 transition hover:bg-slate-100 hover:text-slate-700 ${
+                isLast ? "font-semibold text-slate-800" : "text-slate-500"
               }`}
               title={`定位到${segment.label}`}
               onClick={() => onSegmentClick(segment)}
