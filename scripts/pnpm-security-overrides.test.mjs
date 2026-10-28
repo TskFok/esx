@@ -74,14 +74,14 @@ describe("pnpm 安全 override", () => {
     expect(lockfile).not.toMatch(/^ {2}react-router@[89]\./m);
   });
 
-  it("undici 至少为 7.29.1 且保持在 7.x", () => {
+  it("undici 至少为 7.30.1 且保持在 7.x", () => {
     const entry = findOverride(overrides, "undici@");
-    expect(entry?.[1]).toBe(">=7.29.1 <8");
+    expect(entry?.[1]).toBe(">=7.30.1 <8");
     const versions = [...lockfile.matchAll(/^ {2}undici@(\d+)\.(\d+)\.(\d+):/gm)];
     expect(versions.length).toBeGreaterThan(0);
     for (const [, major, minor, patch] of versions) {
       expect(Number(major)).toBe(7);
-      expect(Number(minor) > 29 || (Number(minor) === 29 && Number(patch) >= 1)).toBe(true);
+      expect(Number(minor) > 30 || (Number(minor) === 30 && Number(patch) >= 1)).toBe(true);
     }
   });
 
