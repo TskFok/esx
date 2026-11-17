@@ -82,6 +82,12 @@ jobs:
       - name: Build Tauri bundles
         run: pnpm exec tauri build --bundles ${{ matrix.bundles }}
 
+      - name: Check macOS bundle dependencies
+        if: runner.os == 'macOS'
+        env:
+          ESX_MACOS_APP_PATH: src-tauri/target/release/bundle/macos/ESX.app
+        run: pnpm test scripts/macos-bundle.test.mjs
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
