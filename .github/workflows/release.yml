@@ -23,7 +23,7 @@ jobs:
         include:
           - platform: macos-latest
             artifact-name: macos
-            bundles: dmg
+            bundles: app,dmg
             install-linux-deps: false
           - platform: ubuntu-22.04
             artifact-name: linux
